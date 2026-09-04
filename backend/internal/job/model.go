@@ -1,0 +1,137 @@
+package job
+
+import (
+	"encoding/json"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// Allowed pay types
+const (
+	PayTypeFixed  = "fixed"
+	PayTypeHourly = "hourly"
+)
+
+// Allowed job statuses
+const (
+	StatusOpen       = "open"
+	StatusInProgress = "in_progress"
+	StatusClosed     = "closed"
+	StatusCancelled  = "cancelled"
+)
+
+// EmployerInfo represents public employer metadata attached to job postings.
+type EmployerInfo struct {
+	ID           uuid.UUID `json:"id"`
+	Email        string    `json:"email"`
+	CompanyOrOrg string    `json:"company_or_org"`
+	ContactName  string    `json:"contact_name"`
+	Website      string    `json:"website"`
+}
+
+// Job represents a job posting in the Lynk marketplace.
+type Job struct {
+	ID             uuid.UUID     `json:"id"`
+	EmployerID     uuid.UUID     `json:"employer_id"`
+	Title          string        `json:"title"`
+	Description    string        `json:"description"`
+	Budget         float64       `json:"budget"`
+	PayType        string        `json:"pay_type"`
+	RequiredSkills []string      `json:"required_skills"`
+	Department     string        `json:"department"`
+	Deadline       *time.Time    `json:"deadline,omitempty"`
+	Status         string        `json:"status"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+	Employer       *EmployerInfo `json:"employer,omitempty"`
+}
+
+// CreateJobRequest contains the payload required to post a new job.
+type CreateJobRequest struct {
+	Title          string   `json:"title"`
+	Description    string   `json:"description"`
+	Budget         float64  `json:"budget"`
+	PayType        string   `json:"pay_type"`
+	RequiredSkills []string `json:"required_skills"`
+	Department     string   `json:"department"`
+	Deadline       *JobDate `json:"deadline,omitempty"`
+}
+
+// UpdateJobRequest contains optional fields to update an existing job posting.
+type UpdateJobRequest struct {
+	Title          *string   `json:"title,omitempty"`
+	Description    *string   `json:"description,omitempty"`
+	Budget         *float64  `json:"budget,omitempty"`
+	PayType        *string   `json:"pay_type,omitempty"`
+	RequiredSkills *[]string `json:"required_skills,omitempty"`
+	Department     *string   `json:"department,omitempty"`
+	Deadline       *JobDate  `json:"deadline,omitempty"`
+	Status         *string   `json:"status,omitempty"`
+}
+
+// JobFilter specifies criteria for searching and filtering job postings.
+type JobFilter struct {
+	Search     string     `json:"search,omitempty"`
+	Department string     `json:"department,omitempty"`
+	Skill      string     `json:"skill,omitempty"`
+	Skills     []string   `json:"skills,omitempty"`
+	MinBudget  *float64   `json:"min_budget,omitempty"`
+	MaxBudget  *float64   `json:"max_budget,omitempty"`
+	PayType    string     `json:"pay_type,omitempty"`
+	Status     string     `json:"status,omitempty"`
+	EmployerID *uuid.UUID `json:"employer_id,omitempty"`
+	Limit      int        `json:"limit,omitempty"`
+	Offset     int        `json:"offset,omitempty"`
+}
+
+// JobDate provides flexible date deserialization supporting ISO date (YYYY-MM-DD) and RFC3339.
+type JobDate time.Time
+
+// Time converts JobDate to *time.Time.
+func (jd *JobDate) Time() *time.Time {
+	if jd == nil {
+		return nil
+	}
+	t := time.Time(*jd)
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
+// UnmarshalJSON parses YYYY-MM-DD or RFC3339 date strings.
+func (jd *JobDate) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), "\"")
+	if s == "" || s == "null" {
+		return nil
+	}
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		*jd = JobDate(t)
+		return nil
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		*jd = JobDate(t)
+		return nil
+	}
+	if t, err := time.Parse("2006-01-02T15:04:05", s); err == nil {
+		*jd = JobDate(t)
+		return nil
+	}
+	var t time.Time
+	if err := json.Unmarshal(b, &t); err != nil {
+		return err
+	}
+	*jd = JobDate(t)
+	return nil
+}
+
+// MarshalJSON formats JobDate as YYYY-MM-DD string.
+func (jd JobDate) MarshalJSON() ([]byte, error) {
+	t := time.Time(jd)
+	if t.IsZero() {
+		return []byte("null"), nil
+	}
+	return json.Marshal(t.Format("2006-01-02"))
+}
