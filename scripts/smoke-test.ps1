@@ -2,43 +2,43 @@
 # Lynk Platform — End-to-End Integration Smoke Test Suite (PowerShell)
 #
 # Exercises the complete MVP lifecycle against running local infrastructure:
-#   1. Infrastructure Health Checks (Go API, Keycloak realm, MinIO S3)
-#   2. Auth Sync for Test Users (Employer, Verified Student, Unverified Student)
-#   3. Student & Employer Profile Updates
-#   4. Resume Upload (Multipart PDF) & Presigned Download URL Fetch
-#   5. Job Creation by Employer
-#   6. Job Filtering, Search & Detail Retrieval
-#   7. Institutional Email Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)
-#   8. Verified Student Job Application
-#   9. Employer Application Review & Acceptance (Atomic Contract Generation)
-#  10. Contract Status Progression (Active -> Completed)
-#  11. Peer Review Submission & Duplicate Conflict Assertion (HTTP 409)
+#   1. Infrastructure Health Checks (Go API, SuperTokens Core, MinIO S3)
+#   2. Institutional .edu Registration Gate Assertion (Non-.edu rejected)
+#   3. SuperTokens User Provisioning & Campus Verification
+#   4. User Auth Synchronization (POST /api/v1/auth/sync)
+#   5. Student & Employer Profile Updates (PUT /api/v1/profile/student & employer)
+#   6. Resume Upload (Multipart PDF) & Presigned S3 Download URL Fetch
+#   7. Job Creation by Verified Employer (POST /api/v1/jobs)
+#   8. Job Filtering, Search & Detail Retrieval
+#   9. Campus Email Verification Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)
+#  10. Verified Student Job Application Submission
+#  11. Employer Application Review & Acceptance (Atomic Contract Generation)
+#  12. Contract Status Progression (Active -> Completed)
+#  13. Peer Review Submission & Duplicate Conflict Assertion (HTTP 409)
 #
 # Invariants:
 #   - Exit code 0 on all assertions passing.
 #   - Non-zero exit code (exit 1) with colored diagnostic logs on any assertion failure.
 #   - Accepts pre-acquired tokens via environment variables OR acquires them
-#     via Keycloak direct grant (with automated user provisioning fallback).
+#     via SuperTokens APIs with automated member provisioning & verification.
 # ==============================================================================
 
 [CmdletBinding()]
 param (
     [string]$ApiBaseUrl = $(if ($env:API_BASE_URL) { $env:API_BASE_URL } else { "http://localhost:8080" }),
-    [string]$KeycloakUrl = $(if ($env:KEYCLOAK_URL) { $env:KEYCLOAK_URL } else { "http://localhost:8081" }),
-    [string]$KeycloakRealm = $(if ($env:KEYCLOAK_REALM) { $env:KEYCLOAK_REALM } else { "lynk" }),
-    [string]$KeycloakClientId = $(if ($env:KEYCLOAK_CLIENT_ID) { $env:KEYCLOAK_CLIENT_ID } else { "lynk-frontend" }),
+    [string]$SuperTokensUrl = $(if ($env:SUPERTOKENS_URL) { $env:SUPERTOKENS_URL } else { "http://localhost:3567" }),
+    [string]$SuperTokensApiKey = $(if ($env:SUPERTOKENS_API_KEY) { $env:SUPERTOKENS_API_KEY } else { "lynk_supertokens_secret_api_key_2026" }),
     [string]$MinioUrl = $(if ($env:MINIO_URL) { $env:MINIO_URL } else { "http://localhost:9000" }),
     [string]$EmployerToken = $env:EMPLOYER_TOKEN,
     [string]$VerifiedStudentToken = $env:VERIFIED_STUDENT_TOKEN,
     [string]$UnverifiedStudentToken = $env:UNVERIFIED_STUDENT_TOKEN,
-    [string]$EmployerUsername = $(if ($env:EMPLOYER_USERNAME) { $env:EMPLOYER_USERNAME } else { "employer@lynk.test" }),
+    [string]$EmployerEmail = $(if ($env:EMPLOYER_EMAIL) { $env:EMPLOYER_EMAIL } elseif ($env:EMPLOYER_USERNAME) { $env:EMPLOYER_USERNAME } else { "employer@stanford.edu" }),
     [string]$EmployerPassword = $(if ($env:EMPLOYER_PASSWORD) { $env:EMPLOYER_PASSWORD } else { "password123" }),
-    [string]$VerifiedStudentUsername = $(if ($env:VERIFIED_STUDENT_USERNAME) { $env:VERIFIED_STUDENT_USERNAME } else { "student.verified@stanford.edu" }),
+    [string]$VerifiedStudentEmail = $(if ($env:VERIFIED_STUDENT_EMAIL) { $env:VERIFIED_STUDENT_EMAIL } elseif ($env:VERIFIED_STUDENT_USERNAME) { $env:VERIFIED_STUDENT_USERNAME } else { "student@mit.edu" }),
     [string]$VerifiedStudentPassword = $(if ($env:VERIFIED_STUDENT_PASSWORD) { $env:VERIFIED_STUDENT_PASSWORD } else { "password123" }),
-    [string]$UnverifiedStudentUsername = $(if ($env:UNVERIFIED_STUDENT_USERNAME) { $env:UNVERIFIED_STUDENT_USERNAME } else { "student.unverified@stanford.edu" }),
+    [string]$UnverifiedStudentEmail = $(if ($env:UNVERIFIED_STUDENT_EMAIL) { $env:UNVERIFIED_STUDENT_EMAIL } elseif ($env:UNVERIFIED_STUDENT_USERNAME) { $env:UNVERIFIED_STUDENT_USERNAME } else { "unverified@berkeley.edu" }),
     [string]$UnverifiedStudentPassword = $(if ($env:UNVERIFIED_STUDENT_PASSWORD) { $env:UNVERIFIED_STUDENT_PASSWORD } else { "password123" }),
-    [string]$KeycloakAdmin = $(if ($env:KEYCLOAK_ADMIN) { $env:KEYCLOAK_ADMIN } else { "admin" }),
-    [string]$KeycloakAdminPassword = $(if ($env:KEYCLOAK_ADMIN_PASSWORD) { $env:KEYCLOAK_ADMIN_PASSWORD } else { "admin_password" }),
+    [string]$UnauthorizedEmail = "unauthorized@gmail.com",
     [switch]$SkipInfraHealth = $(if ($env:SKIP_INFRA_HEALTH -eq "1") { $true } else { $false })
 )
 
@@ -54,7 +54,7 @@ function Log-Info ($msg) {
 function Log-Step ($num, $title) {
     Write-Host ""
     Write-Host ("=" * 70) -ForegroundColor Blue
-    Write-Host "[STEP $num/11] $title" -ForegroundColor Magenta
+    Write-Host "[STEP $num/13] $title" -ForegroundColor Magenta
     Write-Host ("=" * 70) -ForegroundColor Blue
 }
 
@@ -103,6 +103,8 @@ function Invoke-ApiRequest {
     $headers = @{}
     if ($Token) {
         $headers["Authorization"] = "Bearer $Token"
+        $headers["st-auth-mode"] = "header"
+        $headers["Cookie"] = "sAccessToken=$Token"
     }
 
     $responseStatusCode = 0
@@ -159,163 +161,265 @@ function Invoke-ApiRequest {
 }
 
 # ------------------------------------------------------------------------------
-# Keycloak Token Acquisition & User Provisioning Helper
+# SuperTokens Authentication Helpers
 # ------------------------------------------------------------------------------
-function Get-DirectGrantToken {
+function Register-SuperTokensUser {
     param (
-        [string]$Username,
+        [string]$Email,
         [string]$Password
     )
 
-    $tokenUrl = "$KeycloakUrl/realms/$KeycloakRealm/protocol/openid-connect/token"
-    $body = "grant_type=password&client_id=$KeycloakClientId&username=$([System.Uri]::EscapeDataString($Username))&password=$([System.Uri]::EscapeDataString($Password))"
+    $url = "$ApiBaseUrl/api/v1/auth/signup"
+    $headers = @{
+        "rid" = "emailpassword"
+        "st-auth-mode" = "header"
+        "Content-Type" = "application/json"
+    }
+    $body = @{
+        formFields = @(
+            @{ id = "email"; value = $Email },
+            @{ id = "password"; value = $Password }
+        )
+    } | ConvertTo-Json -Depth 5
+
+    $statusCode = 0
+    $respBody = ""
+    $respHeaders = @{}
 
     try {
-        $res = Invoke-WebRequest -Uri $tokenUrl -Method Post -ContentType "application/x-www-form-urlencoded" -Body $body -ErrorAction Stop
-        $json = $res.Content | ConvertFrom-Json
-        if ($json.access_token) {
-            return $json.access_token
+        $res = Invoke-WebRequest -Uri $url -Method Post -Headers $headers -Body $body -ErrorAction Stop
+        $statusCode = [int]$res.StatusCode
+        $respBody = $res.Content
+        $respHeaders = $res.Headers
+    }
+    catch [System.Net.WebException] {
+        $webEx = $_.Exception
+        if ($webEx.Response) {
+            $statusCode = [int]$webEx.Response.StatusCode
+            $respHeaders = $webEx.Response.Headers
+            $stream = $webEx.Response.GetResponseStream()
+            if ($stream) {
+                $reader = New-Object System.IO.StreamReader($stream)
+                $respBody = $reader.ReadToEnd()
+                $reader.Close()
+            }
+        } else {
+            $respBody = $webEx.Message
         }
     }
     catch {
-        return $null
-    }
-    return $null
-}
-
-function Provision-KeycloakUser {
-    param (
-        [string]$Username,
-        [string]$Password,
-        [string]$Email,
-        [string]$Role,
-        [bool]$Verified
-    )
-
-    Log-Substep "Provisioning Keycloak test user: $Username ($Role, verified=$Verified)..."
-
-    $adminTokenUrl = "$KeycloakUrl/realms/master/protocol/openid-connect/token"
-    $adminBody = "grant_type=password&client_id=admin-cli&username=$([System.Uri]::EscapeDataString($KeycloakAdmin))&password=$([System.Uri]::EscapeDataString($KeycloakAdminPassword))"
-
-    $adminToken = $null
-    try {
-        $adminRes = Invoke-WebRequest -Uri $adminTokenUrl -Method Post -ContentType "application/x-www-form-urlencoded" -Body $adminBody -ErrorAction Stop
-        $adminJson = $adminRes.Content | ConvertFrom-Json
-        $adminToken = $adminJson.access_token
-    }
-    catch {
-        Log-Warn "Unable to acquire Keycloak admin token. Automated provisioning skipped."
-        return $false
-    }
-
-    if (-not $adminToken) {
-        return $false
-    }
-
-    $adminHeaders = @{
-        "Authorization" = "Bearer $adminToken"
-    }
-
-    # 1. Check if user already exists
-    $userId = $null
-    try {
-        $userSearchUrl = "$KeycloakUrl/admin/realms/$KeycloakRealm/users?username=$([System.Uri]::EscapeDataString($Username))"
-        $usersRes = Invoke-WebRequest -Uri $userSearchUrl -Method Get -Headers $adminHeaders -ErrorAction Stop
-        $users = $usersRes.Content | ConvertFrom-Json
-        if ($users -and $users.Count -gt 0) {
-            $userId = $users[0].id
+        if ($_.Exception.Response) {
+            $statusCode = [int]$_.Exception.Response.StatusCode
+            $respHeaders = $_.Exception.Response.Headers
         }
+        $respBody = $_.ToString()
     }
-    catch { }
 
-    # 2. Create user if not exists
-    if (-not $userId) {
-        $userPayload = @{
-            username = $Username
-            email = $Email
-            emailVerified = $Verified
-            enabled = $true
-            credentials = @(
-                @{
-                    type = "password"
-                    value = $Password
-                    temporary = $false
-                }
-            )
-        } | ConvertTo-Json -Depth 5
+    $json = $null
+    try {
+        $json = $respBody | ConvertFrom-Json
+    } catch { }
 
-        try {
-            Invoke-WebRequest -Uri "$KeycloakUrl/admin/realms/$KeycloakRealm/users" -Method Post -Headers $adminHeaders -ContentType "application/json" -Body $userPayload -ErrorAction Stop | Out-Null
+    $token = $null
+    if ($respHeaders) {
+        if ($respHeaders["st-access-token"]) {
+            $token = $respHeaders["st-access-token"]
+            if ($token -is [array]) { $token = $token[0] }
         }
-        catch { }
-
-        # Query user ID again
-        try {
-            $usersRes = Invoke-WebRequest -Uri "$KeycloakUrl/admin/realms/$KeycloakRealm/users?username=$([System.Uri]::EscapeDataString($Username))" -Method Get -Headers $adminHeaders -ErrorAction Stop
-            $users = $usersRes.Content | ConvertFrom-Json
-            if ($users -and $users.Count -gt 0) {
-                $userId = $users[0].id
+        if (-not $token -and $respHeaders["Set-Cookie"]) {
+            $cookieStr = [string]$respHeaders["Set-Cookie"]
+            if ($cookieStr -match "sAccessToken=([^;]+)") {
+                $token = $Matches[1]
             }
         }
-        catch { }
     }
 
-    if (-not $userId) {
-        Log-Warn "Failed to resolve user ID for $Username after creation attempt."
-        return $false
+    $userId = $null
+    if ($json -and $json.user -and $json.user.id) {
+        $userId = $json.user.id
     }
 
-    # 3. Map realm role
-    try {
-        $roleUrl = "$KeycloakUrl/admin/realms/$KeycloakRealm/roles/$Role"
-        $roleRes = Invoke-WebRequest -Uri $roleUrl -Method Get -Headers $adminHeaders -ErrorAction Stop
-        $roleObj = $roleRes.Content | ConvertFrom-Json
-        if ($roleObj.id) {
-            $rolePayload = @(
-                @{
-                    id = $roleObj.id
-                    name = $Role
-                }
-            ) | ConvertTo-Json -Depth 5
-            Invoke-WebRequest -Uri "$KeycloakUrl/admin/realms/$KeycloakRealm/users/$userId/role-mappings/realm" -Method Post -Headers $adminHeaders -ContentType "application/json" -Body $rolePayload -ErrorAction Stop | Out-Null
-        }
+    return @{
+        StatusCode = $statusCode
+        Body = $respBody
+        Json = $json
+        Token = $token
+        UserId = $userId
     }
-    catch { }
-
-    return $true
 }
 
-function Resolve-Token {
+function Login-SuperTokensUser {
+    param (
+        [string]$Email,
+        [string]$Password
+    )
+
+    $url = "$ApiBaseUrl/api/v1/auth/signin"
+    $headers = @{
+        "rid" = "emailpassword"
+        "st-auth-mode" = "header"
+        "Content-Type" = "application/json"
+    }
+    $body = @{
+        formFields = @(
+            @{ id = "email"; value = $Email },
+            @{ id = "password"; value = $Password }
+        )
+    } | ConvertTo-Json -Depth 5
+
+    $statusCode = 0
+    $respBody = ""
+    $respHeaders = @{}
+
+    try {
+        $res = Invoke-WebRequest -Uri $url -Method Post -Headers $headers -Body $body -ErrorAction Stop
+        $statusCode = [int]$res.StatusCode
+        $respBody = $res.Content
+        $respHeaders = $res.Headers
+    }
+    catch [System.Net.WebException] {
+        $webEx = $_.Exception
+        if ($webEx.Response) {
+            $statusCode = [int]$webEx.Response.StatusCode
+            $respHeaders = $webEx.Response.Headers
+            $stream = $webEx.Response.GetResponseStream()
+            if ($stream) {
+                $reader = New-Object System.IO.StreamReader($stream)
+                $respBody = $reader.ReadToEnd()
+                $reader.Close()
+            }
+        } else {
+            $respBody = $webEx.Message
+        }
+    }
+    catch {
+        if ($_.Exception.Response) {
+            $statusCode = [int]$_.Exception.Response.StatusCode
+            $respHeaders = $_.Exception.Response.Headers
+        }
+        $respBody = $_.ToString()
+    }
+
+    $json = $null
+    try {
+        $json = $respBody | ConvertFrom-Json
+    } catch { }
+
+    $token = $null
+    if ($respHeaders) {
+        if ($respHeaders["st-access-token"]) {
+            $token = $respHeaders["st-access-token"]
+            if ($token -is [array]) { $token = $token[0] }
+        }
+        if (-not $token -and $respHeaders["Set-Cookie"]) {
+            $cookieStr = [string]$respHeaders["Set-Cookie"]
+            if ($cookieStr -match "sAccessToken=([^;]+)") {
+                $token = $Matches[1]
+            }
+        }
+    }
+
+    $userId = $null
+    if ($json -and $json.user -and $json.user.id) {
+        $userId = $json.user.id
+    }
+
+    return @{
+        StatusCode = $statusCode
+        Body = $respBody
+        Json = $json
+        Token = $token
+        UserId = $userId
+    }
+}
+
+function Set-SuperTokensEmailVerified {
+    param (
+        [string]$UserId,
+        [string]$Email
+    )
+
+    Log-Substep "Verifying campus email in SuperTokens Core for $Email ($UserId)..."
+
+    $url = "$SuperTokensUrl/recipe/user/email/verify"
+    $headers = @{
+        "api-key" = $SuperTokensApiKey
+        "Content-Type" = "application/json"
+    }
+    $body = @{
+        userId = $UserId
+        email = $Email
+    } | ConvertTo-Json -Depth 5
+
+    try {
+        $res = Invoke-WebRequest -Uri $url -Method Post -Headers $headers -Body $body -ErrorAction Stop
+        $json = $res.Content | ConvertFrom-Json
+        if ($json.status -eq "OK" -or $json.status -eq "EMAIL_ALREADY_VERIFIED_ERROR") {
+            Log-Pass "Campus email verified in SuperTokens: $Email"
+            return $true
+        }
+        Log-Warn "SuperTokens email verify returned unexpected status: $($json.status)"
+        return $false
+    }
+    catch {
+        Log-Warn "Failed to verify email via SuperTokens Core: $_"
+        return $false
+    }
+}
+
+function Resolve-SuperTokensUser {
     param (
         [string]$EnvToken,
-        [string]$Username,
-        [string]$Password,
         [string]$Email,
-        [string]$Role,
+        [string]$Password,
         [bool]$Verified
     )
 
     if ($EnvToken) {
-        return $EnvToken
+        return @{ Token = $EnvToken; UserId = $null }
     }
 
-    $token = Get-DirectGrantToken -Username $Username -Password $Password
-    if ($token) {
-        return $token
+    Log-Substep "Resolving SuperTokens test member: $Email (verified=$Verified)..."
+
+    $reg = Register-SuperTokensUser -Email $Email -Password $Password
+    $token = $reg.Token
+    $userId = $reg.UserId
+
+    if ($reg.Json -and $reg.Json.status -eq "EMAIL_ALREADY_EXISTS_ERROR") {
+        Log-Substep "Member $Email already registered; signing in..."
+        $login = Login-SuperTokensUser -Email $Email -Password $Password
+        if ($login.Json -and $login.Json.status -eq "OK") {
+            $token = $login.Token
+            $userId = $login.UserId
+        } else {
+            Log-Fail "Failed to sign in existing member $($Email): $($login.Body)"
+            Cleanup
+            exit 1
+        }
+    } elseif ($reg.Json -and $reg.Json.status -ne "OK") {
+        Log-Fail "Failed to register member $($Email): $($reg.Body)"
+        Cleanup
+        exit 1
     }
 
-    $provisioned = Provision-KeycloakUser -Username $Username -Password $Password -Email $Email -Role $Role -Verified $Verified
-    if ($provisioned) {
-        $token = Get-DirectGrantToken -Username $Username -Password $Password
-        if ($token) {
-            return $token
+    if (-not $token) {
+        Log-Fail "Could not extract SuperTokens access token for $Email"
+        Cleanup
+        exit 1
+    }
+
+    if ($Verified) {
+        if (-not $userId) {
+            $syncRes = Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/auth/sync" -Token $token -Body '{}' -ExpectedStatusCode 200
+            $syncJson = $syncRes | ConvertFrom-Json
+            $userId = $syncJson.data.id
+        }
+        if ($userId) {
+            Set-SuperTokensEmailVerified -UserId $userId -Email $Email | Out-Null
         }
     }
 
-    Log-Fail "Could not acquire JWT for $Username ($Role)."
-    Log-Fail "Please ensure Keycloak is running at $KeycloakUrl or export token environment variable."
-    Cleanup
-    exit 1
+    return @{ Token = $token; UserId = $userId }
 }
 
 # ------------------------------------------------------------------------------
@@ -332,7 +436,11 @@ function Upload-ResumeFile {
     # Use curl.exe if available (native on Windows 10+ and standard across environments)
     $curlCmd = Get-Command "curl.exe" -ErrorAction SilentlyContinue
     if ($curlCmd) {
-        $result = & $curlCmd.Source -s -S -w "`n%{http_code}" -X POST $url -H "Authorization: Bearer $Token" -F "resume=@$FilePath;type=application/pdf" 2>&1
+        $result = & $curlCmd.Source -s -S -w "`n%{http_code}" -X POST $url `
+            -H "Authorization: Bearer $Token" `
+            -H "Cookie: sAccessToken=$Token" `
+            -H "st-auth-mode: header" `
+            -F "resume=@$FilePath;type=application/pdf" 2>&1
         $lines = $result -split "`n"
         $statusCode = [int]($lines[-1].Trim())
         $body = ($lines[0..($lines.Count - 2)] -join "`n").Trim()
@@ -343,6 +451,8 @@ function Upload-ResumeFile {
     Add-Type -AssemblyName System.Net.Http
     $client = New-Object System.Net.Http.HttpClient
     $client.DefaultRequestHeaders.Authorization = New-Object System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", $Token)
+    $client.DefaultRequestHeaders.Add("Cookie", "sAccessToken=$Token")
+    $client.DefaultRequestHeaders.Add("st-auth-mode", "header")
 
     $content = New-Object System.Net.Http.MultipartFormDataContent
     $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
@@ -365,7 +475,7 @@ function Upload-ResumeFile {
 try {
     Log-Info "Starting Lynk MVP End-to-End Integration Smoke Test Suite (PowerShell)"
     Log-Info "Target API:          $ApiBaseUrl"
-    Log-Info "Keycloak URL:        $KeycloakUrl (realm: $KeycloakRealm)"
+    Log-Info "SuperTokens URL:     $SuperTokensUrl"
     Log-Info "MinIO URL:           $MinioUrl"
 
     # --------------------------------------------------------------------------
@@ -389,17 +499,17 @@ try {
     }
 
     if (-not $SkipInfraHealth) {
-        Log-Substep "Verifying Keycloak realm discovery (/realms/$KeycloakRealm)..."
+        Log-Substep "Verifying SuperTokens Core health (/hello)..."
         try {
-            $kcRes = Invoke-WebRequest -Uri "$KeycloakUrl/realms/$KeycloakRealm" -Method Get -ErrorAction Stop
-            if ([int]$kcRes.StatusCode -ne 200) {
-                Log-Fail "Keycloak realm discovery failed with HTTP $($kcRes.StatusCode)"
+            $stRes = Invoke-WebRequest -Uri "$SuperTokensUrl/hello" -Method Get -ErrorAction Stop
+            if ([int]$stRes.StatusCode -ne 200 -or -not ($stRes.Content -like "*Hello*")) {
+                Log-Fail "SuperTokens Core health check failed with HTTP $($stRes.StatusCode). Body: $($stRes.Content)"
                 exit 1
             }
-            Log-Pass "Keycloak realm '$KeycloakRealm' is accessible: HTTP 200"
+            Log-Pass "SuperTokens Core service is accessible: HTTP 200 (Hello)"
         }
         catch {
-            Log-Fail "Keycloak realm check failed. Is Keycloak running on $KeycloakUrl?"
+            Log-Fail "SuperTokens Core check failed. Is SuperTokens running on $SuperTokensUrl?"
             exit 1
         }
 
@@ -419,49 +529,73 @@ try {
     }
 
     # --------------------------------------------------------------------------
-    # Token Resolution for Test Actors
+    # STEP 2: Institutional .edu Registration Gate Assertion (Hard Invariant)
     # --------------------------------------------------------------------------
-    Log-Info "Resolving authentication tokens for test actors..."
+    Log-Step "2" "Institutional .edu Registration Gate Assertion (Non-.edu Rejected)"
 
-    Log-Substep "Resolving Employer token..."
-    $EmployerToken = Resolve-Token -EnvToken $EmployerToken -Username $EmployerUsername -Password $EmployerPassword -Email $EmployerUsername -Role "employer" -Verified $true
-    Log-Pass "Employer token acquired"
+    Log-Substep "Attempting signup with unauthorized non-.edu address ($UnauthorizedEmail)..."
+    $unauthReg = Register-SuperTokensUser -Email $UnauthorizedEmail -Password "Password123!"
 
-    Log-Substep "Resolving Verified Student token..."
-    $VerifiedStudentToken = Resolve-Token -EnvToken $VerifiedStudentToken -Username $VerifiedStudentUsername -Password $VerifiedStudentPassword -Email $VerifiedStudentUsername -Role "student" -Verified $true
-    Log-Pass "Verified Student token acquired (institutional email verified)"
-
-    Log-Substep "Resolving Unverified Student token..."
-    $UnverifiedStudentToken = Resolve-Token -EnvToken $UnverifiedStudentToken -Username $UnverifiedStudentUsername -Password $UnverifiedStudentPassword -Email $UnverifiedStudentUsername -Role "student" -Verified $false
-    Log-Pass "Unverified Student token acquired (email_verified=false for gate enforcement)"
+    if ($unauthReg.Json -and $unauthReg.Json.status -eq "GENERAL_ERROR") {
+        $errMsg = $unauthReg.Json.message
+        if ($errMsg -like "*Registration rejected: only institutional .edu email addresses are permitted*") {
+            Log-Pass "Non-.edu registration rejected as expected with GENERAL_ERROR: '$errMsg'"
+        } else {
+            Log-Fail "Expected rejection message to mention institutional .edu addresses, got: '$errMsg'"
+            exit 1
+        }
+    } else {
+        Log-Fail "Non-.edu address ($UnauthorizedEmail) was NOT rejected! Response: $($unauthReg.Body)"
+        exit 1
+    }
 
     # --------------------------------------------------------------------------
-    # STEP 2: Auth Sync for Test Users (POST /api/v1/auth/sync)
+    # STEP 3: User Provisioning & Authentication (SuperTokens)
     # --------------------------------------------------------------------------
-    Log-Step "2" "User Auth Synchronization (POST /api/v1/auth/sync)"
+    Log-Step "3" "User Provisioning & Campus Authentication"
 
-    Log-Substep "Syncing Employer user..."
-    $empSyncResp = Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/auth/sync" -Token $EmployerToken -Body '{"role":"employer"}' -ExpectedStatusCode 200
+    Log-Substep "Resolving Employer user ($EmployerEmail)..."
+    $empRes = Resolve-SuperTokensUser -EnvToken $EmployerToken -Email $EmployerEmail -Password $EmployerPassword -Verified $true
+    $EmployerToken = $empRes.Token
+    Log-Pass "Employer token acquired & campus email verified ($EmployerEmail)"
+
+    Log-Substep "Resolving Verified Student user ($VerifiedStudentEmail)..."
+    $stuRes = Resolve-SuperTokensUser -EnvToken $VerifiedStudentToken -Email $VerifiedStudentEmail -Password $VerifiedStudentPassword -Verified $true
+    $VerifiedStudentToken = $stuRes.Token
+    Log-Pass "Verified Student token acquired & campus email verified ($VerifiedStudentEmail)"
+
+    Log-Substep "Resolving Unverified Student user ($UnverifiedStudentEmail)..."
+    $unvRes = Resolve-SuperTokensUser -EnvToken $UnverifiedStudentToken -Email $UnverifiedStudentEmail -Password $UnverifiedStudentPassword -Verified $false
+    $UnverifiedStudentToken = $unvRes.Token
+    Log-Pass "Unverified Student token acquired (unverified for gate enforcement)"
+
+    # --------------------------------------------------------------------------
+    # STEP 4: Auth Sync for Test Users (POST /api/v1/auth/sync)
+    # --------------------------------------------------------------------------
+    Log-Step "4" "User Auth Synchronization (POST /api/v1/auth/sync)"
+
+    Log-Substep "Syncing Employer member..."
+    $empSyncResp = Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/auth/sync" -Token $EmployerToken -Body '{"role":"member"}' -ExpectedStatusCode 200
     $empSyncData = ($empSyncResp | ConvertFrom-Json).data
     $EmployerUserId = $empSyncData.id
-    Log-Pass "Employer synced: UUID $EmployerUserId"
+    Log-Pass "Employer synced: ID $EmployerUserId"
 
-    Log-Substep "Syncing Verified Student user..."
-    $stuSyncResp = Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/auth/sync" -Token $VerifiedStudentToken -Body '{"role":"student"}' -ExpectedStatusCode 200
+    Log-Substep "Syncing Verified Student member..."
+    $stuSyncResp = Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/auth/sync" -Token $VerifiedStudentToken -Body '{"role":"member"}' -ExpectedStatusCode 200
     $stuSyncData = ($stuSyncResp | ConvertFrom-Json).data
     $VerifiedStudentUserId = $stuSyncData.id
-    Log-Pass "Verified student synced: UUID $VerifiedStudentUserId"
+    Log-Pass "Verified student synced: ID $VerifiedStudentUserId"
 
-    Log-Substep "Syncing Unverified Student user..."
-    $unvSyncResp = Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/auth/sync" -Token $UnverifiedStudentToken -Body '{"role":"student"}' -ExpectedStatusCode 200
+    Log-Substep "Syncing Unverified Student member..."
+    $unvSyncResp = Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/auth/sync" -Token $UnverifiedStudentToken -Body '{"role":"member"}' -ExpectedStatusCode 200
     $unvSyncData = ($unvSyncResp | ConvertFrom-Json).data
     $UnverifiedStudentUserId = $unvSyncData.id
-    Log-Pass "Unverified student synced: UUID $UnverifiedStudentUserId"
+    Log-Pass "Unverified student synced: ID $UnverifiedStudentUserId"
 
     # --------------------------------------------------------------------------
-    # STEP 3: Student & Employer Profile Updates
+    # STEP 5: Student & Employer Profile Updates
     # --------------------------------------------------------------------------
-    Log-Step "3" "Profile Configuration (PUT /api/v1/profile/student & employer)"
+    Log-Step "5" "Profile Configuration (PUT /api/v1/profile/student & employer)"
 
     Log-Substep "Updating student profile for verified student..."
     $studentProfilePayload = @{
@@ -499,9 +633,9 @@ try {
     Log-Pass "Employer profile updated successfully (Company: $($empProfData.company_or_org))"
 
     # --------------------------------------------------------------------------
-    # STEP 4: Resume Upload & Presigned URL Fetch
+    # STEP 6: Resume Upload & Presigned URL Fetch
     # --------------------------------------------------------------------------
-    Log-Step "4" "Resume Upload & Presigned S3 Download URL Fetch"
+    Log-Step "6" "Resume Upload & Presigned S3 Download URL Fetch"
 
     $SamplePdf = [System.IO.Path]::Combine($TmpDir, "sample_resume.pdf")
     $pdfContent = @"
@@ -556,10 +690,29 @@ startxref
     }
     Log-Pass "Presigned S3 download URL generated successfully (Valid 15m)"
 
+    # SEC-03 Assertion: Verify presigned download URL does not expose internal Docker hostname (minio:9000)
+    Log-Substep "Asserting presigned URL public endpoint rewriting (SEC-03)..."
+    if ($downloadUrl -match "://minio:9000") {
+        Log-Fail "SEC-03: Presigned URL contains internal Docker hostname 'minio:9000': $downloadUrl"
+        exit 1
+    }
+    Log-Pass "SEC-03: Presigned URL properly uses public authority: $downloadUrl"
+
+    # SEC-07 Assertion: Member resume route GET /api/v1/users/{id}/resume by another member (employer)
+    Log-Substep "Fetching student resume via member route GET /api/v1/users/{id}/resume (SEC-07)..."
+    $memberResumeResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/users/$VerifiedStudentUserId/resume" -Token $EmployerToken -ExpectedStatusCode 200
+    $memberResumeJson = $memberResumeResp | ConvertFrom-Json
+    $memberDownloadUrl = if ($memberResumeJson.data.download_url) { $memberResumeJson.data.download_url } else { $memberResumeJson.data.url }
+    if (-not $memberDownloadUrl -or -not $memberDownloadUrl.StartsWith("http")) {
+        Log-Fail "SEC-07: Member resume route failed to return download URL: $memberResumeResp"
+        exit 1
+    }
+    Log-Pass "SEC-07: Employer successfully retrieved student resume via /users/{id}/resume"
+
     # --------------------------------------------------------------------------
-    # STEP 5: Job Creation by Employer (POST /api/v1/jobs)
+    # STEP 7: Job Creation by Employer (POST /api/v1/jobs)
     # --------------------------------------------------------------------------
-    Log-Step "5" "Job Creation by Employer (POST /api/v1/jobs)"
+    Log-Step "7" "Job Creation by Employer (POST /api/v1/jobs)"
 
     $jobPayload = @{
         title = "Campus Marketplace Go & Next.js Engineer"
@@ -582,9 +735,9 @@ startxref
     Log-Pass "Job created successfully: UUID $JobId (Status: $JobStatus)"
 
     # --------------------------------------------------------------------------
-    # STEP 6: Job Filtering & Detail Retrieval
+    # STEP 8: Job Filtering & Detail Retrieval
     # --------------------------------------------------------------------------
-    Log-Step "6" "Job Search, Filtering & Detail Retrieval"
+    Log-Step "8" "Job Search, Filtering & Detail Retrieval"
 
     Log-Substep "Filtering jobs with query params (search=Marketplace&department=Computer+Science)..."
     $jobFilterResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/jobs?search=Marketplace&department=Computer+Science&skill=Go" -ExpectedStatusCode 200
@@ -604,11 +757,33 @@ startxref
     Log-Pass "Job details retrieved successfully: Budget `$$($jobDetailData.budget)"
 
     # --------------------------------------------------------------------------
-    # STEP 7: Institutional Email Gate Enforcement (Hard Invariant Verification)
+    # STEP 9: Campus Email Verification Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)
     # --------------------------------------------------------------------------
-    Log-Step "7" "Institutional Email Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)"
+    Log-Step "9" "Campus Email Verification Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)"
 
-    Log-Substep "Assertion 7a: Unverified student attempts resume upload (Must return 403 EMAIL_NOT_VERIFIED)..."
+    Log-Substep "Assertion 9a: Unverified student attempts job creation (Must return 403 EMAIL_NOT_VERIFIED)..."
+    $unvJobPayload = @{
+        title = "Unauthorized Opportunity"
+        description = "Should be blocked by campus verification gate."
+        budget = 100.00
+        pay_type = "fixed"
+        required_skills = @("Go")
+        department = "Computer Science"
+    } | ConvertTo-Json -Depth 5
+
+    $gateJobResp = Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/jobs" -Token $UnverifiedStudentToken -Body $unvJobPayload -ExpectedStatusCode 403
+    $gateJobJson = $gateJobResp | ConvertFrom-Json
+    if ($gateJobJson.error.code -ne "EMAIL_NOT_VERIFIED") {
+        Log-Fail "Expected error code EMAIL_NOT_VERIFIED on job creation, got '$($gateJobJson.error.code)'"
+        exit 1
+    }
+    if (-not ($gateJobJson.error.message -like "*Campus verification*")) {
+        Log-Fail "Expected error message to mention 'Campus verification', got '$($gateJobJson.error.message)'"
+        exit 1
+    }
+    Log-Pass "Job creation strictly blocked for unverified member: HTTP 403 (EMAIL_NOT_VERIFIED: $($gateJobJson.error.message))"
+
+    Log-Substep "Assertion 9b: Unverified student attempts resume upload (Must return 403 EMAIL_NOT_VERIFIED)..."
     $gateUploadResult = Upload-ResumeFile -FilePath $SamplePdf -Token $UnverifiedStudentToken
     if ($gateUploadResult.StatusCode -ne 403) {
         Log-Fail "Email Gate failed on resume upload: Expected HTTP 403, got HTTP $($gateUploadResult.StatusCode)"
@@ -620,9 +795,9 @@ startxref
         Log-Fail "Email Gate returned wrong error code on resume upload: expected EMAIL_NOT_VERIFIED, got '$($gateUploadJson.error.code)'"
         exit 1
     }
-    Log-Pass "Resume upload strictly blocked for unverified student: HTTP 403 (EMAIL_NOT_VERIFIED)"
+    Log-Pass "Resume upload strictly blocked for unverified member: HTTP 403 (EMAIL_NOT_VERIFIED)"
 
-    Log-Substep "Assertion 7b: Unverified student attempts job apply (Must return 403 EMAIL_NOT_VERIFIED)..."
+    Log-Substep "Assertion 9c: Unverified student attempts job apply (Must return 403 EMAIL_NOT_VERIFIED)..."
     $unvApplyPayload = @{
         cover_letter = "Attempting application without verified university email."
     } | ConvertTo-Json
@@ -633,12 +808,12 @@ startxref
         Log-Fail "Email Gate returned wrong error code on job apply: expected EMAIL_NOT_VERIFIED, got '$($gateApplyJson.error.code)'"
         exit 1
     }
-    Log-Pass "Job application strictly blocked for unverified student: HTTP 403 (EMAIL_NOT_VERIFIED)"
+    Log-Pass "Job application strictly blocked for unverified member: HTTP 403 (EMAIL_NOT_VERIFIED)"
 
     # --------------------------------------------------------------------------
-    # STEP 8: Verified Student Job Application (POST /api/v1/jobs/{id}/applications)
+    # STEP 10: Verified Student Job Application (POST /api/v1/jobs/{id}/applications)
     # --------------------------------------------------------------------------
-    Log-Step "8" "Verified Student Job Application Submission"
+    Log-Step "10" "Verified Student Job Application Submission"
 
     $applyPayload = @{
         cover_letter = "I have extensive experience building scalable microservices in Go and full-stack Next.js web applications."
@@ -657,9 +832,9 @@ startxref
     Log-Pass "Application submitted successfully: UUID $ApplicationId (Status: $ApplicationStatus)"
 
     # --------------------------------------------------------------------------
-    # STEP 9: Employer Applicant Review & Acceptance (Atomic Contract Generation)
+    # STEP 11: Employer Applicant Review & Acceptance (Atomic Contract Generation)
     # --------------------------------------------------------------------------
-    Log-Step "9" "Employer Applicant Review & Acceptance"
+    Log-Step "11" "Employer Applicant Review & Acceptance"
 
     Log-Substep "Employer lists applications for job $JobId..."
     $appListResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/jobs/$JobId/applications" -Token $EmployerToken -ExpectedStatusCode 200
@@ -687,9 +862,9 @@ startxref
     Log-Pass "Application accepted and atomic Contract created: UUID $ContractId (Status: $ContractStatus)"
 
     # --------------------------------------------------------------------------
-    # STEP 10: Contract Status Progression (Active -> Completed)
+    # STEP 12: Contract Status Progression (Active -> Completed)
     # --------------------------------------------------------------------------
-    Log-Step "10" "Contract State Machine Progression (active -> completed)"
+    Log-Step "12" "Contract State Machine Progression (active -> completed)"
 
     Log-Substep "Inspecting active contract detail (GET /api/v1/contracts/$ContractId)..."
     $contractGetResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/contracts/$ContractId" -Token $EmployerToken -ExpectedStatusCode 200
@@ -701,7 +876,12 @@ startxref
     }
     Log-Pass "Contract verified in active state (Agreed Budget: `$$($contractGetData.agreed_budget))"
 
-    Log-Substep "Transitioning contract status to 'completed'..."
+    # SEC-06 Assertion: Freelancer attempting to mark contract completed must receive 403 Forbidden
+    Log-Substep "Asserting freelancer cannot mark contract completed (SEC-06)..."
+    $freelancerCompleteResp = Invoke-ApiRequest -Method "PATCH" -Endpoint "/api/v1/contracts/$ContractId/status" -Token $VerifiedStudentToken -Body '{"status":"completed"}' -ExpectedStatusCode 403
+    Log-Pass "SEC-06: Freelancer completion attempt rejected with HTTP 403 Forbidden"
+
+    Log-Substep "Transitioning contract status to 'completed' as client..."
     $completeResp = Invoke-ApiRequest -Method "PATCH" -Endpoint "/api/v1/contracts/$ContractId/status" -Token $EmployerToken -Body '{"status":"completed"}' -ExpectedStatusCode 200
     $completeData = ($completeResp | ConvertFrom-Json).data
 
@@ -711,10 +891,20 @@ startxref
     }
     Log-Pass "Contract successfully transitioned to terminal state: completed"
 
+    # SEC-05 Assertion: Parent job automatically transitioned to 'closed'
+    Log-Substep "Asserting parent job status automatically transitioned to 'closed' (SEC-05)..."
+    $jobCheckResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/jobs/$JobId" -Token $EmployerToken -ExpectedStatusCode 200
+    $jobCheckData = ($jobCheckResp | ConvertFrom-Json).data
+    if ($jobCheckData.status -ne "closed") {
+        Log-Fail "SEC-05: Expected job status 'closed', got '$($jobCheckData.status)'"
+        exit 1
+    }
+    Log-Pass "SEC-05: Parent job atomically transitioned to 'closed' upon contract completion"
+
     # --------------------------------------------------------------------------
-    # STEP 11: Peer Review Submission & Duplicate Conflict Assertion
+    # STEP 13: Peer Review Submission & Duplicate Conflict Assertion
     # --------------------------------------------------------------------------
-    Log-Step "11" "Peer Review Submission & Duplicate Review Conflict Check"
+    Log-Step "13" "Peer Review Submission & Duplicate Review Conflict Check"
 
     Log-Substep "Employer submits 5-star review for student on completed contract..."
     $empReviewPayload = @{
@@ -767,12 +957,22 @@ startxref
     }
     Log-Pass "Contract reviews verified: Both counterparties recorded"
 
+    # SEC-01 Assertion: Reviews return profile names via joined profiles table
+    Log-Substep "Asserting reviewer profile joins return names without SQL errors (SEC-01)..."
+    foreach ($rev in $reviewsData) {
+        if (-not $rev.reviewer -or -not $rev.reviewer.first_name) {
+            Log-Fail "SEC-01: Review missing reviewer profile first_name: $($rev | ConvertTo-Json -Depth 3)"
+            exit 1
+        }
+    }
+    Log-Pass "SEC-01: Reviews successfully joined profiles table returning member names"
+
     # --------------------------------------------------------------------------
     # SUMMARY
     # --------------------------------------------------------------------------
     Write-Host ""
     Write-Host ("=" * 70) -ForegroundColor Green
-    Write-Host "  ALL 11 END-TO-END SMOKE TEST PHASES PASSED SUCCESSFULLY!            " -ForegroundColor Green
+    Write-Host "  ALL 13 END-TO-END SMOKE TEST PHASES PASSED SUCCESSFULLY!            " -ForegroundColor Green
     Write-Host ("=" * 70) -ForegroundColor Green
     Write-Host "  Job ID:         $JobId" -ForegroundColor Cyan
     Write-Host "  Application ID: $ApplicationId" -ForegroundColor Cyan

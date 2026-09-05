@@ -1,25 +1,27 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Lynk Platform — End-to-End Integration Smoke Test Suite
+# Lynk Platform — End-to-End Integration Smoke Test Suite (Bash)
 #
 # Exercises the complete MVP lifecycle against running local infrastructure:
-#   1. Infrastructure Health Checks (Go API, Keycloak realm, MinIO S3)
-#   2. Auth Sync for Test Users (Employer, Verified Student, Unverified Student)
-#   3. Student & Employer Profile Updates
-#   4. Resume Upload (Multipart PDF) & Presigned Download URL Fetch
-#   5. Job Creation by Employer
-#   6. Job Filtering, Search & Detail Retrieval
-#   7. Institutional Email Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)
-#   8. Verified Student Job Application
-#   9. Employer Application Review & Acceptance (Atomic Contract Generation)
-#  10. Contract Status Progression (Active -> Completed)
-#  11. Peer Review Submission & Duplicate Conflict Assertion (HTTP 409)
+#   1. Infrastructure Health Checks (Go API, SuperTokens Core, MinIO S3)
+#   2. Institutional .edu Registration Gate Assertion (Non-.edu rejected)
+#   3. SuperTokens User Provisioning & Campus Verification
+#   4. User Auth Synchronization (POST /api/v1/auth/sync)
+#   5. Student & Employer Profile Updates (PUT /api/v1/profile/student & employer)
+#   6. Resume Upload (Multipart PDF) & Presigned S3 Download URL Fetch
+#   7. Job Creation by Verified Employer (POST /api/v1/jobs)
+#   8. Job Filtering, Search & Detail Retrieval
+#   9. Campus Email Verification Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)
+#  10. Verified Student Job Application Submission
+#  11. Employer Application Review & Acceptance (Atomic Contract Generation)
+#  12. Contract Status Progression (Active -> Completed)
+#  13. Peer Review Submission & Duplicate Conflict Assertion (HTTP 409)
 #
 # Invariants:
 #   - Exit code 0 on all assertions passing.
 #   - Non-zero exit code with colored diagnostic logs on any assertion failure.
 #   - Accepts pre-acquired tokens via environment variables OR acquires them
-#     via Keycloak direct grant (with automated user provisioning fallback).
+#     via SuperTokens APIs with automated member provisioning & verification.
 # ==============================================================================
 
 set -eo pipefail
@@ -48,7 +50,7 @@ else
 fi
 
 log_info()    { echo -e "${C_CYAN}[INFO]${C_RESET} $*"; }
-log_step()    { echo -e "\n${C_BOLD}${C_BLUE}======================================================================${C_RESET}"; echo -e "${C_BOLD}${C_MAGENTA}[STEP $1/11]${C_RESET} ${C_BOLD}$2${C_RESET}"; echo -e "${C_BOLD}${C_BLUE}======================================================================${C_RESET}"; }
+log_step()    { echo -e "\n${C_BOLD}${C_BLUE}======================================================================${C_RESET}"; echo -e "${C_BOLD}${C_MAGENTA}[STEP $1/13]${C_RESET} ${C_BOLD}$2${C_RESET}"; echo -e "${C_BOLD}${C_BLUE}======================================================================${C_RESET}"; }
 log_substep() { echo -e "  ${C_CYAN}-->${C_RESET} $*"; }
 log_pass()    { echo -e "  ${C_GREEN}[PASS]${C_RESET} $*"; }
 log_fail()    { echo -e "  ${C_RED}[FAIL]${C_RESET} $*" >&2; }
@@ -58,22 +60,20 @@ log_warn()    { echo -e "  ${C_YELLOW}[WARN]${C_RESET} $*"; }
 # Configuration & Defaults
 # ------------------------------------------------------------------------------
 API_BASE_URL="${API_BASE_URL:-http://localhost:8080}"
-KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8081}"
-KEYCLOAK_REALM="${KEYCLOAK_REALM:-lynk}"
-KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-lynk-frontend}"
+SUPERTOKENS_URL="${SUPERTOKENS_URL:-http://localhost:3567}"
+SUPERTOKENS_API_KEY="${SUPERTOKENS_API_KEY:-lynk_supertokens_secret_api_key_2026}"
 MINIO_URL="${MINIO_URL:-http://localhost:9000}"
 
-KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
-KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin_password}"
-
-EMPLOYER_USERNAME="${EMPLOYER_USERNAME:-employer@lynk.test}"
+EMPLOYER_EMAIL="${EMPLOYER_EMAIL:-${EMPLOYER_USERNAME:-employer@stanford.edu}}"
 EMPLOYER_PASSWORD="${EMPLOYER_PASSWORD:-password123}"
 
-VERIFIED_STUDENT_USERNAME="${VERIFIED_STUDENT_USERNAME:-student.verified@stanford.edu}"
+VERIFIED_STUDENT_EMAIL="${VERIFIED_STUDENT_EMAIL:-${VERIFIED_STUDENT_USERNAME:-student@mit.edu}}"
 VERIFIED_STUDENT_PASSWORD="${VERIFIED_STUDENT_PASSWORD:-password123}"
 
-UNVERIFIED_STUDENT_USERNAME="${UNVERIFIED_STUDENT_USERNAME:-student.unverified@stanford.edu}"
+UNVERIFIED_STUDENT_EMAIL="${UNVERIFIED_STUDENT_EMAIL:-${UNVERIFIED_STUDENT_USERNAME:-unverified@berkeley.edu}}"
 UNVERIFIED_STUDENT_PASSWORD="${UNVERIFIED_STUDENT_PASSWORD:-password123}"
+
+UNAUTHORIZED_EMAIL="${UNAUTHORIZED_EMAIL:-unauthorized@gmail.com}"
 
 TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'lynk_smoke')"
 cleanup() {
@@ -83,23 +83,26 @@ trap cleanup EXIT
 
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     cat <<EOF
-Lynk Platform End-to-End Integration Smoke Test Suite
+Lynk Platform End-to-End Integration Smoke Test Suite (Bash)
 
 Usage:
   ./scripts/smoke-test.sh
 
 Environment Variables:
   API_BASE_URL                 Base URL of Lynk Go API (default: http://localhost:8080)
-  KEYCLOAK_URL                 Base URL of Keycloak (default: http://localhost:8081)
-  KEYCLOAK_REALM               Keycloak realm name (default: lynk)
-  KEYCLOAK_CLIENT_ID           Keycloak client ID (default: lynk-frontend)
+  SUPERTOKENS_URL              Base URL of SuperTokens Core (default: http://localhost:3567)
+  SUPERTOKENS_API_KEY          SuperTokens Core API Key (default: lynk_supertokens_secret_api_key_2026)
   MINIO_URL                    Base URL of MinIO S3 (default: http://localhost:9000)
-  EMPLOYER_TOKEN               Pre-acquired JWT for employer (skips Keycloak login)
-  VERIFIED_STUDENT_TOKEN       Pre-acquired JWT for verified student (skips Keycloak login)
-  UNVERIFIED_STUDENT_TOKEN     Pre-acquired JWT for unverified student (skips Keycloak login)
-  KEYCLOAK_ADMIN               Keycloak admin username (default: admin)
-  KEYCLOAK_ADMIN_PASSWORD      Keycloak admin password (default: admin_password)
-  SKIP_INFRA_HEALTH            Set to 1 to skip Keycloak/MinIO health pings
+  EMPLOYER_TOKEN               Pre-acquired access token for employer
+  VERIFIED_STUDENT_TOKEN       Pre-acquired access token for verified student
+  UNVERIFIED_STUDENT_TOKEN     Pre-acquired access token for unverified student
+  EMPLOYER_EMAIL               Employer email (default: employer@stanford.edu)
+  EMPLOYER_PASSWORD            Employer password (default: password123)
+  VERIFIED_STUDENT_EMAIL       Student email (default: student@mit.edu)
+  VERIFIED_STUDENT_PASSWORD    Student password (default: password123)
+  UNVERIFIED_STUDENT_EMAIL     Unverified email (default: unverified@berkeley.edu)
+  UNVERIFIED_STUDENT_PASSWORD  Unverified password (default: password123)
+  SKIP_INFRA_HEALTH            Set to 1 to skip SuperTokens/MinIO health pings
 EOF
     exit 0
 fi
@@ -121,7 +124,6 @@ json_extract() {
             try {
                 const data = JSON.parse(process.argv[1]);
                 const rawPath = process.argv[2];
-                // Support .data.id, .[0].id, data.id etc.
                 const parts = rawPath.replace(/^\./, "").replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
                 let cur = data;
                 for (const p of parts) {
@@ -176,9 +178,6 @@ except Exception:
 # ------------------------------------------------------------------------------
 # HTTP Request Dispatcher & Assertion Helper
 # ------------------------------------------------------------------------------
-# Usage:
-#   http_request METHOD ENDPOINT TOKEN DATA EXPECTED_HTTP_CODE [CONTENT_TYPE]
-# Returns response body via stdout and sets global LAST_HTTP_CODE.
 http_request() {
     local method="$1"
     local endpoint="$2"
@@ -195,6 +194,8 @@ http_request() {
 
     if [ -n "$token" ]; then
         curl_cmd+=(-H "Authorization: Bearer $token")
+        curl_cmd+=(-H "Cookie: sAccessToken=$token")
+        curl_cmd+=(-H "st-auth-mode: header")
     fi
 
     if [ -n "$content_type" ]; then
@@ -225,138 +226,172 @@ http_request() {
 }
 
 # ------------------------------------------------------------------------------
-# Keycloak Token Acquisition & User Provisioning Helper
+# SuperTokens Authentication Helpers
 # ------------------------------------------------------------------------------
-get_direct_grant_token() {
-    local username="$1"
+register_supertokens_user() {
+    local email="$1"
     local password="$2"
 
-    local token_url="${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token"
-    local token_resp
-    token_resp=$(curl -s -X POST "$token_url" \
-        -H "Content-Type: application/x-www-form-urlencoded" \
-        -d "grant_type=password&client_id=${KEYCLOAK_CLIENT_ID}&username=${username}&password=${password}" 2>/dev/null || true)
+    local resp_file="${TMP_DIR}/reg_resp.tmp"
+    local head_file="${TMP_DIR}/reg_head.tmp"
 
-    local token
-    token=$(json_extract "$token_resp" ".access_token")
-    if [ -n "$token" ] && [ "$token" != "null" ]; then
-        echo "$token"
-        return 0
-    fi
-    return 1
-}
-
-provision_keycloak_user() {
-    local username="$1"
-    local password="$2"
-    local email="$3"
-    local role="$4"
-    local verified="$5" # "true" or "false"
-
-    log_substep "Provisioning Keycloak test user: $username ($role, verified=$verified)..."
-
-    local admin_token_resp
-    admin_token_resp=$(curl -s -X POST "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
-        -H "Content-Type: application/x-www-form-urlencoded" \
-        -d "grant_type=password&client_id=admin-cli&username=${KEYCLOAK_ADMIN}&password=${KEYCLOAK_ADMIN_PASSWORD}" 2>/dev/null || true)
-
-    local admin_token
-    admin_token=$(json_extract "$admin_token_resp" ".access_token")
-    if [ -z "$admin_token" ] || [ "$admin_token" = "null" ]; then
-        log_warn "Unable to acquire Keycloak admin token. Skipping automated provisioning."
-        return 1
-    fi
-
-    # 1. Check if user already exists
-    local existing_user_resp
-    existing_user_resp=$(curl -s -X GET "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/users?username=${username}" \
-        -H "Authorization: Bearer ${admin_token}")
-    local user_id
-    user_id=$(json_extract "$existing_user_resp" ".[0].id")
-
-    # 2. Create user if not existing
-    if [ -z "$user_id" ] || [ "$user_id" = "null" ]; then
-        local user_payload
-        user_payload=$(cat <<EOF
+    local payload
+    payload=$(cat <<EOF
 {
-  "username": "${username}",
-  "email": "${email}",
-  "emailVerified": ${verified},
-  "enabled": true,
-  "credentials": [
-    {
-      "type": "password",
-      "value": "${password}",
-      "temporary": false
-    }
+  "formFields": [
+    {"id": "email", "value": "${email}"},
+    {"id": "password", "value": "${password}"}
   ]
 }
 EOF
 )
-        curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/users" \
-            -H "Authorization: Bearer ${admin_token}" \
-            -H "Content-Type: application/json" \
-            -d "$user_payload" >/dev/null
 
-        existing_user_resp=$(curl -s -X GET "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/users?username=${username}" \
-            -H "Authorization: Bearer ${admin_token}")
-        user_id=$(json_extract "$existing_user_resp" ".[0].id")
+    curl -s -S -D "$head_file" -o "$resp_file" -X POST "${API_BASE_URL}/api/v1/auth/signup" \
+        -H "rid: emailpassword" \
+        -H "st-auth-mode: header" \
+        -H "Content-Type: application/json" \
+        -d "$payload" >/dev/null 2>&1 || true
+
+    local body
+    body="$(cat "$resp_file" 2>/dev/null || true)"
+
+    local token
+    token=$(grep -i '^st-access-token:' "$head_file" 2>/dev/null | tr -d '\r' | awk '{print $2}' | head -n1 || true)
+    if [ -z "$token" ]; then
+        token=$(grep -i 'sAccessToken=' "$head_file" 2>/dev/null | sed -n 's/.*sAccessToken=\([^;]*\).*/\1/p' | head -n1 || true)
     fi
 
-    if [ -z "$user_id" ] || [ "$user_id" = "null" ]; then
-        log_warn "Failed to resolve user ID for $username after creation attempt."
-        return 1
+    local user_id
+    user_id=$(json_extract "$body" ".user.id")
+
+    local status
+    status=$(json_extract "$body" ".status")
+
+    REG_BODY="$body"
+    REG_STATUS="$status"
+    REG_TOKEN="$token"
+    REG_USER_ID="$user_id"
+}
+
+login_supertokens_user() {
+    local email="$1"
+    local password="$2"
+
+    local resp_file="${TMP_DIR}/login_resp.tmp"
+    local head_file="${TMP_DIR}/login_head.tmp"
+
+    local payload
+    payload=$(cat <<EOF
+{
+  "formFields": [
+    {"id": "email", "value": "${email}"},
+    {"id": "password", "value": "${password}"}
+  ]
+}
+EOF
+)
+
+    curl -s -S -D "$head_file" -o "$resp_file" -X POST "${API_BASE_URL}/api/v1/auth/signin" \
+        -H "rid: emailpassword" \
+        -H "st-auth-mode: header" \
+        -H "Content-Type: application/json" \
+        -d "$payload" >/dev/null 2>&1 || true
+
+    local body
+    body="$(cat "$resp_file" 2>/dev/null || true)"
+
+    local token
+    token=$(grep -i '^st-access-token:' "$head_file" 2>/dev/null | tr -d '\r' | awk '{print $2}' | head -n1 || true)
+    if [ -z "$token" ]; then
+        token=$(grep -i 'sAccessToken=' "$head_file" 2>/dev/null | sed -n 's/.*sAccessToken=\([^;]*\).*/\1/p' | head -n1 || true)
     fi
 
-    # 3. Map realm role
-    local role_resp
-    role_resp=$(curl -s -X GET "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/roles/${role}" \
-        -H "Authorization: Bearer ${admin_token}")
-    local role_id
-    role_id=$(json_extract "$role_resp" ".id")
+    local user_id
+    user_id=$(json_extract "$body" ".user.id")
 
-    if [ -n "$role_id" ] && [ "$role_id" != "null" ]; then
-        curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/users/${user_id}/role-mappings/realm" \
-            -H "Authorization: Bearer ${admin_token}" \
-            -H "Content-Type: application/json" \
-            -d "[{\"id\":\"${role_id}\",\"name\":\"${role}\"}]" >/dev/null
+    local status
+    status=$(json_extract "$body" ".status")
+
+    LOGIN_BODY="$body"
+    LOGIN_STATUS="$status"
+    LOGIN_TOKEN="$token"
+    LOGIN_USER_ID="$user_id"
+}
+
+verify_supertokens_email() {
+    local user_id="$1"
+    local email="$2"
+
+    log_substep "Verifying campus email in SuperTokens Core for $email ($user_id)..."
+
+    local resp
+    resp=$(curl -s -S -X POST "${SUPERTOKENS_URL}/recipe/user/email/verify" \
+        -H "api-key: ${SUPERTOKENS_API_KEY}" \
+        -H "Content-Type: application/json" \
+        -d "{\"userId\":\"${user_id}\",\"email\":\"${email}\"}" 2>/dev/null || true)
+
+    local status
+    status=$(json_extract "$resp" ".status")
+
+    if [ "$status" = "OK" ] || [ "$status" = "EMAIL_ALREADY_VERIFIED_ERROR" ]; then
+        log_pass "Campus email verified in SuperTokens: $email"
+        return 0
     fi
 
-    return 0
+    log_warn "SuperTokens email verify returned unexpected status: $status (body: $resp)"
+    return 1
 }
 
 resolve_token() {
     local env_token="$1"
-    local username="$2"
+    local email="$2"
     local password="$3"
-    local email="$4"
-    local role="$5"
-    local verified="$6"
+    local verified="$4"
 
-    # Priority 1: Already passed in environment variable
     if [ -n "$env_token" ]; then
         echo "$env_token"
         return 0
     fi
 
-    # Priority 2: Direct grant request against Keycloak
-    local token
-    if token=$(get_direct_grant_token "$username" "$password"); then
-        echo "$token"
-        return 0
+    log_substep "Resolving SuperTokens test member: $email (verified=$verified)..."
+
+    register_supertokens_user "$email" "$password"
+
+    local token="$REG_TOKEN"
+    local user_id="$REG_USER_ID"
+
+    if [ "$REG_STATUS" = "EMAIL_ALREADY_EXISTS_ERROR" ]; then
+        log_substep "Member $email already registered; signing in..."
+        login_supertokens_user "$email" "$password"
+        if [ "$LOGIN_STATUS" = "OK" ]; then
+            token="$LOGIN_TOKEN"
+            user_id="$LOGIN_USER_ID"
+        else
+            log_fail "Failed to sign in existing member $email: $LOGIN_BODY"
+            exit 1
+        fi
+    elif [ "$REG_STATUS" != "OK" ]; then
+        log_fail "Failed to register member $email: $REG_BODY"
+        exit 1
     fi
 
-    # Priority 3: Auto-provision Keycloak user, then retry direct grant
-    if provision_keycloak_user "$username" "$password" "$email" "$role" "$verified"; then
-        if token=$(get_direct_grant_token "$username" "$password"); then
-            echo "$token"
-            return 0
+    if [ -z "$token" ]; then
+        log_fail "Could not extract SuperTokens access token for $email"
+        exit 1
+    fi
+
+    if [ "$verified" = "true" ]; then
+        if [ -z "$user_id" ]; then
+            local sync_res
+            sync_res=$(http_request "POST" "/api/v1/auth/sync" "$token" '{}' "200")
+            user_id=$(json_extract "$sync_res" ".data.id")
+        fi
+        if [ -n "$user_id" ]; then
+            verify_supertokens_email "$user_id" "$email" >/dev/null || true
         fi
     fi
 
-    log_fail "Could not acquire JWT for $username ($role)."
-    log_fail "Please ensure Keycloak is running at $KEYCLOAK_URL or provide token via environment variable."
-    exit 1
+    echo "$token"
 }
 
 # ==============================================================================
@@ -365,7 +400,7 @@ resolve_token() {
 
 log_info "Starting Lynk MVP End-to-End Integration Smoke Test Suite"
 log_info "Target API:          ${API_BASE_URL}"
-log_info "Keycloak URL:        ${KEYCLOAK_URL} (realm: ${KEYCLOAK_REALM})"
+log_info "SuperTokens URL:     ${SUPERTOKENS_URL}"
 log_info "MinIO URL:           ${MINIO_URL}"
 
 # ------------------------------------------------------------------------------
@@ -390,13 +425,13 @@ fi
 log_pass "Go API is healthy: HTTP 200 (status: ok)"
 
 if [ "${SKIP_INFRA_HEALTH:-0}" != "1" ]; then
-    log_substep "Verifying Keycloak realm discovery (/realms/${KEYCLOAK_REALM})..."
-    KC_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}" 2>/dev/null || echo "000")
-    if [ "$KC_CODE" != "200" ]; then
-        log_fail "Keycloak realm check failed (HTTP $KC_CODE). Is Keycloak running on ${KEYCLOAK_URL}?"
+    log_substep "Verifying SuperTokens Core health (/hello)..."
+    ST_RESP=$(curl -s "${SUPERTOKENS_URL}/hello" 2>/dev/null || echo "")
+    if [[ "$ST_RESP" != *"Hello"* ]]; then
+        log_fail "SuperTokens Core check failed. Is SuperTokens running on ${SUPERTOKENS_URL}?"
         exit 1
     fi
-    log_pass "Keycloak realm '${KEYCLOAK_REALM}' is accessible: HTTP 200"
+    log_pass "SuperTokens Core service is accessible: HTTP 200 (Hello)"
 
     log_substep "Verifying MinIO S3 health check (/minio/health/live)..."
     MINIO_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${MINIO_URL}/minio/health/live" 2>/dev/null || echo "000")
@@ -408,61 +443,82 @@ if [ "${SKIP_INFRA_HEALTH:-0}" != "1" ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# Token Resolution for Test Actors
+# STEP 2: Institutional .edu Registration Gate Assertion (Hard Invariant)
 # ------------------------------------------------------------------------------
-log_info "Resolving authentication tokens for test actors..."
+log_step "2" "Institutional .edu Registration Gate Assertion (Non-.edu Rejected)"
 
-log_substep "Resolving Employer token..."
-EMPLOYER_TOKEN=$(resolve_token "${EMPLOYER_TOKEN:-}" "$EMPLOYER_USERNAME" "$EMPLOYER_PASSWORD" "$EMPLOYER_USERNAME" "employer" "true")
-log_pass "Employer token acquired"
+log_substep "Attempting signup with unauthorized non-.edu address ($UNAUTHORIZED_EMAIL)..."
+register_supertokens_user "$UNAUTHORIZED_EMAIL" "Password123!"
 
-log_substep "Resolving Verified Student token..."
-VERIFIED_STUDENT_TOKEN=$(resolve_token "${VERIFIED_STUDENT_TOKEN:-}" "$VERIFIED_STUDENT_USERNAME" "$VERIFIED_STUDENT_PASSWORD" "$VERIFIED_STUDENT_USERNAME" "student" "true")
-log_pass "Verified Student token acquired (institutional email verified)"
-
-log_substep "Resolving Unverified Student token..."
-UNVERIFIED_STUDENT_TOKEN=$(resolve_token "${UNVERIFIED_STUDENT_TOKEN:-}" "$UNVERIFIED_STUDENT_USERNAME" "$UNVERIFIED_STUDENT_PASSWORD" "$UNVERIFIED_STUDENT_USERNAME" "student" "false")
-log_pass "Unverified Student token acquired (email_verified=false for gate enforcement)"
+if [ "$REG_STATUS" = "GENERAL_ERROR" ]; then
+    REG_MSG=$(json_extract "$REG_BODY" ".message")
+    if [[ "$REG_MSG" == *"Registration rejected: only institutional .edu email addresses are permitted"* ]]; then
+        log_pass "Non-.edu registration rejected as expected with GENERAL_ERROR: '$REG_MSG'"
+    else
+        log_fail "Expected rejection message to mention institutional .edu addresses, got: '$REG_MSG'"
+        exit 1
+    fi
+else
+    log_fail "Non-.edu address ($UNAUTHORIZED_EMAIL) was NOT rejected! Response: $REG_BODY"
+    exit 1
+fi
 
 # ------------------------------------------------------------------------------
-# STEP 2: Auth Sync for Test Users (POST /api/v1/auth/sync)
+# STEP 3: User Provisioning & Authentication (SuperTokens)
 # ------------------------------------------------------------------------------
-log_step "2" "User Auth Synchronization (POST /api/v1/auth/sync)"
+log_step "3" "User Provisioning & Campus Authentication"
 
-log_substep "Syncing Employer user..."
-EMP_SYNC_RESP=$(http_request "POST" "/api/v1/auth/sync" "$EMPLOYER_TOKEN" '{"role":"employer"}' "200")
+log_substep "Resolving Employer user ($EMPLOYER_EMAIL)..."
+EMPLOYER_TOKEN=$(resolve_token "${EMPLOYER_TOKEN:-}" "$EMPLOYER_EMAIL" "$EMPLOYER_PASSWORD" "true")
+log_pass "Employer token acquired & campus email verified ($EMPLOYER_EMAIL)"
+
+log_substep "Resolving Verified Student user ($VERIFIED_STUDENT_EMAIL)..."
+VERIFIED_STUDENT_TOKEN=$(resolve_token "${VERIFIED_STUDENT_TOKEN:-}" "$VERIFIED_STUDENT_EMAIL" "$VERIFIED_STUDENT_PASSWORD" "true")
+log_pass "Verified Student token acquired & campus email verified ($VERIFIED_STUDENT_EMAIL)"
+
+log_substep "Resolving Unverified Student user ($UNVERIFIED_STUDENT_EMAIL)..."
+UNVERIFIED_STUDENT_TOKEN=$(resolve_token "${UNVERIFIED_STUDENT_TOKEN:-}" "$UNVERIFIED_STUDENT_EMAIL" "$UNVERIFIED_STUDENT_PASSWORD" "false")
+log_pass "Unverified Student token acquired (unverified for gate enforcement)"
+
+# ------------------------------------------------------------------------------
+# STEP 4: Auth Sync for Test Users (POST /api/v1/auth/sync)
+# ------------------------------------------------------------------------------
+log_step "4" "User Auth Synchronization (POST /api/v1/auth/sync)"
+
+log_substep "Syncing Employer member..."
+EMP_SYNC_RESP=$(http_request "POST" "/api/v1/auth/sync" "$EMPLOYER_TOKEN" '{"role":"member"}' "200")
 EMP_SUCCESS=$(json_extract "$EMP_SYNC_RESP" ".success")
 EMPLOYER_USER_ID=$(json_extract "$EMP_SYNC_RESP" ".data.id")
 if [ "$EMP_SUCCESS" != "true" ] || [ -z "$EMPLOYER_USER_ID" ]; then
     log_fail "Employer sync failed: $EMP_SYNC_RESP"
     exit 1
 fi
-log_pass "Employer synced: UUID $EMPLOYER_USER_ID"
+log_pass "Employer synced: ID $EMPLOYER_USER_ID"
 
-log_substep "Syncing Verified Student user..."
-STU_SYNC_RESP=$(http_request "POST" "/api/v1/auth/sync" "$VERIFIED_STUDENT_TOKEN" '{"role":"student"}' "200")
+log_substep "Syncing Verified Student member..."
+STU_SYNC_RESP=$(http_request "POST" "/api/v1/auth/sync" "$VERIFIED_STUDENT_TOKEN" '{"role":"member"}' "200")
 STU_SUCCESS=$(json_extract "$STU_SYNC_RESP" ".success")
 VERIFIED_STUDENT_USER_ID=$(json_extract "$STU_SYNC_RESP" ".data.id")
 if [ "$STU_SUCCESS" != "true" ] || [ -z "$VERIFIED_STUDENT_USER_ID" ]; then
     log_fail "Verified student sync failed: $STU_SYNC_RESP"
     exit 1
 fi
-log_pass "Verified student synced: UUID $VERIFIED_STUDENT_USER_ID"
+log_pass "Verified student synced: ID $VERIFIED_STUDENT_USER_ID"
 
-log_substep "Syncing Unverified Student user..."
-UNV_SYNC_RESP=$(http_request "POST" "/api/v1/auth/sync" "$UNVERIFIED_STUDENT_TOKEN" '{"role":"student"}' "200")
+log_substep "Syncing Unverified Student member..."
+UNV_SYNC_RESP=$(http_request "POST" "/api/v1/auth/sync" "$UNVERIFIED_STUDENT_TOKEN" '{"role":"member"}' "200")
 UNV_SUCCESS=$(json_extract "$UNV_SYNC_RESP" ".success")
 UNVERIFIED_STUDENT_USER_ID=$(json_extract "$UNV_SYNC_RESP" ".data.id")
 if [ "$UNV_SUCCESS" != "true" ] || [ -z "$UNVERIFIED_STUDENT_USER_ID" ]; then
     log_fail "Unverified student sync failed: $UNV_SYNC_RESP"
     exit 1
 fi
-log_pass "Unverified student synced: UUID $UNVERIFIED_STUDENT_USER_ID"
+log_pass "Unverified student synced: ID $UNVERIFIED_STUDENT_USER_ID"
 
 # ------------------------------------------------------------------------------
-# STEP 3: Student & Employer Profile Updates
+# STEP 5: Student & Employer Profile Updates
 # ------------------------------------------------------------------------------
-log_step "3" "Profile Configuration (PUT /api/v1/profile/student & employer)"
+log_step "5" "Profile Configuration (PUT /api/v1/profile/student & employer)"
 
 log_substep "Updating student profile for verified student..."
 STUDENT_PROFILE_PAYLOAD=$(cat <<EOF
@@ -504,9 +560,9 @@ fi
 log_pass "Employer profile updated successfully (Company: $COMPANY_NAME)"
 
 # ------------------------------------------------------------------------------
-# STEP 4: Resume Upload & Presigned URL Fetch
+# STEP 6: Resume Upload & Presigned URL Fetch
 # ------------------------------------------------------------------------------
-log_step "4" "Resume Upload & Presigned S3 Download URL Fetch"
+log_step "6" "Resume Upload & Presigned S3 Download URL Fetch"
 
 SAMPLE_PDF="${TMP_DIR}/sample_resume.pdf"
 cat <<'EOF' > "$SAMPLE_PDF"
@@ -538,6 +594,8 @@ log_substep "Uploading PDF resume for verified student..."
 RESUME_UPLOAD_RESP=$(curl -s -S -w "\n%{http_code}" \
     -X POST "${API_BASE_URL}/api/v1/profile/student/resume" \
     -H "Authorization: Bearer ${VERIFIED_STUDENT_TOKEN}" \
+    -H "Cookie: sAccessToken=${VERIFIED_STUDENT_TOKEN}" \
+    -H "st-auth-mode: header" \
     -F "resume=@${SAMPLE_PDF};type=application/pdf" 2>/dev/null || echo -e "\n000")
 
 RESUME_UPLOAD_CODE=$(echo "$RESUME_UPLOAD_RESP" | tail -n1)
@@ -568,10 +626,31 @@ if [[ "$DOWNLOAD_URL" != http* ]]; then
 fi
 log_pass "Presigned S3 download URL generated successfully (Valid 15m)"
 
+# SEC-03 Assertion: Verify presigned download URL does not expose internal Docker hostname (minio:9000)
+log_substep "Asserting presigned URL public endpoint rewriting (SEC-03)..."
+if [[ "$DOWNLOAD_URL" == *"://minio:9000"* ]]; then
+    log_fail "SEC-03: Presigned URL contains internal Docker hostname 'minio:9000': $DOWNLOAD_URL"
+    exit 1
+fi
+log_pass "SEC-03: Presigned URL properly uses public authority: $DOWNLOAD_URL"
+
+# SEC-07 Assertion: Member resume route GET /api/v1/users/{id}/resume by another member (employer)
+log_substep "Fetching student resume via member route GET /api/v1/users/{id}/resume (SEC-07)..."
+MEMBER_RESUME_RESP=$(http_request "GET" "/api/v1/users/${VERIFIED_STUDENT_USER_ID}/resume" "$EMPLOYER_TOKEN" "" "200")
+MEMBER_DOWNLOAD_URL=$(json_extract "$MEMBER_RESUME_RESP" ".data.download_url")
+if [ -z "$MEMBER_DOWNLOAD_URL" ] || [ "$MEMBER_DOWNLOAD_URL" = "null" ]; then
+    MEMBER_DOWNLOAD_URL=$(json_extract "$MEMBER_RESUME_RESP" ".data.url")
+fi
+if [[ "$MEMBER_DOWNLOAD_URL" != http* ]]; then
+    log_fail "SEC-07: Member resume route failed to return download URL: $MEMBER_RESUME_RESP"
+    exit 1
+fi
+log_pass "SEC-07: Employer successfully retrieved student resume via /users/{id}/resume"
+
 # ------------------------------------------------------------------------------
-# STEP 5: Job Creation by Employer (POST /api/v1/jobs)
+# STEP 7: Job Creation by Employer (POST /api/v1/jobs)
 # ------------------------------------------------------------------------------
-log_step "5" "Job Creation by Employer (POST /api/v1/jobs)"
+log_step "7" "Job Creation by Employer (POST /api/v1/jobs)"
 
 JOB_PAYLOAD=$(cat <<EOF
 {
@@ -596,9 +675,9 @@ fi
 log_pass "Job created successfully: UUID $JOB_ID (Status: $JOB_STATUS)"
 
 # ------------------------------------------------------------------------------
-# STEP 6: Job Filtering & Detail Retrieval
+# STEP 8: Job Filtering & Detail Retrieval
 # ------------------------------------------------------------------------------
-log_step "6" "Job Search, Filtering & Detail Retrieval"
+log_step "8" "Job Search, Filtering & Detail Retrieval"
 
 log_substep "Filtering jobs with query params (search=Marketplace&department=Computer+Science)..."
 JOB_FILTER_RESP=$(http_request "GET" "/api/v1/jobs?search=Marketplace&department=Computer+Science&skill=Go" "" "" "200")
@@ -621,14 +700,46 @@ fi
 log_pass "Job details retrieved successfully: Budget \$$DETAIL_BUDGET"
 
 # ------------------------------------------------------------------------------
-# STEP 7: Institutional Email Gate Enforcement (Hard Invariant Verification)
+# STEP 9: Campus Email Verification Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)
 # ------------------------------------------------------------------------------
-log_step "7" "Institutional Email Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)"
+log_step "9" "Campus Email Verification Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)"
 
-log_substep "Assertion 7a: Unverified student attempts resume upload (Must return 403 EMAIL_NOT_VERIFIED)..."
+log_substep "Assertion 9a: Unverified student attempts job creation (Must return 403 EMAIL_NOT_VERIFIED)..."
+GATE_JOB_RESP=$(curl -s -S -w "\n%{http_code}" \
+    -X POST "${API_BASE_URL}/api/v1/jobs" \
+    -H "Authorization: Bearer ${UNVERIFIED_STUDENT_TOKEN}" \
+    -H "Cookie: sAccessToken=${UNVERIFIED_STUDENT_TOKEN}" \
+    -H "st-auth-mode: header" \
+    -H "Content-Type: application/json" \
+    -d '{"title":"Unauthorized Opportunity","description":"Should be blocked","budget":100.0,"pay_type":"fixed","required_skills":["Go"],"department":"Computer Science"}' 2>/dev/null || echo -e "\n000")
+
+GATE_JOB_CODE=$(echo "$GATE_JOB_RESP" | tail -n1)
+GATE_JOB_BODY=$(echo "$GATE_JOB_RESP" | sed '$d')
+
+if [ "$GATE_JOB_CODE" != "403" ]; then
+    log_fail "Email Gate failed on job creation: Expected HTTP 403, got HTTP $GATE_JOB_CODE"
+    log_fail "Body: $GATE_JOB_BODY"
+    exit 1
+fi
+
+GATE_JOB_ERR=$(json_extract "$GATE_JOB_BODY" ".error.code")
+GATE_JOB_MSG=$(json_extract "$GATE_JOB_BODY" ".error.message")
+if [ "$GATE_JOB_ERR" != "EMAIL_NOT_VERIFIED" ]; then
+    log_fail "Expected error code EMAIL_NOT_VERIFIED on job creation, got '$GATE_JOB_ERR'"
+    exit 1
+fi
+if [[ "$GATE_JOB_MSG" != *"Campus verification"* ]]; then
+    log_fail "Expected error message to mention 'Campus verification', got '$GATE_JOB_MSG'"
+    exit 1
+fi
+log_pass "Job creation strictly blocked for unverified member: HTTP 403 (EMAIL_NOT_VERIFIED: $GATE_JOB_MSG)"
+
+log_substep "Assertion 9b: Unverified student attempts resume upload (Must return 403 EMAIL_NOT_VERIFIED)..."
 GATE_UPLOAD_RESP=$(curl -s -S -w "\n%{http_code}" \
     -X POST "${API_BASE_URL}/api/v1/profile/student/resume" \
     -H "Authorization: Bearer ${UNVERIFIED_STUDENT_TOKEN}" \
+    -H "Cookie: sAccessToken=${UNVERIFIED_STUDENT_TOKEN}" \
+    -H "st-auth-mode: header" \
     -F "resume=@${SAMPLE_PDF};type=application/pdf" 2>/dev/null || echo -e "\n000")
 
 GATE_UPLOAD_CODE=$(echo "$GATE_UPLOAD_RESP" | tail -n1)
@@ -645,12 +756,14 @@ if [ "$GATE_UPLOAD_ERR" != "EMAIL_NOT_VERIFIED" ]; then
     log_fail "Email Gate returned wrong error code on resume upload: expected EMAIL_NOT_VERIFIED, got '$GATE_UPLOAD_ERR'"
     exit 1
 fi
-log_pass "Resume upload strictly blocked for unverified student: HTTP 403 (EMAIL_NOT_VERIFIED)"
+log_pass "Resume upload strictly blocked for unverified member: HTTP 403 (EMAIL_NOT_VERIFIED)"
 
-log_substep "Assertion 7b: Unverified student attempts job apply (Must return 403 EMAIL_NOT_VERIFIED)..."
+log_substep "Assertion 9c: Unverified student attempts job apply (Must return 403 EMAIL_NOT_VERIFIED)..."
 GATE_APPLY_RESP=$(curl -s -S -w "\n%{http_code}" \
     -X POST "${API_BASE_URL}/api/v1/jobs/${JOB_ID}/applications" \
     -H "Authorization: Bearer ${UNVERIFIED_STUDENT_TOKEN}" \
+    -H "Cookie: sAccessToken=${UNVERIFIED_STUDENT_TOKEN}" \
+    -H "st-auth-mode: header" \
     -H "Content-Type: application/json" \
     -d '{"cover_letter":"Attempting application without verified university email."}' 2>/dev/null || echo -e "\n000")
 
@@ -668,12 +781,12 @@ if [ "$GATE_APPLY_ERR" != "EMAIL_NOT_VERIFIED" ]; then
     log_fail "Email Gate returned wrong error code on job apply: expected EMAIL_NOT_VERIFIED, got '$GATE_APPLY_ERR'"
     exit 1
 fi
-log_pass "Job application strictly blocked for unverified student: HTTP 403 (EMAIL_NOT_VERIFIED)"
+log_pass "Job application strictly blocked for unverified member: HTTP 403 (EMAIL_NOT_VERIFIED)"
 
 # ------------------------------------------------------------------------------
-# STEP 8: Verified Student Job Application (POST /api/v1/jobs/{id}/applications)
+# STEP 10: Verified Student Job Application (POST /api/v1/jobs/{id}/applications)
 # ------------------------------------------------------------------------------
-log_step "8" "Verified Student Job Application Submission"
+log_step "10" "Verified Student Job Application Submission"
 
 APPLY_PAYLOAD=$(cat <<EOF
 {
@@ -694,9 +807,9 @@ fi
 log_pass "Application submitted successfully: UUID $APPLICATION_ID (Status: $APPLICATION_STATUS)"
 
 # ------------------------------------------------------------------------------
-# STEP 9: Employer Applicant Review & Acceptance (Atomic Contract Generation)
+# STEP 11: Employer Applicant Review & Acceptance (Atomic Contract Generation)
 # ------------------------------------------------------------------------------
-log_step "9" "Employer Applicant Review & Acceptance"
+log_step "11" "Employer Applicant Review & Acceptance"
 
 log_substep "Employer lists applications for job ${JOB_ID}..."
 APP_LIST_RESP=$(http_request "GET" "/api/v1/jobs/${JOB_ID}/applications" "$EMPLOYER_TOKEN" "" "200")
@@ -725,9 +838,9 @@ fi
 log_pass "Application accepted and atomic Contract created: UUID $CONTRACT_ID (Status: $CONTRACT_STATUS)"
 
 # ------------------------------------------------------------------------------
-# STEP 10: Contract Status Progression (Active -> Completed)
+# STEP 12: Contract Status Progression (Active -> Completed)
 # ------------------------------------------------------------------------------
-log_step "10" "Contract State Machine Progression (active -> completed)"
+log_step "12" "Contract State Machine Progression (active -> completed)"
 
 log_substep "Inspecting active contract detail (GET /api/v1/contracts/${CONTRACT_ID})..."
 CONTRACT_GET_RESP=$(http_request "GET" "/api/v1/contracts/${CONTRACT_ID}" "$EMPLOYER_TOKEN" "" "200")
@@ -740,7 +853,23 @@ if [ "$INITIAL_STATUS" != "active" ]; then
 fi
 log_pass "Contract verified in active state (Agreed Budget: \$$AGREED_BUDGET)"
 
-log_substep "Transitioning contract status to 'completed'..."
+# SEC-06 Assertion: Freelancer attempting to mark contract completed must receive 403 Forbidden
+log_substep "Asserting freelancer cannot mark contract completed (SEC-06)..."
+FREELANCER_COMPLETE_RESP=$(curl -s -S -w "\n%{http_code}" \
+    -X PATCH "${API_BASE_URL}/api/v1/contracts/${CONTRACT_ID}/status" \
+    -H "Authorization: Bearer ${VERIFIED_STUDENT_TOKEN}" \
+    -H "Cookie: sAccessToken=${VERIFIED_STUDENT_TOKEN}" \
+    -H "st-auth-mode: header" \
+    -H "Content-Type: application/json" \
+    -d '{"status":"completed"}' 2>/dev/null || echo -e "\n000")
+FREELANCER_COMPLETE_CODE=$(echo "$FREELANCER_COMPLETE_RESP" | tail -n1)
+if [ "$FREELANCER_COMPLETE_CODE" != "403" ]; then
+    log_fail "SEC-06: Freelancer completion attempt not rejected with 403, got: $FREELANCER_COMPLETE_CODE"
+    exit 1
+fi
+log_pass "SEC-06: Freelancer completion attempt rejected with HTTP 403 Forbidden"
+
+log_substep "Transitioning contract status to 'completed' as client..."
 COMPLETE_RESP=$(http_request "PATCH" "/api/v1/contracts/${CONTRACT_ID}/status" "$EMPLOYER_TOKEN" '{"status":"completed"}' "200")
 FINAL_STATUS=$(json_extract "$COMPLETE_RESP" ".data.status")
 
@@ -750,10 +879,20 @@ if [ "$FINAL_STATUS" != "completed" ]; then
 fi
 log_pass "Contract successfully transitioned to terminal state: completed"
 
+# SEC-05 Assertion: Parent job automatically transitioned to 'closed'
+log_substep "Asserting parent job status automatically transitioned to 'closed' (SEC-05)..."
+JOB_CHECK_RESP=$(http_request "GET" "/api/v1/jobs/${JOB_ID}" "$EMPLOYER_TOKEN" "" "200")
+JOB_CHECK_STATUS=$(json_extract "$JOB_CHECK_RESP" ".data.status")
+if [ "$JOB_CHECK_STATUS" != "closed" ]; then
+    log_fail "SEC-05: Expected job status 'closed', got '$JOB_CHECK_STATUS'"
+    exit 1
+fi
+log_pass "SEC-05: Parent job atomically transitioned to 'closed' upon contract completion"
+
 # ------------------------------------------------------------------------------
-# STEP 11: Peer Review Submission & Duplicate Conflict Assertion
+# STEP 13: Peer Review Submission & Duplicate Conflict Assertion
 # ------------------------------------------------------------------------------
-log_step "11" "Peer Review Submission & Duplicate Review Conflict Check"
+log_step "13" "Peer Review Submission & Duplicate Review Conflict Check"
 
 log_substep "Employer submits 5-star review for student on completed contract..."
 EMP_REVIEW_PAYLOAD=$(cat <<EOF
@@ -791,6 +930,8 @@ log_substep "Duplicate Conflict Assertion: Employer attempts duplicate review on
 DUP_RESP=$(curl -s -S -w "\n%{http_code}" \
     -X POST "${API_BASE_URL}/api/v1/contracts/${CONTRACT_ID}/reviews" \
     -H "Authorization: Bearer ${EMPLOYER_TOKEN}" \
+    -H "Cookie: sAccessToken=${EMPLOYER_TOKEN}" \
+    -H "st-auth-mode: header" \
     -H "Content-Type: application/json" \
     -d '{"rating":4,"comment":"Attempting duplicate review submission."}' 2>/dev/null || echo -e "\n000")
 
@@ -822,11 +963,19 @@ if [ -z "$REVIEWS_COUNT" ] || [ "$REVIEWS_COUNT" -lt 2 ]; then
 fi
 log_pass "Contract reviews verified: Both counterparties recorded"
 
+# SEC-01 Assertion: Reviews return profile names via joined profiles table
+log_substep "Asserting reviewer profile joins return names without SQL errors (SEC-01)..."
+if ! echo "$REVIEWS_RESP" | grep -q '"first_name"'; then
+    log_fail "SEC-01: Reviews missing joined reviewer first_name: $REVIEWS_RESP"
+    exit 1
+fi
+log_pass "SEC-01: Reviews successfully joined profiles table returning member names"
+
 # ------------------------------------------------------------------------------
 # SUMMARY
 # ------------------------------------------------------------------------------
 echo -e "\n${C_BOLD}${C_GREEN}======================================================================${C_RESET}"
-echo -e "${C_BOLD}${C_GREEN}  ALL 11 END-TO-END SMOKE TEST PHASES PASSED SUCCESSFULLY!            ${C_RESET}"
+echo -e "${C_BOLD}${C_GREEN}  ALL 13 END-TO-END SMOKE TEST PHASES PASSED SUCCESSFULLY!            ${C_RESET}"
 echo -e "${C_BOLD}${C_GREEN}======================================================================${C_RESET}"
 echo -e "  ${C_CYAN}Job ID:${C_RESET}         $JOB_ID"
 echo -e "  ${C_CYAN}Application ID:${C_RESET} $APPLICATION_ID"
