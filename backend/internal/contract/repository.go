@@ -3,6 +3,7 @@ package contract
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -49,53 +50,54 @@ func (r *Repository) CreateContract(ctx context.Context, contract *Contract) err
 
 	query := `
 		INSERT INTO contracts (
-			id, job_id, application_id, employer_id, student_id, agreed_budget, status, started_at, completed_at, created_at, updated_at
+			id, job_id, application_id, client_id, freelancer_id, agreed_budget, status, started_at, completed_at, created_at, updated_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
 		RETURNING created_at, updated_at;
 	`
 	return r.db.QueryRow(ctx, query,
-		contract.ID, contract.JobID, contract.ApplicationID, contract.EmployerID,
-		contract.StudentID, contract.AgreedBudget, contract.Status,
+		contract.ID, contract.JobID, contract.ApplicationID, contract.ClientID,
+		contract.FreelancerID, contract.AgreedBudget, contract.Status,
 		contract.StartedAt, contract.CompletedAt,
 	).Scan(&contract.CreatedAt, &contract.UpdatedAt)
 }
 
-// GetContractByID retrieves contract details by UUID, joined with job, employer, and student metadata.
+// GetContractByID retrieves contract details by UUID, joined with job, client, and freelancer metadata.
 func (r *Repository) GetContractByID(ctx context.Context, id uuid.UUID) (*ContractWithDetails, error) {
 	query := `
 		SELECT 
-			c.id, c.job_id, c.application_id, c.employer_id, c.student_id,
+			c.id, c.job_id, c.application_id, c.client_id, c.freelancer_id,
 			c.agreed_budget, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at,
-			j.id, j.employer_id, j.title, j.description, j.budget, j.pay_type, j.department, j.status,
-			ue.id, COALESCE(ue.email, ''),
-			COALESCE(ep.company_or_org, ''), COALESCE(ep.contact_name, ''),
-			us.id, COALESCE(us.email, ''),
-			COALESCE(sp.first_name, ''), COALESCE(sp.last_name, ''),
-			COALESCE(sp.department, ''), COALESCE(sp.graduation_year, 0)
+			j.id, j.created_by, j.title, j.description, j.budget, j.pay_type, j.department, j.status,
+			uc.id, COALESCE(uc.email, ''),
+			COALESCE(pc.first_name, ''), COALESCE(pc.last_name, ''),
+			COALESCE(pc.department, ''), COALESCE(pc.graduation_year, 0),
+			uf.id, COALESCE(uf.email, ''),
+			COALESCE(pf.first_name, ''), COALESCE(pf.last_name, ''),
+			COALESCE(pf.department, ''), COALESCE(pf.graduation_year, 0)
 		FROM contracts c
 		JOIN jobs j ON c.job_id = j.id
-		JOIN users ue ON c.employer_id = ue.id
-		LEFT JOIN employer_profiles ep ON ep.user_id = ue.id
-		JOIN users us ON c.student_id = us.id
-		LEFT JOIN student_profiles sp ON sp.user_id = us.id
+		JOIN users uc ON c.client_id = uc.id
+		LEFT JOIN profiles pc ON pc.user_id = uc.id
+		JOIN users uf ON c.freelancer_id = uf.id
+		LEFT JOIN profiles pf ON pf.user_id = uf.id
 		WHERE c.id = $1;
 	`
 
 	var (
-		details  ContractWithDetails
-		job      JobSummary
-		employer EmployerSummary
-		student  StudentSummary
+		details    ContractWithDetails
+		job        JobSummary
+		client     MemberSummary
+		freelancer MemberSummary
 	)
 
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&details.ID, &details.JobID, &details.ApplicationID, &details.EmployerID, &details.StudentID,
+		&details.ID, &details.JobID, &details.ApplicationID, &details.ClientID, &details.FreelancerID,
 		&details.AgreedBudget, &details.Status, &details.StartedAt, &details.CompletedAt,
 		&details.CreatedAt, &details.UpdatedAt,
-		&job.ID, &job.EmployerID, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
-		&employer.ID, &employer.Email, &employer.CompanyOrOrg, &employer.ContactName,
-		&student.ID, &student.Email, &student.FirstName, &student.LastName, &student.Department, &student.GraduationYear,
+		&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
+		&client.ID, &client.Email, &client.FirstName, &client.LastName, &client.Department, &client.GraduationYear,
+		&freelancer.ID, &freelancer.Email, &freelancer.FirstName, &freelancer.LastName, &freelancer.Department, &freelancer.GraduationYear,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -105,31 +107,32 @@ func (r *Repository) GetContractByID(ctx context.Context, id uuid.UUID) (*Contra
 	}
 
 	details.Job = &job
-	details.Employer = &employer
-	details.Student = &student
+	details.Client = &client
+	details.Freelancer = &freelancer
 
 	return &details, nil
 }
 
-// ListContractsByUserID retrieves all contracts where the given user is either the student or the employer.
+// ListContractsByUserID retrieves all contracts where the given user is either client or freelancer.
 func (r *Repository) ListContractsByUserID(ctx context.Context, userID uuid.UUID) ([]*ContractWithDetails, error) {
 	query := `
 		SELECT 
-			c.id, c.job_id, c.application_id, c.employer_id, c.student_id,
+			c.id, c.job_id, c.application_id, c.client_id, c.freelancer_id,
 			c.agreed_budget, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at,
-			j.id, j.employer_id, j.title, j.description, j.budget, j.pay_type, j.department, j.status,
-			ue.id, COALESCE(ue.email, ''),
-			COALESCE(ep.company_or_org, ''), COALESCE(ep.contact_name, ''),
-			us.id, COALESCE(us.email, ''),
-			COALESCE(sp.first_name, ''), COALESCE(sp.last_name, ''),
-			COALESCE(sp.department, ''), COALESCE(sp.graduation_year, 0)
+			j.id, j.created_by, j.title, j.description, j.budget, j.pay_type, j.department, j.status,
+			uc.id, COALESCE(uc.email, ''),
+			COALESCE(pc.first_name, ''), COALESCE(pc.last_name, ''),
+			COALESCE(pc.department, ''), COALESCE(pc.graduation_year, 0),
+			uf.id, COALESCE(uf.email, ''),
+			COALESCE(pf.first_name, ''), COALESCE(pf.last_name, ''),
+			COALESCE(pf.department, ''), COALESCE(pf.graduation_year, 0)
 		FROM contracts c
 		JOIN jobs j ON c.job_id = j.id
-		JOIN users ue ON c.employer_id = ue.id
-		LEFT JOIN employer_profiles ep ON ep.user_id = ue.id
-		JOIN users us ON c.student_id = us.id
-		LEFT JOIN student_profiles sp ON sp.user_id = us.id
-		WHERE c.student_id = $1 OR c.employer_id = $1
+		JOIN users uc ON c.client_id = uc.id
+		LEFT JOIN profiles pc ON pc.user_id = uc.id
+		JOIN users uf ON c.freelancer_id = uf.id
+		LEFT JOIN profiles pf ON pf.user_id = uf.id
+		WHERE c.client_id = $1 OR c.freelancer_id = $1
 		ORDER BY c.created_at DESC;
 	`
 
@@ -142,27 +145,27 @@ func (r *Repository) ListContractsByUserID(ctx context.Context, userID uuid.UUID
 	contracts := make([]*ContractWithDetails, 0)
 	for rows.Next() {
 		var (
-			details  ContractWithDetails
-			job      JobSummary
-			employer EmployerSummary
-			student  StudentSummary
+			details    ContractWithDetails
+			job        JobSummary
+			client     MemberSummary
+			freelancer MemberSummary
 		)
 
 		err := rows.Scan(
-			&details.ID, &details.JobID, &details.ApplicationID, &details.EmployerID, &details.StudentID,
+			&details.ID, &details.JobID, &details.ApplicationID, &details.ClientID, &details.FreelancerID,
 			&details.AgreedBudget, &details.Status, &details.StartedAt, &details.CompletedAt,
 			&details.CreatedAt, &details.UpdatedAt,
-			&job.ID, &job.EmployerID, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
-			&employer.ID, &employer.Email, &employer.CompanyOrOrg, &employer.ContactName,
-			&student.ID, &student.Email, &student.FirstName, &student.LastName, &student.Department, &student.GraduationYear,
+			&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
+			&client.ID, &client.Email, &client.FirstName, &client.LastName, &client.Department, &client.GraduationYear,
+			&freelancer.ID, &freelancer.Email, &freelancer.FirstName, &freelancer.LastName, &freelancer.Department, &freelancer.GraduationYear,
 		)
 		if err != nil {
 			return nil, err
 		}
 
 		details.Job = &job
-		details.Employer = &employer
-		details.Student = &student
+		details.Client = &client
+		details.Freelancer = &freelancer
 		contracts = append(contracts, &details)
 	}
 
@@ -173,26 +176,41 @@ func (r *Repository) ListContractsByUserID(ctx context.Context, userID uuid.UUID
 	return contracts, nil
 }
 
+const queryCloseJobOnContractCompletion = `
+	UPDATE jobs
+	SET status = 'closed', updated_at = NOW()
+	WHERE id = (SELECT job_id FROM contracts WHERE id = $1);
+`
+
+func getCloseJobOnContractCompletionQuery() string {
+	return queryCloseJobOnContractCompletion
+}
+
 // UpdateContractStatus updates a contract's status, managing started_at and completed_at timestamps.
-// Includes a SQL concurrency guard to prevent concurrent requests from mutating terminal contracts.
 func (r *Repository) UpdateContractStatus(ctx context.Context, id uuid.UUID, targetStatus string) (*ContractWithDetails, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	query := `
 		UPDATE contracts
-		SET status = $1,
+		SET status = $1::varchar,
 			started_at = CASE 
-				WHEN $1 = 'active' AND started_at IS NULL THEN NOW() 
+				WHEN $1::varchar = 'active' AND started_at IS NULL THEN NOW() 
 				ELSE started_at 
 			END,
 			completed_at = CASE 
-				WHEN $1 = 'completed' AND completed_at IS NULL THEN NOW() 
+				WHEN $1::varchar = 'completed' AND completed_at IS NULL THEN NOW() 
 				ELSE completed_at 
 			END,
 			updated_at = NOW()
 		WHERE id = $2 AND status NOT IN ('completed', 'cancelled');
 	`
-	cmdTag, err := r.db.Exec(ctx, query, targetStatus, id)
+	cmdTag, err := tx.Exec(ctx, query, targetStatus, id)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("update contract: %w", err)
 	}
 	if cmdTag.RowsAffected() == 0 {
 		existing, checkErr := r.GetContractByID(ctx, id)
@@ -208,6 +226,17 @@ func (r *Repository) UpdateContractStatus(ctx context.Context, id uuid.UUID, tar
 		return nil, ErrContractNotFound
 	}
 
+	// If contract is completed, transition the parent job to 'closed'
+	if targetStatus == StatusCompleted {
+		jobCloseQuery := queryCloseJobOnContractCompletion
+		if _, err := tx.Exec(ctx, jobCloseQuery, id); err != nil {
+			return nil, fmt.Errorf("close job: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
+	}
+
 	return r.GetContractByID(ctx, id)
 }
-

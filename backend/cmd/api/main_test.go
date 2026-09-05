@@ -7,17 +7,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/application"
 	"github.com/lynk/backend/internal/auth"
 	"github.com/lynk/backend/internal/contract"
 	"github.com/lynk/backend/internal/job"
+	"github.com/lynk/backend/internal/middleware"
 	"github.com/lynk/backend/internal/review"
 	"github.com/lynk/backend/internal/user"
 )
 
-// mockValidator implements auth.TokenValidator for routing tests.
+// mockValidator implements middleware.TokenValidator for routing tests.
 type mockValidator struct {
 	validToken string
 	claims     *auth.UserClaims
@@ -112,7 +116,7 @@ func TestRouteAssembly_PublicAndProtected(t *testing.T) {
 		appHandler,
 		contractHandler,
 		reviewHandler,
-		validator,
+		middleware.AuthMiddleware(validator),
 		nil,
 	)
 
@@ -168,15 +172,119 @@ func TestRouteAssembly_PublicAndProtected(t *testing.T) {
 
 func DefaultTestConfig() Config {
 	return Config{
-		Port:               "8080",
-		DatabaseURL:        "postgres://test",
-		MigrationsDir:      "migrations",
-		KeycloakJWKSURL:    "http://localhost:8081/jwks",
-		MinioEndpoint:      "localhost:9000",
-		MinioAccessKey:     "test",
-		MinioSecretKey:     "test",
-		MinioBucket:        "resumes",
-		MinioUseSSL:        false,
-		CORSAllowedOrigins: "http://localhost:3000",
+		Port:                     "8080",
+		DatabaseURL:              "postgres://test",
+		MigrationsDir:            "migrations",
+		SuperTokensConnectionURI: "http://localhost:3567",
+		SuperTokensAPIKey:        "lynk_supertokens_secret_api_key_2026",
+		APIDomain:                "http://localhost:8080",
+		WebsiteDomain:            "http://localhost:3000",
+		MinioEndpoint:            "localhost:9000",
+		MinioPublicEndpoint:      "http://localhost:9000",
+		MinioAccessKey:           "test",
+		MinioSecretKey:           "test",
+		MinioBucket:              "resumes",
+		MinioUseSSL:              false,
+		CORSAllowedOrigins:       "http://localhost:3000",
 	}
 }
+
+func TestLoadConfig_SuperTokens(t *testing.T) {
+	t.Run("default SuperTokens config when env unset", func(t *testing.T) {
+		t.Setenv("SUPERTOKENS_CONNECTION_URI", "")
+		t.Setenv("SUPERTOKENS_API_KEY", "")
+		t.Setenv("API_DOMAIN", "")
+		t.Setenv("WEBSITE_DOMAIN", "")
+		cfg := LoadConfig()
+		if cfg.SuperTokensConnectionURI != "http://localhost:3567" {
+			t.Errorf("expected default SuperTokensConnectionURI http://localhost:3567, got: %s", cfg.SuperTokensConnectionURI)
+		}
+		if cfg.SuperTokensAPIKey != "lynk_supertokens_secret_api_key_2026" {
+			t.Errorf("expected default SuperTokensAPIKey lynk_supertokens_secret_api_key_2026, got: %s", cfg.SuperTokensAPIKey)
+		}
+		if cfg.APIDomain != "http://localhost:8080" {
+			t.Errorf("expected default APIDomain http://localhost:8080, got: %s", cfg.APIDomain)
+		}
+		if cfg.WebsiteDomain != "http://localhost:3000" {
+			t.Errorf("expected default WebsiteDomain http://localhost:3000, got: %s", cfg.WebsiteDomain)
+		}
+	})
+
+	t.Run("custom SuperTokens config when env set", func(t *testing.T) {
+		t.Setenv("SUPERTOKENS_CONNECTION_URI", "https://supertokens.core:3567")
+		t.Setenv("SUPERTOKENS_API_KEY", "custom_secret_key_999")
+		t.Setenv("API_DOMAIN", "https://api.lynk.test")
+		t.Setenv("WEBSITE_DOMAIN", "https://app.lynk.test")
+		cfg := LoadConfig()
+		if cfg.SuperTokensConnectionURI != "https://supertokens.core:3567" {
+			t.Errorf("expected custom SuperTokensConnectionURI, got: %s", cfg.SuperTokensConnectionURI)
+		}
+		if cfg.SuperTokensAPIKey != "custom_secret_key_999" {
+			t.Errorf("expected custom SuperTokensAPIKey, got: %s", cfg.SuperTokensAPIKey)
+		}
+		if cfg.APIDomain != "https://api.lynk.test" {
+			t.Errorf("expected custom APIDomain, got: %s", cfg.APIDomain)
+		}
+		if cfg.WebsiteDomain != "https://app.lynk.test" {
+			t.Errorf("expected custom WebsiteDomain, got: %s", cfg.WebsiteDomain)
+		}
+	})
+}
+
+func TestLoadConfig_MinioPublicEndpoint(t *testing.T) {
+	t.Run("default MinioPublicEndpoint when env unset", func(t *testing.T) {
+		t.Setenv("MINIO_PUBLIC_ENDPOINT", "")
+		cfg := LoadConfig()
+		if cfg.MinioPublicEndpoint != "http://localhost:9000" {
+			t.Errorf("expected default MinioPublicEndpoint http://localhost:9000, got: %s", cfg.MinioPublicEndpoint)
+		}
+	})
+
+	t.Run("custom MinioPublicEndpoint when env set", func(t *testing.T) {
+		custom := "https://minio.university.edu:9000"
+		t.Setenv("MINIO_PUBLIC_ENDPOINT", custom)
+		cfg := LoadConfig()
+		if cfg.MinioPublicEndpoint != custom {
+			t.Errorf("expected custom MinioPublicEndpoint %s, got: %s", custom, cfg.MinioPublicEndpoint)
+		}
+	})
+}
+
+func TestTimeoutMiddleware(t *testing.T) {
+	cfg := DefaultTestConfig()
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil)
+
+	t.Run("fast handler returns 200 within timeout window", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for fast handler, got %d", rr.Code)
+		}
+	})
+
+	t.Run("slow handler exceeding timeout receives 504 Gateway Timeout", func(t *testing.T) {
+		// Register a standalone Chi router with a very short timeout to verify
+		// that chi's Timeout middleware cancels the context and writes 504 Gateway Timeout.
+		mux := chi.NewRouter()
+		mux.Use(chimiddleware.Timeout(50 * time.Millisecond))
+		mux.Get("/slow", func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case <-r.Context().Done():
+				// Context cancelled by timeout — chi Timeout middleware will
+				// have already written 504 Gateway Timeout; just return.
+				return
+			case <-time.After(5 * time.Second):
+				w.WriteHeader(http.StatusOK)
+			}
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/slow", nil)
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+		if rr.Code != http.StatusGatewayTimeout {
+			t.Fatalf("expected 504 Gateway Timeout when timeout exceeded, got %d", rr.Code)
+		}
+	})
+}
+

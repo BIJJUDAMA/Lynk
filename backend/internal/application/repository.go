@@ -15,9 +15,9 @@ import (
 type ApplicationRepository interface {
 	CreateApplication(ctx context.Context, app *Application) error
 	GetApplicationByID(ctx context.Context, id uuid.UUID) (*ApplicationWithDetails, error)
-	GetApplicationByJobAndStudent(ctx context.Context, jobID, studentID uuid.UUID) (*Application, error)
+	GetApplicationByJobAndApplicant(ctx context.Context, jobID, applicantID uuid.UUID) (*Application, error)
 	ListApplicationsByJob(ctx context.Context, jobID uuid.UUID) ([]*ApplicationWithDetails, error)
-	ListApplicationsByStudent(ctx context.Context, studentID uuid.UUID) ([]*ApplicationWithDetails, error)
+	ListApplicationsByApplicant(ctx context.Context, applicantID uuid.UUID) ([]*ApplicationWithDetails, error)
 	AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (*ApplicationWithDetails, *Contract, error)
 	RejectApplication(ctx context.Context, appID uuid.UUID) (*Application, error)
 }
@@ -43,12 +43,12 @@ func (r *Repository) CreateApplication(ctx context.Context, app *Application) er
 		app.Status = StatusPending
 	}
 	query := `
-		INSERT INTO applications (id, job_id, student_id, cover_letter, resume_key, status, created_at, updated_at)
+		INSERT INTO applications (id, job_id, applicant_id, cover_letter, resume_key, status, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
 		RETURNING created_at, updated_at;
 	`
 	err := r.db.QueryRow(ctx, query,
-		app.ID, app.JobID, app.StudentID, app.CoverLetter, app.ResumeKey, app.Status,
+		app.ID, app.JobID, app.ApplicantID, app.CoverLetter, app.ResumeKey, app.Status,
 	).Scan(&app.CreatedAt, &app.UpdatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -60,16 +60,16 @@ func (r *Repository) CreateApplication(ctx context.Context, app *Application) er
 	return nil
 }
 
-// GetApplicationByJobAndStudent finds an existing application by unique (job_id, student_id) pair.
-func (r *Repository) GetApplicationByJobAndStudent(ctx context.Context, jobID, studentID uuid.UUID) (*Application, error) {
+// GetApplicationByJobAndApplicant finds an existing application by unique (job_id, applicant_id) pair.
+func (r *Repository) GetApplicationByJobAndApplicant(ctx context.Context, jobID, applicantID uuid.UUID) (*Application, error) {
 	query := `
-		SELECT id, job_id, student_id, cover_letter, resume_key, status, created_at, updated_at
+		SELECT id, job_id, applicant_id, cover_letter, resume_key, status, created_at, updated_at
 		FROM applications
-		WHERE job_id = $1 AND student_id = $2;
+		WHERE job_id = $1 AND applicant_id = $2;
 	`
 	var app Application
-	err := r.db.QueryRow(ctx, query, jobID, studentID).Scan(
-		&app.ID, &app.JobID, &app.StudentID, &app.CoverLetter, &app.ResumeKey, &app.Status,
+	err := r.db.QueryRow(ctx, query, jobID, applicantID).Scan(
+		&app.ID, &app.JobID, &app.ApplicantID, &app.CoverLetter, &app.ResumeKey, &app.Status,
 		&app.CreatedAt, &app.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -81,46 +81,46 @@ func (r *Repository) GetApplicationByJobAndStudent(ctx context.Context, jobID, s
 	return &app, nil
 }
 
-// GetApplicationByID retrieves an application with full joined job, student, and contract details.
+// GetApplicationByID retrieves an application with full joined job, applicant, and contract details.
 func (r *Repository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*ApplicationWithDetails, error) {
 	query := `
 		SELECT 
-			a.id, a.job_id, a.student_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
-			j.id, j.employer_id, j.title, j.description, j.budget, j.pay_type, j.department, j.status,
+			a.id, a.job_id, a.applicant_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
+			j.id, j.created_by, j.title, j.description, j.budget, j.pay_type, j.department, j.status,
 			u.id, COALESCE(u.email, ''),
-			COALESCE(sp.first_name, ''), COALESCE(sp.last_name, ''), COALESCE(sp.bio, ''),
-			COALESCE(sp.department, ''), COALESCE(sp.graduation_year, 0), COALESCE(sp.skills, '{}'),
-			sp.resume_key, sp.resume_filename,
+			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.bio, ''),
+			COALESCE(p.department, ''), COALESCE(p.graduation_year, 0), COALESCE(p.skills, '{}'),
+			p.resume_key, p.resume_filename,
 			c.id, c.agreed_budget, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at
 		FROM applications a
 		JOIN jobs j ON a.job_id = j.id
-		JOIN users u ON a.student_id = u.id
-		LEFT JOIN student_profiles sp ON sp.user_id = u.id
+		JOIN users u ON a.applicant_id = u.id
+		LEFT JOIN profiles p ON p.user_id = u.id
 		LEFT JOIN contracts c ON c.application_id = a.id
 		WHERE a.id = $1;
 	`
 	var (
-		details             ApplicationWithDetails
-		job                 JobSummary
-		student             StudentSummary
-		contractID          *uuid.UUID
+		details              ApplicationWithDetails
+		job                  JobSummary
+		applicant            ApplicantSummary
+		contractID           *uuid.UUID
 		contractAgreedBudget *float64
-		contractStatus      *string
-		contractStartedAt   *time.Time
-		contractCompletedAt *time.Time
-		contractCreatedAt   *time.Time
-		contractUpdatedAt   *time.Time
+		contractStatus       *string
+		contractStartedAt    *time.Time
+		contractCompletedAt  *time.Time
+		contractCreatedAt    *time.Time
+		contractUpdatedAt    *time.Time
 	)
 
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&details.Application.ID, &details.Application.JobID, &details.Application.StudentID,
+		&details.Application.ID, &details.Application.JobID, &details.Application.ApplicantID,
 		&details.Application.CoverLetter, &details.Application.ResumeKey, &details.Application.Status,
 		&details.Application.CreatedAt, &details.Application.UpdatedAt,
-		&job.ID, &job.EmployerID, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
-		&student.ID, &student.Email,
-		&student.FirstName, &student.LastName, &student.Bio,
-		&student.Department, &student.GraduationYear, &student.Skills,
-		&student.ResumeKey, &student.ResumeFilename,
+		&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
+		&applicant.ID, &applicant.Email,
+		&applicant.FirstName, &applicant.LastName, &applicant.Bio,
+		&applicant.Department, &applicant.GraduationYear, &applicant.Skills,
+		&applicant.ResumeKey, &applicant.ResumeFilename,
 		&contractID, &contractAgreedBudget, &contractStatus,
 		&contractStartedAt, &contractCompletedAt, &contractCreatedAt, &contractUpdatedAt,
 	)
@@ -132,18 +132,18 @@ func (r *Repository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*App
 	}
 
 	details.Job = &job
-	if student.Skills == nil {
-		student.Skills = []string{}
+	if applicant.Skills == nil {
+		applicant.Skills = []string{}
 	}
-	details.Student = &student
+	details.Applicant = &applicant
 
 	if contractID != nil && contractAgreedBudget != nil && contractStatus != nil {
 		details.Contract = &Contract{
 			ID:            *contractID,
 			JobID:         details.Application.JobID,
 			ApplicationID: details.Application.ID,
-			EmployerID:    job.EmployerID,
-			StudentID:     details.Application.StudentID,
+			ClientID:      job.CreatedBy,
+			FreelancerID:  details.Application.ApplicantID,
 			AgreedBudget:  *contractAgreedBudget,
 			Status:        *contractStatus,
 			StartedAt:     contractStartedAt,
@@ -160,17 +160,17 @@ func (r *Repository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*App
 func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID) ([]*ApplicationWithDetails, error) {
 	query := `
 		SELECT 
-			a.id, a.job_id, a.student_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
-			j.id, j.employer_id, j.title, j.description, j.budget, j.pay_type, j.department, j.status,
+			a.id, a.job_id, a.applicant_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
+			j.id, j.created_by, j.title, j.description, j.budget, j.pay_type, j.department, j.status,
 			u.id, COALESCE(u.email, ''),
-			COALESCE(sp.first_name, ''), COALESCE(sp.last_name, ''), COALESCE(sp.bio, ''),
-			COALESCE(sp.department, ''), COALESCE(sp.graduation_year, 0), COALESCE(sp.skills, '{}'),
-			sp.resume_key, sp.resume_filename,
+			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.bio, ''),
+			COALESCE(p.department, ''), COALESCE(p.graduation_year, 0), COALESCE(p.skills, '{}'),
+			p.resume_key, p.resume_filename,
 			c.id, c.agreed_budget, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at
 		FROM applications a
 		JOIN jobs j ON a.job_id = j.id
-		JOIN users u ON a.student_id = u.id
-		LEFT JOIN student_profiles sp ON sp.user_id = u.id
+		JOIN users u ON a.applicant_id = u.id
+		LEFT JOIN profiles p ON p.user_id = u.id
 		LEFT JOIN contracts c ON c.application_id = a.id
 		WHERE a.job_id = $1
 		ORDER BY a.created_at DESC;
@@ -184,27 +184,27 @@ func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID)
 	applications := make([]*ApplicationWithDetails, 0)
 	for rows.Next() {
 		var (
-			details             ApplicationWithDetails
-			job                 JobSummary
-			student             StudentSummary
-			contractID          *uuid.UUID
+			details              ApplicationWithDetails
+			job                  JobSummary
+			applicant            ApplicantSummary
+			contractID           *uuid.UUID
 			contractAgreedBudget *float64
-			contractStatus      *string
-			contractStartedAt   *time.Time
-			contractCompletedAt *time.Time
-			contractCreatedAt   *time.Time
-			contractUpdatedAt   *time.Time
+			contractStatus       *string
+			contractStartedAt    *time.Time
+			contractCompletedAt  *time.Time
+			contractCreatedAt    *time.Time
+			contractUpdatedAt    *time.Time
 		)
 
 		err := rows.Scan(
-			&details.Application.ID, &details.Application.JobID, &details.Application.StudentID,
+			&details.Application.ID, &details.Application.JobID, &details.Application.ApplicantID,
 			&details.Application.CoverLetter, &details.Application.ResumeKey, &details.Application.Status,
 			&details.Application.CreatedAt, &details.Application.UpdatedAt,
-			&job.ID, &job.EmployerID, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
-			&student.ID, &student.Email,
-			&student.FirstName, &student.LastName, &student.Bio,
-			&student.Department, &student.GraduationYear, &student.Skills,
-			&student.ResumeKey, &student.ResumeFilename,
+			&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
+			&applicant.ID, &applicant.Email,
+			&applicant.FirstName, &applicant.LastName, &applicant.Bio,
+			&applicant.Department, &applicant.GraduationYear, &applicant.Skills,
+			&applicant.ResumeKey, &applicant.ResumeFilename,
 			&contractID, &contractAgreedBudget, &contractStatus,
 			&contractStartedAt, &contractCompletedAt, &contractCreatedAt, &contractUpdatedAt,
 		)
@@ -213,18 +213,18 @@ func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID)
 		}
 
 		details.Job = &job
-		if student.Skills == nil {
-			student.Skills = []string{}
+		if applicant.Skills == nil {
+			applicant.Skills = []string{}
 		}
-		details.Student = &student
+		details.Applicant = &applicant
 
 		if contractID != nil && contractAgreedBudget != nil && contractStatus != nil {
 			details.Contract = &Contract{
 				ID:            *contractID,
 				JobID:         details.Application.JobID,
 				ApplicationID: details.Application.ID,
-				EmployerID:    job.EmployerID,
-				StudentID:     details.Application.StudentID,
+				ClientID:      job.CreatedBy,
+				FreelancerID:  details.Application.ApplicantID,
 				AgreedBudget:  *contractAgreedBudget,
 				Status:        *contractStatus,
 				StartedAt:     contractStartedAt,
@@ -244,26 +244,26 @@ func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID)
 	return applications, nil
 }
 
-// ListApplicationsByStudent lists all applications submitted by a student, ordered newest first.
-func (r *Repository) ListApplicationsByStudent(ctx context.Context, studentID uuid.UUID) ([]*ApplicationWithDetails, error) {
+// ListApplicationsByApplicant lists all applications submitted by a campus member, ordered newest first.
+func (r *Repository) ListApplicationsByApplicant(ctx context.Context, applicantID uuid.UUID) ([]*ApplicationWithDetails, error) {
 	query := `
 		SELECT 
-			a.id, a.job_id, a.student_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
-			j.id, j.employer_id, j.title, j.description, j.budget, j.pay_type, j.department, j.status,
+			a.id, a.job_id, a.applicant_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
+			j.id, j.created_by, j.title, j.description, j.budget, j.pay_type, j.department, j.status,
 			u.id, COALESCE(u.email, ''),
-			COALESCE(sp.first_name, ''), COALESCE(sp.last_name, ''), COALESCE(sp.bio, ''),
-			COALESCE(sp.department, ''), COALESCE(sp.graduation_year, 0), COALESCE(sp.skills, '{}'),
-			sp.resume_key, sp.resume_filename,
+			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.bio, ''),
+			COALESCE(p.department, ''), COALESCE(p.graduation_year, 0), COALESCE(p.skills, '{}'),
+			p.resume_key, p.resume_filename,
 			c.id, c.agreed_budget, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at
 		FROM applications a
 		JOIN jobs j ON a.job_id = j.id
-		JOIN users u ON a.student_id = u.id
-		LEFT JOIN student_profiles sp ON sp.user_id = u.id
+		JOIN users u ON a.applicant_id = u.id
+		LEFT JOIN profiles p ON p.user_id = u.id
 		LEFT JOIN contracts c ON c.application_id = a.id
-		WHERE a.student_id = $1
+		WHERE a.applicant_id = $1
 		ORDER BY a.created_at DESC;
 	`
-	rows, err := r.db.Query(ctx, query, studentID)
+	rows, err := r.db.Query(ctx, query, applicantID)
 	if err != nil {
 		return nil, err
 	}
@@ -272,27 +272,27 @@ func (r *Repository) ListApplicationsByStudent(ctx context.Context, studentID uu
 	applications := make([]*ApplicationWithDetails, 0)
 	for rows.Next() {
 		var (
-			details             ApplicationWithDetails
-			job                 JobSummary
-			student             StudentSummary
-			contractID          *uuid.UUID
+			details              ApplicationWithDetails
+			job                  JobSummary
+			applicant            ApplicantSummary
+			contractID           *uuid.UUID
 			contractAgreedBudget *float64
-			contractStatus      *string
-			contractStartedAt   *time.Time
-			contractCompletedAt *time.Time
-			contractCreatedAt   *time.Time
-			contractUpdatedAt   *time.Time
+			contractStatus       *string
+			contractStartedAt    *time.Time
+			contractCompletedAt  *time.Time
+			contractCreatedAt    *time.Time
+			contractUpdatedAt    *time.Time
 		)
 
 		err := rows.Scan(
-			&details.Application.ID, &details.Application.JobID, &details.Application.StudentID,
+			&details.Application.ID, &details.Application.JobID, &details.Application.ApplicantID,
 			&details.Application.CoverLetter, &details.Application.ResumeKey, &details.Application.Status,
 			&details.Application.CreatedAt, &details.Application.UpdatedAt,
-			&job.ID, &job.EmployerID, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
-			&student.ID, &student.Email,
-			&student.FirstName, &student.LastName, &student.Bio,
-			&student.Department, &student.GraduationYear, &student.Skills,
-			&student.ResumeKey, &student.ResumeFilename,
+			&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
+			&applicant.ID, &applicant.Email,
+			&applicant.FirstName, &applicant.LastName, &applicant.Bio,
+			&applicant.Department, &applicant.GraduationYear, &applicant.Skills,
+			&applicant.ResumeKey, &applicant.ResumeFilename,
 			&contractID, &contractAgreedBudget, &contractStatus,
 			&contractStartedAt, &contractCompletedAt, &contractCreatedAt, &contractUpdatedAt,
 		)
@@ -301,18 +301,18 @@ func (r *Repository) ListApplicationsByStudent(ctx context.Context, studentID uu
 		}
 
 		details.Job = &job
-		if student.Skills == nil {
-			student.Skills = []string{}
+		if applicant.Skills == nil {
+			applicant.Skills = []string{}
 		}
-		details.Student = &student
+		details.Applicant = &applicant
 
 		if contractID != nil && contractAgreedBudget != nil && contractStatus != nil {
 			details.Contract = &Contract{
 				ID:            *contractID,
 				JobID:         details.Application.JobID,
 				ApplicationID: details.Application.ID,
-				EmployerID:    job.EmployerID,
-				StudentID:     details.Application.StudentID,
+				ClientID:      job.CreatedBy,
+				FreelancerID:  details.Application.ApplicantID,
 				AgreedBudget:  *contractAgreedBudget,
 				Status:        *contractStatus,
 				StartedAt:     contractStartedAt,
@@ -347,8 +347,8 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 	// 1. Lock application and job rows
 	selectQuery := `
 		SELECT 
-			a.id, a.job_id, a.student_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
-			j.id, j.employer_id, j.title, j.description, j.budget, j.pay_type, j.department, j.status
+			a.id, a.job_id, a.applicant_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
+			j.id, j.created_by, j.title, j.description, j.budget, j.pay_type, j.department, j.status
 		FROM applications a
 		JOIN jobs j ON a.job_id = j.id
 		WHERE a.id = $1
@@ -359,8 +359,8 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 		job JobSummary
 	)
 	err = tx.QueryRow(ctx, selectQuery, appID).Scan(
-		&app.ID, &app.JobID, &app.StudentID, &app.CoverLetter, &app.ResumeKey, &app.Status, &app.CreatedAt, &app.UpdatedAt,
-		&job.ID, &job.EmployerID, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
+		&app.ID, &app.JobID, &app.ApplicantID, &app.CoverLetter, &app.ResumeKey, &app.Status, &app.CreatedAt, &app.UpdatedAt,
+		&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil, ErrApplicationNotFound
@@ -416,17 +416,17 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 	contractID := uuid.New()
 	insertContractQuery := `
 		INSERT INTO contracts (
-			id, job_id, application_id, employer_id, student_id, agreed_budget, status, started_at, created_at, updated_at
+			id, job_id, application_id, client_id, freelancer_id, agreed_budget, status, started_at, created_at, updated_at
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW(), NOW(), NOW())
-		RETURNING id, job_id, application_id, employer_id, student_id, agreed_budget, status, started_at, completed_at, created_at, updated_at;
+		RETURNING id, job_id, application_id, client_id, freelancer_id, agreed_budget, status, started_at, completed_at, created_at, updated_at;
 	`
 	var contract Contract
 	err = tx.QueryRow(ctx, insertContractQuery,
-		contractID, app.JobID, app.ID, job.EmployerID, app.StudentID, job.Budget,
+		contractID, app.JobID, app.ID, job.CreatedBy, app.ApplicantID, job.Budget,
 	).Scan(
-		&contract.ID, &contract.JobID, &contract.ApplicationID, &contract.EmployerID,
-		&contract.StudentID, &contract.AgreedBudget, &contract.Status,
+		&contract.ID, &contract.JobID, &contract.ApplicationID, &contract.ClientID,
+		&contract.FreelancerID, &contract.AgreedBudget, &contract.Status,
 		&contract.StartedAt, &contract.CompletedAt, &contract.CreatedAt, &contract.UpdatedAt,
 	)
 	if err != nil {
@@ -443,18 +443,18 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 		Contract:    &contract,
 	}
 
-	// Fetch student profile info
-	studentQuery := `
+	// Fetch applicant profile info
+	applicantQuery := `
 		SELECT u.id, COALESCE(u.email, ''),
-		       COALESCE(sp.first_name, ''), COALESCE(sp.last_name, ''), COALESCE(sp.bio, ''),
-		       COALESCE(sp.department, ''), COALESCE(sp.graduation_year, 0), COALESCE(sp.skills, '{}'),
-		       sp.resume_key, sp.resume_filename
+		       COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.bio, ''),
+		       COALESCE(p.department, ''), COALESCE(p.graduation_year, 0), COALESCE(p.skills, '{}'),
+		       p.resume_key, p.resume_filename
 		FROM users u
-		LEFT JOIN student_profiles sp ON sp.user_id = u.id
+		LEFT JOIN profiles p ON p.user_id = u.id
 		WHERE u.id = $1;
 	`
-	var s StudentSummary
-	if err := r.db.QueryRow(ctx, studentQuery, app.StudentID).Scan(
+	var s ApplicantSummary
+	if err := r.db.QueryRow(ctx, applicantQuery, app.ApplicantID).Scan(
 		&s.ID, &s.Email, &s.FirstName, &s.LastName, &s.Bio,
 		&s.Department, &s.GraduationYear, &s.Skills,
 		&s.ResumeKey, &s.ResumeFilename,
@@ -462,7 +462,7 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 		if s.Skills == nil {
 			s.Skills = []string{}
 		}
-		details.Student = &s
+		details.Applicant = &s
 	}
 
 	return details, &contract, nil
@@ -474,11 +474,11 @@ func (r *Repository) RejectApplication(ctx context.Context, appID uuid.UUID) (*A
 		UPDATE applications
 		SET status = $1, updated_at = NOW()
 		WHERE id = $2 AND status = $3
-		RETURNING id, job_id, student_id, cover_letter, resume_key, status, created_at, updated_at;
+		RETURNING id, job_id, applicant_id, cover_letter, resume_key, status, created_at, updated_at;
 	`
 	var app Application
 	err := r.db.QueryRow(ctx, query, StatusRejected, appID, StatusPending).Scan(
-		&app.ID, &app.JobID, &app.StudentID, &app.CoverLetter, &app.ResumeKey, &app.Status,
+		&app.ID, &app.JobID, &app.ApplicantID, &app.CoverLetter, &app.ResumeKey, &app.Status,
 		&app.CreatedAt, &app.UpdatedAt,
 	)
 	if err == pgx.ErrNoRows {

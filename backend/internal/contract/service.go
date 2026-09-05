@@ -19,7 +19,7 @@ func NewService(repo ContractRepository) *Service {
 	return &Service{repo: repo}
 }
 
-// ListContracts retrieves all contracts where the authenticated caller is the student or employer.
+// ListContracts retrieves all contracts where the authenticated caller is the client or freelancer.
 func (s *Service) ListContracts(ctx context.Context, claims *auth.UserClaims) ([]*ContractWithDetails, error) {
 	if claims == nil {
 		return nil, ErrForbidden
@@ -63,7 +63,7 @@ func (s *Service) GetContractByID(ctx context.Context, claims *auth.UserClaims, 
 		return nil, ErrContractNotFound
 	}
 
-	isParticipant := contract.StudentID == callerID || contract.EmployerID == callerID
+	isParticipant := contract.ClientID == callerID || contract.FreelancerID == callerID
 	if !isParticipant && !claims.HasRole("admin") {
 		return nil, fmt.Errorf("%w: only participants or admins can view contract", ErrForbidden)
 	}
@@ -96,7 +96,6 @@ func (s *Service) UpdateContractStatus(
 		return nil, fmt.Errorf("%w: status is required", ErrInvalidInput)
 	}
 
-	// Fetch existing contract to verify existence and participant authorization
 	existing, err := s.repo.GetContractByID(ctx, contractID)
 	if err != nil {
 		return nil, err
@@ -105,12 +104,16 @@ func (s *Service) UpdateContractStatus(
 		return nil, ErrContractNotFound
 	}
 
-	isParticipant := existing.StudentID == callerID || existing.EmployerID == callerID
+	isParticipant := existing.ClientID == callerID || existing.FreelancerID == callerID
 	if !isParticipant && !claims.HasRole("admin") {
 		return nil, fmt.Errorf("%w: only participants or admins can update contract status", ErrForbidden)
 	}
 
-	// Validate state machine transition rules
+	// SEC-06: Only the client (or admin) can approve completion of a contract
+	if targetStatus == StatusCompleted && existing.ClientID != callerID && !claims.HasRole("admin") {
+		return nil, fmt.Errorf("%w: only the client or an admin can mark a contract as completed", ErrForbidden)
+	}
+
 	if err := ValidateTransition(existing.Status, targetStatus); err != nil {
 		return nil, err
 	}

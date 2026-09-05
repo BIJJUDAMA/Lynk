@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lynk/backend/internal/application"
 	"github.com/lynk/backend/internal/auth"
@@ -26,20 +27,25 @@ import (
 	"github.com/lynk/backend/internal/review"
 	"github.com/lynk/backend/internal/storage"
 	"github.com/lynk/backend/internal/user"
+	"github.com/supertokens/supertokens-golang/supertokens"
 )
 
 // Config holds environment and runtime configuration for the Lynk API server.
 type Config struct {
-	Port               string
-	DatabaseURL        string
-	MigrationsDir      string
-	KeycloakJWKSURL    string
-	MinioEndpoint      string
-	MinioAccessKey     string
-	MinioSecretKey     string
-	MinioBucket        string
-	MinioUseSSL        bool
-	CORSAllowedOrigins string
+	Port                     string
+	DatabaseURL              string
+	MigrationsDir            string
+	SuperTokensConnectionURI string
+	SuperTokensAPIKey        string
+	APIDomain                string
+	WebsiteDomain            string
+	MinioEndpoint            string
+	MinioPublicEndpoint      string
+	MinioAccessKey           string
+	MinioSecretKey           string
+	MinioBucket              string
+	MinioUseSSL              bool
+	CORSAllowedOrigins       string
 }
 
 // LoadConfig reads configuration from environment variables with sane defaults.
@@ -61,8 +67,12 @@ func LoadConfig() Config {
 		}
 	}
 
-	keycloakJWKSURL := getEnv("KEYCLOAK_JWKS_URL", "http://localhost:8081/realms/lynk/protocol/openid-connect/certs")
+	stConnectionURI := getEnv("SUPERTOKENS_CONNECTION_URI", "http://localhost:3567")
+	stAPIKey := getEnv("SUPERTOKENS_API_KEY", "lynk_supertokens_secret_api_key_2026")
+	apiDomain := getEnv("API_DOMAIN", "http://localhost:8080")
+	websiteDomain := getEnv("WEBSITE_DOMAIN", "http://localhost:3000")
 	minioEndpoint := getEnv("MINIO_ENDPOINT", "localhost:9000")
+	minioPublicEndpoint := getEnv("MINIO_PUBLIC_ENDPOINT", "http://localhost:9000")
 	minioAccessKey := getEnv("MINIO_ACCESS_KEY", "minio_admin")
 	minioSecretKey := getEnv("MINIO_SECRET_KEY", "minio_password")
 	minioBucket := getEnv("MINIO_BUCKET", "resumes")
@@ -70,16 +80,20 @@ func LoadConfig() Config {
 	corsAllowedOrigins := getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
 
 	return Config{
-		Port:               port,
-		DatabaseURL:        dbURL,
-		MigrationsDir:      migrationsDir,
-		KeycloakJWKSURL:    keycloakJWKSURL,
-		MinioEndpoint:      minioEndpoint,
-		MinioAccessKey:     minioAccessKey,
-		MinioSecretKey:     minioSecretKey,
-		MinioBucket:        minioBucket,
-		MinioUseSSL:        minioUseSSL,
-		CORSAllowedOrigins: corsAllowedOrigins,
+		Port:                     port,
+		DatabaseURL:              dbURL,
+		MigrationsDir:            migrationsDir,
+		SuperTokensConnectionURI: stConnectionURI,
+		SuperTokensAPIKey:        stAPIKey,
+		APIDomain:                apiDomain,
+		WebsiteDomain:            websiteDomain,
+		MinioEndpoint:            minioEndpoint,
+		MinioPublicEndpoint:      minioPublicEndpoint,
+		MinioAccessKey:           minioAccessKey,
+		MinioSecretKey:           minioSecretKey,
+		MinioBucket:              minioBucket,
+		MinioUseSSL:              minioUseSSL,
+		CORSAllowedOrigins:       corsAllowedOrigins,
 	}
 }
 
@@ -90,6 +104,14 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+type profileReaderAdapter struct {
+	repo user.UserRepository
+}
+
+func (a *profileReaderAdapter) GetProfile(ctx context.Context, userID uuid.UUID) (*user.Profile, error) {
+	return a.repo.GetProfile(ctx, userID.String())
+}
+
 // BuildRouter assembles the complete Chi HTTP router with middleware and domain routes.
 func BuildRouter(
 	cfg Config,
@@ -98,7 +120,7 @@ func BuildRouter(
 	appHandler *application.Handler,
 	contractHandler *contract.Handler,
 	reviewHandler *review.Handler,
-	validator auth.TokenValidator,
+	authMiddleware func(http.Handler) http.Handler,
 	s3Client storage.Client,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -108,7 +130,13 @@ func BuildRouter(
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
+	r.Use(chimiddleware.Timeout(30 * time.Second))
 	r.Use(middleware.CORS(cfg.CORSAllowedOrigins))
+
+	// Mount SuperTokens HTTP middleware if initialized
+	if _, err := supertokens.GetInstanceOrThrowError(); err == nil {
+		r.Use(supertokens.Middleware)
+	}
 
 	// Health Check
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
@@ -122,88 +150,114 @@ func BuildRouter(
 	r.Get("/health", healthHandler)
 	r.Get("/api/v1/health", healthHandler)
 
-	var authMiddleware func(http.Handler) http.Handler
-	if validator != nil {
-		authMiddleware = middleware.AuthMiddleware(validator)
-	} else {
-		authMiddleware = func(next http.Handler) http.Handler {
-			return next
-		}
+	if authMiddleware == nil {
+		authMiddleware = middleware.SessionMiddleware()
 	}
 
 	// API v1 Domain Routes
 	r.Route("/api/v1", func(r chi.Router) {
 		// Auth endpoints
-		r.Route("/auth", func(r chi.Router) {
-			r.Use(authMiddleware)
-			r.Post("/sync", userHandler.SyncUser)
-			r.Get("/me", userHandler.GetMe)
-		})
+		if userHandler != nil {
+			r.Route("/auth", func(r chi.Router) {
+				r.Use(authMiddleware)
+				r.Post("/sync", userHandler.SyncUser)
+				r.Get("/me", userHandler.GetMe)
+			})
 
-		// Profile endpoints
-		r.Route("/profile", func(r chi.Router) {
-			r.Use(authMiddleware)
-			r.Get("/student", userHandler.GetMyStudentProfile)
-			r.Put("/student", userHandler.UpdateMyStudentProfile)
-			if s3Client != nil {
-				r.Post("/student/resume", userHandler.UploadResume(s3Client))
-				r.Get("/student/resume", userHandler.GetMyResumeURL(s3Client))
-				r.Get("/student/{id}/resume", userHandler.GetStudentResumeURL(s3Client))
-			}
-			r.Get("/student/{id}", userHandler.GetStudentProfileByID)
-			r.Get("/employer", userHandler.GetMyEmployerProfile)
-			r.Put("/employer", userHandler.UpdateMyEmployerProfile)
-		})
+			// Profile endpoints
+			r.Route("/profile", func(r chi.Router) {
+				r.Use(authMiddleware)
+				// Unified profile routes
+				r.Get("/me", userHandler.GetMyProfile)
+				r.Put("/me", userHandler.UpdateMyProfile)
+				if s3Client != nil {
+					r.Post("/resume", userHandler.UploadResume(s3Client))
+					r.Get("/resume", userHandler.GetMyResumeURL(s3Client))
+					r.Get("/{id}/resume", userHandler.GetMemberResumeURL(s3Client))
+				}
+
+				// Backward-compatible aliases
+				r.Get("/student", userHandler.GetMyStudentProfile)
+				r.Put("/student", userHandler.UpdateMyStudentProfile)
+				if s3Client != nil {
+					r.Post("/student/resume", userHandler.UploadResume(s3Client))
+					r.Get("/student/resume", userHandler.GetMyResumeURL(s3Client))
+					r.Get("/student/{id}/resume", userHandler.GetStudentResumeURL(s3Client))
+				}
+				r.Get("/student/{id}", userHandler.GetStudentProfileByID)
+				r.Get("/employer", userHandler.GetMyEmployerProfile)
+				r.Put("/employer", userHandler.UpdateMyEmployerProfile)
+
+				// Literal routes must be registered before /{id}
+				r.Get("/{id}", userHandler.GetProfileByID)
+			})
+		}
 
 		// Jobs endpoints
-		r.Route("/jobs", func(r chi.Router) {
-			// Public job listings
-			r.Get("/", jobHandler.ListJobs)
+		if jobHandler != nil {
+			r.Route("/jobs", func(r chi.Router) {
+				// Public job listings
+				r.Get("/", jobHandler.ListJobs)
 
-			// Protected employer & applicant actions
-			r.Group(func(pr chi.Router) {
-				pr.Use(authMiddleware)
-				// Literal /mine before /{id}
-				pr.Get("/mine", jobHandler.GetMyJobs)
-				pr.Post("/", jobHandler.CreateJob)
-				pr.Put("/{id}", jobHandler.UpdateJob)
-				pr.Delete("/{id}", jobHandler.DeleteJob)
+				// Protected employer & applicant actions
+				r.Group(func(pr chi.Router) {
+					pr.Use(authMiddleware)
+					// Literal /mine before /{id}
+					pr.Get("/mine", jobHandler.GetMyJobs)
+					pr.Post("/", jobHandler.CreateJob)
+					pr.Put("/{id}", jobHandler.UpdateJob)
+					pr.Delete("/{id}", jobHandler.DeleteJob)
 
-				// Job applications
-				pr.Post("/{id}/applications", appHandler.ApplyToJob)
-				pr.Get("/{id}/applications", appHandler.ListJobApplications)
+					// Job applications
+					if appHandler != nil {
+						pr.Post("/{id}/applications", appHandler.ApplyToJob)
+						pr.Get("/{id}/applications", appHandler.ListJobApplications)
+					}
+				})
+
+				// Public job details
+				r.Get("/{id}", jobHandler.GetJobByID)
 			})
-
-			// Public job details
-			r.Get("/{id}", jobHandler.GetJobByID)
-		})
+		}
 
 		// Applications endpoints
-		r.Route("/applications", func(r chi.Router) {
-			r.Use(authMiddleware)
-			// Literal /mine before /{id}
-			r.Get("/mine", appHandler.GetMyApplications)
-			r.Get("/{id}", appHandler.GetApplicationByID)
-			r.Patch("/{id}/status", appHandler.UpdateApplicationStatus)
-		})
+		if appHandler != nil {
+			r.Route("/applications", func(r chi.Router) {
+				r.Use(authMiddleware)
+				// Literal /mine before /{id}
+				r.Get("/mine", appHandler.GetMyApplications)
+				r.Get("/{id}", appHandler.GetApplicationByID)
+				r.Patch("/{id}/status", appHandler.UpdateApplicationStatus)
+			})
+		}
 
 		// Contracts endpoints
-		r.Route("/contracts", func(r chi.Router) {
-			// Public contract reviews
-			r.Get("/{id}/reviews", reviewHandler.GetContractReviews)
+		if contractHandler != nil || reviewHandler != nil {
+			r.Route("/contracts", func(r chi.Router) {
+				if reviewHandler != nil {
+					// Public contract reviews
+					r.Get("/{id}/reviews", reviewHandler.GetContractReviews)
+				}
 
-			// Protected contract operations
-			r.Group(func(pr chi.Router) {
-				pr.Use(authMiddleware)
-				pr.Get("/", contractHandler.ListContracts)
-				pr.Get("/{id}", contractHandler.GetContractByID)
-				pr.Patch("/{id}/status", contractHandler.UpdateContractStatus)
-				pr.Post("/{id}/reviews", reviewHandler.CreateReview)
+				// Protected contract operations
+				r.Group(func(pr chi.Router) {
+					pr.Use(authMiddleware)
+					if contractHandler != nil {
+						pr.Get("/", contractHandler.ListContracts)
+						pr.Get("/{id}", contractHandler.GetContractByID)
+						pr.Patch("/{id}/status", contractHandler.UpdateContractStatus)
+					}
+					if reviewHandler != nil {
+						pr.Post("/{id}/reviews", reviewHandler.CreateReview)
+					}
+				})
 			})
-		})
+		}
 
 		// Public user reviews endpoint
-		r.Get("/users/{id}/reviews", reviewHandler.GetUserReviews)
+		if reviewHandler != nil {
+			r.Get("/users/{id}/reviews", reviewHandler.GetUserReviews)
+		}
 	})
 
 	return r
@@ -246,11 +300,12 @@ func main() {
 
 	// 3. Initialize MinIO S3 Storage Client
 	storageCfg := storage.Config{
-		Endpoint:  cfg.MinioEndpoint,
-		AccessKey: cfg.MinioAccessKey,
-		SecretKey: cfg.MinioSecretKey,
-		Bucket:    cfg.MinioBucket,
-		UseSSL:    cfg.MinioUseSSL,
+		Endpoint:       cfg.MinioEndpoint,
+		PublicEndpoint: cfg.MinioPublicEndpoint,
+		AccessKey:      cfg.MinioAccessKey,
+		SecretKey:      cfg.MinioSecretKey,
+		Bucket:         cfg.MinioBucket,
+		UseSSL:         cfg.MinioUseSSL,
 	}
 	s3Client, err := storage.NewS3Client(ctx, storageCfg)
 	if err != nil {
@@ -258,25 +313,17 @@ func main() {
 	}
 	log.Printf("MinIO S3 client initialized for bucket %s", cfg.MinioBucket)
 
-	// 4. Initialize Keycloak Token Validator with retry
-	var keycloakValidator *auth.KeycloakValidator
-	var keycloakErr error
-	for attempts := 1; attempts <= 15; attempts++ {
-		keycloakValidator, keycloakErr = auth.NewKeycloakValidator(ctx, cfg.KeycloakJWKSURL)
-		if keycloakErr == nil {
-			log.Printf("Keycloak JWKS validator initialized from %s", cfg.KeycloakJWKSURL)
-			break
-		}
-		log.Printf("Waiting for Keycloak JWKS (%s), attempt %d/15: %v", cfg.KeycloakJWKSURL, attempts, keycloakErr)
-		select {
-		case <-ctx.Done():
-			log.Fatal("Startup cancelled while waiting for Keycloak")
-		case <-time.After(2 * time.Second):
-		}
+	// 4. Initialize SuperTokens Go SDK
+	stCfg := auth.SuperTokensConfig{
+		ConnectionURI: cfg.SuperTokensConnectionURI,
+		APIKey:        cfg.SuperTokensAPIKey,
+		APIDomain:     cfg.APIDomain,
+		WebsiteDomain: cfg.WebsiteDomain,
 	}
-	if keycloakErr != nil {
-		log.Fatalf("Failed to initialize Keycloak validator: %v", keycloakErr)
+	if err := auth.InitSupertokens(stCfg); err != nil {
+		log.Fatalf("Failed to initialize SuperTokens SDK: %v", err)
 	}
+	log.Printf("SuperTokens SDK initialized with connection %s", cfg.SuperTokensConnectionURI)
 
 	// 5. Wire Repositories, Services, and Handlers
 	userRepo := user.NewRepository(pool)
@@ -288,7 +335,7 @@ func main() {
 	jobHandler := job.NewHandler(jobService, jobRepo)
 
 	appRepo := application.NewRepository(pool)
-	appService := application.NewService(appRepo, jobRepo, userRepo)
+	appService := application.NewService(appRepo, jobRepo, &profileReaderAdapter{repo: userRepo})
 	appHandler := application.NewHandler(appService, appRepo)
 
 	contractRepo := contract.NewRepository(pool)
@@ -307,7 +354,7 @@ func main() {
 		appHandler,
 		contractHandler,
 		reviewHandler,
-		keycloakValidator,
+		middleware.SessionMiddleware(),
 		s3Client,
 	)
 

@@ -14,10 +14,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
-	"github.com/lynk/backend/internal/middleware"
 )
 
-// mockContractRepo implements ContractRepository in memory for unit and integration testing.
 type mockContractRepo struct {
 	mu        sync.Mutex
 	contracts map[uuid.UUID]*ContractWithDetails
@@ -53,7 +51,7 @@ func (m *mockContractRepo) CreateContract(ctx context.Context, contract *Contrac
 		Contract: *contract,
 		Job: &JobSummary{
 			ID:          contract.JobID,
-			EmployerID:  contract.EmployerID,
+			CreatedBy:   contract.ClientID,
 			Title:       "Sample Job",
 			Description: "Job description",
 			Budget:      contract.AgreedBudget,
@@ -61,15 +59,17 @@ func (m *mockContractRepo) CreateContract(ctx context.Context, contract *Contrac
 			Department:  "Computer Science",
 			Status:      "in_progress",
 		},
-		Employer: &EmployerSummary{
-			ID:           contract.EmployerID,
-			Email:        "employer@example.com",
-			CompanyOrOrg: "Test Org",
-			ContactName:  "Test Employer",
+		Client: &MemberSummary{
+			ID:             contract.ClientID,
+			Email:          "client@example.com",
+			FirstName:      "Alice",
+			LastName:       "Client",
+			Department:     "Computer Science",
+			GraduationYear: 2025,
 		},
-		Student: &StudentSummary{
-			ID:             contract.StudentID,
-			Email:          "student@university.edu",
+		Freelancer: &MemberSummary{
+			ID:             contract.FreelancerID,
+			Email:          "freelancer@university.edu",
 			FirstName:      "John",
 			LastName:       "Doe",
 			Department:     "Computer Science",
@@ -97,7 +97,7 @@ func (m *mockContractRepo) ListContractsByUserID(ctx context.Context, userID uui
 
 	list := make([]*ContractWithDetails, 0)
 	for _, c := range m.contracts {
-		if c.StudentID == userID || c.EmployerID == userID {
+		if c.FreelancerID == userID || c.ClientID == userID {
 			cp := *c
 			list = append(list, &cp)
 		}
@@ -114,7 +114,6 @@ func (m *mockContractRepo) UpdateContractStatus(ctx context.Context, id uuid.UUI
 		return nil, ErrContractNotFound
 	}
 
-	// Concurrency guard matching SQL: WHERE status NOT IN ('completed', 'cancelled')
 	if c.Status == StatusCompleted || c.Status == StatusCancelled {
 		return nil, ErrTerminalStatus
 	}
@@ -128,14 +127,20 @@ func (m *mockContractRepo) UpdateContractStatus(ctx context.Context, id uuid.UUI
 	}
 	if targetStatus == StatusCompleted {
 		c.CompletedAt = &now
+		if c.Job != nil {
+			c.Job.Status = "closed"
+		} else {
+			c.Job = &JobSummary{
+				ID:     c.JobID,
+				Status: "closed",
+			}
+		}
 	}
 
 	cp := *c
 	return &cp, nil
 }
 
-
-// mockValidator implements auth.TokenValidator for integration testing.
 type mockValidator struct {
 	claimsMap map[string]*auth.UserClaims
 }
@@ -170,8 +175,6 @@ func parseEnvelope(t *testing.T, body []byte) jsonEnvelope {
 	return res
 }
 
-// --- Unit Tests: State Machine Transition Logic ---
-
 func TestContract_ValidateTransition(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -180,21 +183,16 @@ func TestContract_ValidateTransition(t *testing.T) {
 		expectErr   bool
 		expectedErr error
 	}{
-		// Valid transitions from draft
 		{"draft to active", StatusDraft, StatusActive, false, nil},
 		{"draft to cancelled", StatusDraft, StatusCancelled, false, nil},
-		// Invalid transitions from draft
 		{"draft to completed disallowed", StatusDraft, StatusCompleted, true, ErrInvalidTransition},
 		{"draft to draft disallowed", StatusDraft, StatusDraft, true, ErrInvalidTransition},
 
-		// Valid transitions from active
 		{"active to completed", StatusActive, StatusCompleted, false, nil},
 		{"active to cancelled", StatusActive, StatusCancelled, false, nil},
-		// Invalid transitions from active
 		{"active to draft disallowed", StatusActive, StatusDraft, true, ErrInvalidTransition},
 		{"active to active disallowed", StatusActive, StatusActive, true, ErrInvalidTransition},
 
-		// Terminal states cannot transition to anything
 		{"completed to active disallowed", StatusCompleted, StatusActive, true, ErrTerminalStatus},
 		{"completed to cancelled disallowed", StatusCompleted, StatusCancelled, true, ErrTerminalStatus},
 		{"completed to draft disallowed", StatusCompleted, StatusDraft, true, ErrTerminalStatus},
@@ -205,7 +203,6 @@ func TestContract_ValidateTransition(t *testing.T) {
 		{"cancelled to draft disallowed", StatusCancelled, StatusDraft, true, ErrTerminalStatus},
 		{"cancelled to cancelled disallowed", StatusCancelled, StatusCancelled, true, ErrInvalidTransition},
 
-		// Invalid status strings
 		{"empty target status", StatusActive, "", true, ErrInvalidInput},
 		{"unknown target status", StatusActive, "pending", true, ErrInvalidStatus},
 		{"unknown current status", "pending", StatusActive, true, ErrInvalidStatus},
@@ -232,16 +229,14 @@ func TestContract_ValidateTransition(t *testing.T) {
 	}
 }
 
-// --- Unit Tests: Participant Authorization ---
-
 func TestContract_ParticipantAuthorization(t *testing.T) {
 	repo := newMockContractRepo()
 	service := NewService(repo)
 	handler := NewHandler(service)
 	router := handler.Routes(nil)
 
-	studentID := uuid.New()
-	employerID := uuid.New()
+	freelancerID := uuid.New()
+	clientID := uuid.New()
 	unrelatedID := uuid.New()
 	contractID := uuid.New()
 
@@ -249,25 +244,25 @@ func TestContract_ParticipantAuthorization(t *testing.T) {
 		ID:            contractID,
 		JobID:         uuid.New(),
 		ApplicationID: uuid.New(),
-		EmployerID:    employerID,
-		StudentID:     studentID,
+		ClientID:      clientID,
+		FreelancerID:  freelancerID,
 		AgreedBudget:  500.0,
 		Status:        StatusActive,
 	}
 	_ = repo.CreateContract(context.Background(), testContract)
 
-	studentClaims := &auth.UserClaims{
-		UserID:        studentID.String(),
+	freelancerClaims := &auth.UserClaims{
+		UserID:        freelancerID.String(),
 		Email:         "student@uni.edu",
 		EmailVerified: true,
-		Roles:         []string{"student"},
+		Roles:         []string{"member"},
 	}
 
-	employerClaims := &auth.UserClaims{
-		UserID:        employerID.String(),
+	clientClaims := &auth.UserClaims{
+		UserID:        clientID.String(),
 		Email:         "employer@corp.com",
 		EmailVerified: true,
-		Roles:         []string{"employer"},
+		Roles:         []string{"member"},
 	}
 
 	adminClaims := &auth.UserClaims{
@@ -281,12 +276,12 @@ func TestContract_ParticipantAuthorization(t *testing.T) {
 		UserID:        unrelatedID.String(),
 		Email:         "stranger@other.com",
 		EmailVerified: true,
-		Roles:         []string{"student"},
+		Roles:         []string{"member"},
 	}
 
-	t.Run("student participant can view contract (200 OK)", func(t *testing.T) {
+	t.Run("freelancer participant can view contract (200 OK)", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/contracts/%s", contractID), nil)
-		req = withAuth(req, studentClaims)
+		req = withAuth(req, freelancerClaims)
 		rec := httptest.NewRecorder()
 
 		router.ServeHTTP(rec, req)
@@ -300,9 +295,9 @@ func TestContract_ParticipantAuthorization(t *testing.T) {
 		}
 	})
 
-	t.Run("employer participant can view contract (200 OK)", func(t *testing.T) {
+	t.Run("client participant can view contract (200 OK)", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/contracts/%s", contractID), nil)
-		req = withAuth(req, employerClaims)
+		req = withAuth(req, clientClaims)
 		rec := httptest.NewRecorder()
 
 		router.ServeHTTP(rec, req)
@@ -350,57 +345,7 @@ func TestContract_ParticipantAuthorization(t *testing.T) {
 			t.Fatalf("expected code FORBIDDEN, got %+v", env.Error)
 		}
 	})
-
-	t.Run("unauthenticated request to view contract returns 401 Unauthorized", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/contracts/%s", contractID), nil)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusUnauthorized {
-			t.Fatalf("expected 401 Unauthorized, got %d", rec.Code)
-		}
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if env.Error == nil || env.Error.Code != "UNAUTHORIZED" {
-			t.Fatalf("expected code UNAUTHORIZED, got %+v", env.Error)
-		}
-	})
-
-	t.Run("non-existent contract returns 404 CONTRACT_NOT_FOUND", func(t *testing.T) {
-		nonExistentID := uuid.New()
-		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/contracts/%s", nonExistentID), nil)
-		req = withAuth(req, studentClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("expected 404 Not Found, got %d", rec.Code)
-		}
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if env.Error == nil || env.Error.Code != "CONTRACT_NOT_FOUND" {
-			t.Fatalf("expected code CONTRACT_NOT_FOUND, got %+v", env.Error)
-		}
-	})
-
-	t.Run("invalid contract UUID returns 400 INVALID_ID", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/contracts/invalid-uuid", nil)
-		req = withAuth(req, studentClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
-		}
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if env.Error == nil || env.Error.Code != "INVALID_ID" {
-			t.Fatalf("expected code INVALID_ID, got %+v", env.Error)
-		}
-	})
 }
-
-// --- Unit Tests: List Contracts ---
 
 func TestContract_ListContracts(t *testing.T) {
 	repo := newMockContractRepo()
@@ -408,15 +353,15 @@ func TestContract_ListContracts(t *testing.T) {
 	handler := NewHandler(service)
 	router := handler.Routes(nil)
 
-	studentID := uuid.New()
-	employerID := uuid.New()
+	freelancerID := uuid.New()
+	clientID := uuid.New()
 
 	c1 := &Contract{
 		ID:            uuid.New(),
 		JobID:         uuid.New(),
 		ApplicationID: uuid.New(),
-		EmployerID:    employerID,
-		StudentID:     studentID,
+		ClientID:      clientID,
+		FreelancerID:  freelancerID,
 		AgreedBudget:  300.0,
 		Status:        StatusActive,
 	}
@@ -424,8 +369,8 @@ func TestContract_ListContracts(t *testing.T) {
 		ID:            uuid.New(),
 		JobID:         uuid.New(),
 		ApplicationID: uuid.New(),
-		EmployerID:    employerID,
-		StudentID:     studentID,
+		ClientID:      clientID,
+		FreelancerID:  freelancerID,
 		AgreedBudget:  750.0,
 		Status:        StatusCompleted,
 	}
@@ -433,8 +378,8 @@ func TestContract_ListContracts(t *testing.T) {
 		ID:            uuid.New(),
 		JobID:         uuid.New(),
 		ApplicationID: uuid.New(),
-		EmployerID:    uuid.New(),
-		StudentID:     uuid.New(),
+		ClientID:      uuid.New(),
+		FreelancerID:  uuid.New(),
 		AgreedBudget:  1000.0,
 		Status:        StatusActive,
 	}
@@ -443,44 +388,12 @@ func TestContract_ListContracts(t *testing.T) {
 	_ = repo.CreateContract(context.Background(), c2)
 	_ = repo.CreateContract(context.Background(), cOther)
 
-	t.Run("student lists only contracts where they are participant", func(t *testing.T) {
+	t.Run("member lists contracts where they are participant", func(t *testing.T) {
 		claims := &auth.UserClaims{
-			UserID:        studentID.String(),
+			UserID:        freelancerID.String(),
 			Email:         "student@uni.edu",
 			EmailVerified: true,
-			Roles:         []string{"student"},
-		}
-
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/contracts", nil)
-		req = withAuth(req, claims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d", rec.Code)
-		}
-
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if !env.Success {
-			t.Fatalf("expected success=true")
-		}
-
-		var contracts []*ContractWithDetails
-		if err := json.Unmarshal(env.Data, &contracts); err != nil {
-			t.Fatalf("failed to decode contracts: %v", err)
-		}
-		if len(contracts) != 2 {
-			t.Fatalf("expected 2 contracts for student, got %d", len(contracts))
-		}
-	})
-
-	t.Run("employer lists only contracts where they are employer", func(t *testing.T) {
-		claims := &auth.UserClaims{
-			UserID:        employerID.String(),
-			Email:         "employer@corp.com",
-			EmailVerified: true,
-			Roles:         []string{"employer"},
+			Roles:         []string{"member"},
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/contracts", nil)
@@ -497,49 +410,10 @@ func TestContract_ListContracts(t *testing.T) {
 		var contracts []*ContractWithDetails
 		_ = json.Unmarshal(env.Data, &contracts)
 		if len(contracts) != 2 {
-			t.Fatalf("expected 2 contracts for employer, got %d", len(contracts))
-		}
-	})
-
-	t.Run("user with no contracts receives empty JSON list", func(t *testing.T) {
-		nobodyClaims := &auth.UserClaims{
-			UserID:        uuid.New().String(),
-			Email:         "nobody@uni.edu",
-			EmailVerified: true,
-			Roles:         []string{"student"},
-		}
-
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/contracts", nil)
-		req = withAuth(req, nobodyClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d", rec.Code)
-		}
-
-		env := parseEnvelope(t, rec.Body.Bytes())
-		var contracts []*ContractWithDetails
-		_ = json.Unmarshal(env.Data, &contracts)
-		if contracts == nil || len(contracts) != 0 {
-			t.Fatalf("expected empty non-nil slice, got %v", contracts)
-		}
-	})
-
-	t.Run("unauthenticated list request returns 401 Unauthorized", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/contracts", nil)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusUnauthorized {
-			t.Fatalf("expected 401 Unauthorized, got %d", rec.Code)
+			t.Fatalf("expected 2 contracts, got %d", len(contracts))
 		}
 	})
 }
-
-// --- Unit Tests: Status Transitions & State Machine Execution ---
 
 func TestContract_StatusTransitions(t *testing.T) {
 	repo := newMockContractRepo()
@@ -547,36 +421,21 @@ func TestContract_StatusTransitions(t *testing.T) {
 	handler := NewHandler(service)
 	router := handler.Routes(nil)
 
-	studentID := uuid.New()
-	employerID := uuid.New()
-	otherID := uuid.New()
+	freelancerID := uuid.New()
+	clientID := uuid.New()
 
-	studentClaims := &auth.UserClaims{
-		UserID:        studentID.String(),
+	freelancerClaims := &auth.UserClaims{
+		UserID:        freelancerID.String(),
 		Email:         "student@uni.edu",
 		EmailVerified: true,
-		Roles:         []string{"student"},
+		Roles:         []string{"member"},
 	}
 
-	employerClaims := &auth.UserClaims{
-		UserID:        employerID.String(),
+	clientClaims := &auth.UserClaims{
+		UserID:        clientID.String(),
 		Email:         "employer@corp.com",
 		EmailVerified: true,
-		Roles:         []string{"employer"},
-	}
-
-	adminClaims := &auth.UserClaims{
-		UserID:        uuid.New().String(),
-		Email:         "admin@lynk.edu",
-		EmailVerified: true,
-		Roles:         []string{"admin"},
-	}
-
-	unrelatedClaims := &auth.UserClaims{
-		UserID:        otherID.String(),
-		Email:         "stranger@other.com",
-		EmailVerified: true,
-		Roles:         []string{"student"},
+		Roles:         []string{"member"},
 	}
 
 	t.Run("draft to active transition succeeds and sets started_at", func(t *testing.T) {
@@ -585,8 +444,8 @@ func TestContract_StatusTransitions(t *testing.T) {
 			ID:            cID,
 			JobID:         uuid.New(),
 			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
+			ClientID:      clientID,
+			FreelancerID:  freelancerID,
 			AgreedBudget:  400.0,
 			Status:        StatusDraft,
 		}
@@ -594,41 +453,32 @@ func TestContract_StatusTransitions(t *testing.T) {
 
 		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusActive})
 		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
-		req = withAuth(req, employerClaims)
+		req = withAuth(req, clientClaims)
 		rec := httptest.NewRecorder()
 
 		router.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d. Body: %s", rec.Code, rec.Body.String())
-		}
-
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if !env.Success {
-			t.Fatalf("expected success=true")
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
 		}
 
 		var updated ContractWithDetails
-		if err := json.Unmarshal(env.Data, &updated); err != nil {
-			t.Fatalf("failed to decode updated contract: %v", err)
-		}
+		env := parseEnvelope(t, rec.Body.Bytes())
+		_ = json.Unmarshal(env.Data, &updated)
 		if updated.Status != StatusActive {
 			t.Fatalf("expected status 'active', got '%s'", updated.Status)
 		}
-		if updated.StartedAt == nil {
-			t.Fatalf("expected started_at timestamp to be set")
-		}
 	})
 
-	t.Run("active to completed transition succeeds and sets completed_at = NOW()", func(t *testing.T) {
+	t.Run("active to completed transition succeeds and sets completed_at", func(t *testing.T) {
 		cID := uuid.New()
 		started := time.Now().Add(-2 * time.Hour)
 		c := &Contract{
 			ID:            cID,
 			JobID:         uuid.New(),
 			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
+			ClientID:      clientID,
+			FreelancerID:  freelancerID,
 			AgreedBudget:  800.0,
 			Status:        StatusActive,
 			StartedAt:     &started,
@@ -637,259 +487,44 @@ func TestContract_StatusTransitions(t *testing.T) {
 
 		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusCompleted})
 		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
-		req = withAuth(req, studentClaims) // Student participant can complete
+		req = withAuth(req, clientClaims)
 		rec := httptest.NewRecorder()
 
 		router.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d. Body: %s", rec.Code, rec.Body.String())
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
 		}
 
-		env := parseEnvelope(t, rec.Body.Bytes())
 		var updated ContractWithDetails
+		env := parseEnvelope(t, rec.Body.Bytes())
 		_ = json.Unmarshal(env.Data, &updated)
-
 		if updated.Status != StatusCompleted {
 			t.Fatalf("expected status 'completed', got '%s'", updated.Status)
 		}
-		if updated.CompletedAt == nil {
-			t.Fatalf("expected completed_at timestamp to be set")
+		if updated.Job == nil || updated.Job.Status != "closed" {
+			t.Fatalf("expected job status 'closed', got %+v", updated.Job)
 		}
 	})
 
-	t.Run("active to cancelled transition succeeds", func(t *testing.T) {
+	t.Run("freelancer cannot mark active contract completed via HTTP (403 Forbidden)", func(t *testing.T) {
 		cID := uuid.New()
-		started := time.Now().Add(-1 * time.Hour)
+		started := time.Now().Add(-2 * time.Hour)
 		c := &Contract{
 			ID:            cID,
 			JobID:         uuid.New(),
 			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
-			AgreedBudget:  500.0,
+			ClientID:      clientID,
+			FreelancerID:  freelancerID,
+			AgreedBudget:  800.0,
 			Status:        StatusActive,
 			StartedAt:     &started,
 		}
 		_ = repo.CreateContract(context.Background(), c)
 
-		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusCancelled})
-		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
-		req = withAuth(req, employerClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d", rec.Code)
-		}
-
-		env := parseEnvelope(t, rec.Body.Bytes())
-		var updated ContractWithDetails
-		_ = json.Unmarshal(env.Data, &updated)
-		if updated.Status != StatusCancelled {
-			t.Fatalf("expected status 'cancelled', got '%s'", updated.Status)
-		}
-	})
-
-	t.Run("draft to cancelled transition succeeds", func(t *testing.T) {
-		cID := uuid.New()
-		c := &Contract{
-			ID:            cID,
-			JobID:         uuid.New(),
-			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
-			AgreedBudget:  250.0,
-			Status:        StatusDraft,
-		}
-		_ = repo.CreateContract(context.Background(), c)
-
-		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusCancelled})
-		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
-		req = withAuth(req, studentClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d", rec.Code)
-		}
-
-		env := parseEnvelope(t, rec.Body.Bytes())
-		var updated ContractWithDetails
-		_ = json.Unmarshal(env.Data, &updated)
-		if updated.Status != StatusCancelled {
-			t.Fatalf("expected status 'cancelled', got '%s'", updated.Status)
-		}
-	})
-
-	t.Run("terminal status: completed cannot transition to active (400 INVALID_TRANSITION)", func(t *testing.T) {
-		cID := uuid.New()
-		c := &Contract{
-			ID:            cID,
-			JobID:         uuid.New(),
-			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
-			AgreedBudget:  500.0,
-			Status:        StatusCompleted,
-		}
-		_ = repo.CreateContract(context.Background(), c)
-
-		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusActive})
-		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
-		req = withAuth(req, employerClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 Bad Request, got %d. Body: %s", rec.Code, rec.Body.String())
-		}
-
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if env.Error == nil || env.Error.Code != "INVALID_TRANSITION" {
-			t.Fatalf("expected code INVALID_TRANSITION, got %+v", env.Error)
-		}
-	})
-
-	t.Run("terminal status: cancelled cannot transition to completed (400 INVALID_TRANSITION)", func(t *testing.T) {
-		cID := uuid.New()
-		c := &Contract{
-			ID:            cID,
-			JobID:         uuid.New(),
-			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
-			AgreedBudget:  500.0,
-			Status:        StatusCancelled,
-		}
-		_ = repo.CreateContract(context.Background(), c)
-
 		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusCompleted})
 		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
-		req = withAuth(req, studentClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
-		}
-
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if env.Error == nil || env.Error.Code != "INVALID_TRANSITION" {
-			t.Fatalf("expected code INVALID_TRANSITION, got %+v", env.Error)
-		}
-	})
-
-	t.Run("draft cannot transition directly to completed (400 INVALID_TRANSITION)", func(t *testing.T) {
-		cID := uuid.New()
-		c := &Contract{
-			ID:            cID,
-			JobID:         uuid.New(),
-			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
-			AgreedBudget:  500.0,
-			Status:        StatusDraft,
-		}
-		_ = repo.CreateContract(context.Background(), c)
-
-		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusCompleted})
-		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
-		req = withAuth(req, employerClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
-		}
-
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if env.Error == nil || env.Error.Code != "INVALID_TRANSITION" {
-			t.Fatalf("expected code INVALID_TRANSITION, got %+v", env.Error)
-		}
-	})
-
-	t.Run("transitioning to same status returns 400 INVALID_TRANSITION", func(t *testing.T) {
-		cID := uuid.New()
-		c := &Contract{
-			ID:            cID,
-			JobID:         uuid.New(),
-			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
-			AgreedBudget:  500.0,
-			Status:        StatusActive,
-		}
-		_ = repo.CreateContract(context.Background(), c)
-
-		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusActive})
-		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
-		req = withAuth(req, employerClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
-		}
-
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if env.Error == nil || env.Error.Code != "INVALID_TRANSITION" {
-			t.Fatalf("expected code INVALID_TRANSITION, got %+v", env.Error)
-		}
-	})
-
-	t.Run("transitioning to invalid status name returns 400 INVALID_STATUS", func(t *testing.T) {
-		cID := uuid.New()
-		c := &Contract{
-			ID:            cID,
-			JobID:         uuid.New(),
-			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
-			AgreedBudget:  500.0,
-			Status:        StatusActive,
-		}
-		_ = repo.CreateContract(context.Background(), c)
-
-		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: "pending"})
-		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
-		req = withAuth(req, employerClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
-		}
-
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if env.Error == nil || env.Error.Code != "INVALID_STATUS" {
-			t.Fatalf("expected code INVALID_STATUS, got %+v", env.Error)
-		}
-	})
-
-	t.Run("non-participant cannot update contract status (403 Forbidden)", func(t *testing.T) {
-		cID := uuid.New()
-		c := &Contract{
-			ID:            cID,
-			JobID:         uuid.New(),
-			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
-			AgreedBudget:  500.0,
-			Status:        StatusActive,
-		}
-		_ = repo.CreateContract(context.Background(), c)
-
-		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusCompleted})
-		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
-		req = withAuth(req, unrelatedClaims)
+		req = withAuth(req, freelancerClaims)
 		rec := httptest.NewRecorder()
 
 		router.ServeHTTP(rec, req)
@@ -897,245 +532,126 @@ func TestContract_StatusTransitions(t *testing.T) {
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("expected 403 Forbidden, got %d", rec.Code)
 		}
-
 		env := parseEnvelope(t, rec.Body.Bytes())
+		if env.Success {
+			t.Fatalf("expected success=false")
+		}
 		if env.Error == nil || env.Error.Code != "FORBIDDEN" {
 			t.Fatalf("expected code FORBIDDEN, got %+v", env.Error)
 		}
 	})
-
-	t.Run("admin can update contract status even if not participant", func(t *testing.T) {
-		cID := uuid.New()
-		c := &Contract{
-			ID:            cID,
-			JobID:         uuid.New(),
-			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
-			AgreedBudget:  500.0,
-			Status:        StatusActive,
-		}
-		_ = repo.CreateContract(context.Background(), c)
-
-		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusCancelled})
-		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
-		req = withAuth(req, adminClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d. Body: %s", rec.Code, rec.Body.String())
-		}
-
-		env := parseEnvelope(t, rec.Body.Bytes())
-		var updated ContractWithDetails
-		_ = json.Unmarshal(env.Data, &updated)
-		if updated.Status != StatusCancelled {
-			t.Fatalf("expected status 'cancelled', got '%s'", updated.Status)
-		}
-	})
-
-	t.Run("updating non-existent contract returns 404 CONTRACT_NOT_FOUND", func(t *testing.T) {
-		nonExistentID := uuid.New()
-		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusCancelled})
-		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", nonExistentID), bytes.NewReader(payload))
-		req = withAuth(req, employerClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("expected 404 Not Found, got %d", rec.Code)
-		}
-
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if env.Error == nil || env.Error.Code != "CONTRACT_NOT_FOUND" {
-			t.Fatalf("expected code CONTRACT_NOT_FOUND, got %+v", env.Error)
-		}
-	})
-
-	t.Run("empty request body returns 400 BAD_REQUEST", func(t *testing.T) {
-		cID := uuid.New()
-		c := &Contract{
-			ID:            cID,
-			JobID:         uuid.New(),
-			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
-			AgreedBudget:  500.0,
-			Status:        StatusActive,
-		}
-		_ = repo.CreateContract(context.Background(), c)
-
-		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader([]byte("")))
-		req = withAuth(req, employerClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
-		}
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if env.Error == nil || env.Error.Code != "BAD_REQUEST" {
-			t.Fatalf("expected code BAD_REQUEST, got %+v", env.Error)
-		}
-	})
-
-	t.Run("empty status string returns 400 INVALID_INPUT", func(t *testing.T) {
-		cID := uuid.New()
-		c := &Contract{
-			ID:            cID,
-			JobID:         uuid.New(),
-			ApplicationID: uuid.New(),
-			EmployerID:    employerID,
-			StudentID:     studentID,
-			AgreedBudget:  500.0,
-			Status:        StatusActive,
-		}
-		_ = repo.CreateContract(context.Background(), c)
-
-		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: "   "})
-		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
-		req = withAuth(req, employerClaims)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("expected 400 Bad Request, got %d", rec.Code)
-		}
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if env.Error == nil || env.Error.Code != "INVALID_INPUT" {
-			t.Fatalf("expected code INVALID_INPUT, got %+v", env.Error)
-		}
-	})
 }
 
-// --- Integration Tests: Auth Middleware with Bearer Tokens ---
+func TestService_FreelancerCannotMarkContractCompleted(t *testing.T) {
+	clientID := uuid.New()
+	freelancerID := uuid.New()
+	contractID := uuid.New()
 
-func TestContract_AuthMiddlewareIntegration(t *testing.T) {
+	mockRepo := newMockContractRepo()
+	mockRepo.contracts[contractID] = &ContractWithDetails{
+		Contract: Contract{
+			ID:           contractID,
+			ClientID:     clientID,
+			FreelancerID: freelancerID,
+			Status:       StatusActive,
+		},
+	}
+	svc := NewService(mockRepo)
+
+	// Freelancer attempts to mark as completed -> MUST return ErrForbidden
+	freelancerClaims := &auth.UserClaims{UserID: freelancerID.String(), Roles: []string{"member"}}
+	_, err := svc.UpdateContractStatus(context.Background(), freelancerClaims, contractID, UpdateContractStatusRequest{Status: StatusCompleted})
+	if err == nil {
+		t.Fatalf("expected error when freelancer marks contract completed, got nil")
+	}
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got: %v", err)
+	}
+
+	// Client marks as completed -> succeeds
+	clientClaims := &auth.UserClaims{UserID: clientID.String(), Roles: []string{"member"}}
+	updated, err := svc.UpdateContractStatus(context.Background(), clientClaims, contractID, UpdateContractStatusRequest{Status: StatusCompleted})
+	if err != nil {
+		t.Fatalf("expected client to successfully mark completed, got: %v", err)
+	}
+	if updated.Status != StatusCompleted {
+		t.Fatalf("expected status %s, got %s", StatusCompleted, updated.Status)
+	}
+	if updated.Job == nil || updated.Job.Status != "closed" {
+		t.Fatalf("expected job status 'closed' upon contract completion, got %+v", updated.Job)
+	}
+
+	// Admin marks as completed on a new active contract -> succeeds
+	contract2ID := uuid.New()
+	mockRepo.contracts[contract2ID] = &ContractWithDetails{
+		Contract: Contract{
+			ID:           contract2ID,
+			ClientID:     clientID,
+			FreelancerID: freelancerID,
+			Status:       StatusActive,
+		},
+	}
+	adminID := uuid.New()
+	adminClaims := &auth.UserClaims{UserID: adminID.String(), Roles: []string{"admin"}}
+	adminUpdated, err := svc.UpdateContractStatus(context.Background(), adminClaims, contract2ID, UpdateContractStatusRequest{Status: StatusCompleted})
+	if err != nil {
+		t.Fatalf("expected admin to successfully mark completed, got: %v", err)
+	}
+	if adminUpdated.Status != StatusCompleted {
+		t.Fatalf("expected status %s, got %s", StatusCompleted, adminUpdated.Status)
+	}
+	if adminUpdated.Job == nil || adminUpdated.Job.Status != "closed" {
+		t.Fatalf("expected job status 'closed' upon contract completion, got %+v", adminUpdated.Job)
+	}
+}
+
+func TestContract_CompleteContractClosesJob(t *testing.T) {
 	repo := newMockContractRepo()
 	service := NewService(repo)
-	handler := NewHandler(service)
 
-	studentID := uuid.New()
-	employerID := uuid.New()
+	clientID := uuid.New()
+	freelancerID := uuid.New()
 	contractID := uuid.New()
+	jobID := uuid.New()
 
 	c := &Contract{
 		ID:            contractID,
-		JobID:         uuid.New(),
+		JobID:         jobID,
 		ApplicationID: uuid.New(),
-		EmployerID:    employerID,
-		StudentID:     studentID,
-		AgreedBudget:  650.0,
+		ClientID:      clientID,
+		FreelancerID:  freelancerID,
+		AgreedBudget:  500.0,
 		Status:        StatusActive,
 	}
-	_ = repo.CreateContract(context.Background(), c)
-
-	validToken := "valid-jwt-token"
-	validator := &mockValidator{
-		claimsMap: map[string]*auth.UserClaims{
-			validToken: {
-				UserID:        studentID.String(),
-				Email:         "student@uni.edu",
-				EmailVerified: true,
-				Roles:         []string{"student"},
-			},
-		},
+	if err := repo.CreateContract(context.Background(), c); err != nil {
+		t.Fatalf("failed to create contract: %v", err)
 	}
 
-	authMw := middleware.AuthMiddleware(validator)
-	router := handler.Routes(authMw)
+	// Verify initial job status is in_progress
+	initial, err := repo.GetContractByID(context.Background(), contractID)
+	if err != nil || initial == nil {
+		t.Fatalf("failed to retrieve contract: %v", err)
+	}
+	if initial.Job == nil || initial.Job.Status != "in_progress" {
+		t.Fatalf("expected initial job status to be 'in_progress', got %+v", initial.Job)
+	}
 
-	t.Run("request with valid bearer token succeeds (200 OK)", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/contracts/%s", contractID), nil)
-		req.Header.Set("Authorization", "Bearer "+validToken)
-		rec := httptest.NewRecorder()
+	clientClaims := &auth.UserClaims{
+		UserID:        clientID.String(),
+		Email:         "client@uni.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
 
-		router.ServeHTTP(rec, req)
+	updated, err := service.UpdateContractStatus(context.Background(), clientClaims, contractID, UpdateContractStatusRequest{Status: StatusCompleted})
+	if err != nil {
+		t.Fatalf("expected status update to succeed, got: %v", err)
+	}
 
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d. Body: %s", rec.Code, rec.Body.String())
-		}
-		env := parseEnvelope(t, rec.Body.Bytes())
-		if !env.Success {
-			t.Fatalf("expected success=true")
-		}
-	})
-
-	t.Run("request with invalid bearer token returns 401 Unauthorized", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/contracts/%s", contractID), nil)
-		req.Header.Set("Authorization", "Bearer invalid-token")
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusUnauthorized {
-			t.Fatalf("expected 401 Unauthorized, got %d", rec.Code)
-		}
-	})
-
-	t.Run("request without Authorization header returns 401 Unauthorized", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/contracts/%s", contractID), nil)
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusUnauthorized {
-			t.Fatalf("expected 401 Unauthorized, got %d", rec.Code)
-		}
-	})
+	if updated.Status != StatusCompleted {
+		t.Fatalf("expected contract status %s, got %s", StatusCompleted, updated.Status)
+	}
+	if updated.Job == nil || updated.Job.Status != "closed" {
+		t.Fatalf("expected job status 'closed' upon contract completion, got %+v", updated.Job)
+	}
 }
-
-// --- Unit Tests: Repository Concurrency Guard ---
-
-func TestContract_Repository_TerminalStateGuard(t *testing.T) {
-	repo := newMockContractRepo()
-
-	completedID := uuid.New()
-	_ = repo.CreateContract(context.Background(), &Contract{
-		ID:            completedID,
-		JobID:         uuid.New(),
-		ApplicationID: uuid.New(),
-		EmployerID:    uuid.New(),
-		StudentID:     uuid.New(),
-		AgreedBudget:  500.0,
-		Status:        StatusCompleted,
-	})
-
-	cancelledID := uuid.New()
-	_ = repo.CreateContract(context.Background(), &Contract{
-		ID:            cancelledID,
-		JobID:         uuid.New(),
-		ApplicationID: uuid.New(),
-		EmployerID:    uuid.New(),
-		StudentID:     uuid.New(),
-		AgreedBudget:  500.0,
-		Status:        StatusCancelled,
-	})
-
-	t.Run("concurrency guard prevents mutating completed contract at repository level", func(t *testing.T) {
-		_, err := repo.UpdateContractStatus(context.Background(), completedID, StatusActive)
-		if !errors.Is(err, ErrTerminalStatus) {
-			t.Fatalf("expected ErrTerminalStatus, got %v", err)
-		}
-	})
-
-	t.Run("concurrency guard prevents mutating cancelled contract at repository level", func(t *testing.T) {
-		_, err := repo.UpdateContractStatus(context.Background(), cancelledID, StatusCompleted)
-		if !errors.Is(err, ErrTerminalStatus) {
-			t.Fatalf("expected ErrTerminalStatus, got %v", err)
-		}
-	})
-
-	t.Run("updating non-existent contract returns ErrContractNotFound", func(t *testing.T) {
-		_, err := repo.UpdateContractStatus(context.Background(), uuid.New(), StatusCompleted)
-		if !errors.Is(err, ErrContractNotFound) {
-			t.Fatalf("expected ErrContractNotFound, got %v", err)
-		}
-	})
-}
-

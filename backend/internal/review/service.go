@@ -70,18 +70,17 @@ func (s *Service) CreateReview(ctx context.Context, claims *auth.UserClaims, con
 		return nil, ErrContractNotCompleted
 	}
 
-	// Invariant: The reviewer MUST be a participant of the contract (either student or employer).
-	// Reviewee is automatically determined as the *other* participant of the contract.
+	// Invariant: Reviewer MUST be participant (client or freelancer).
+	// Reviewee is automatically determined as the other participant.
 	var revieweeID uuid.UUID
-	if callerID == c.StudentID {
-		revieweeID = c.EmployerID
-	} else if callerID == c.EmployerID {
-		revieweeID = c.StudentID
+	if callerID == c.FreelancerID {
+		revieweeID = c.ClientID
+	} else if callerID == c.ClientID {
+		revieweeID = c.FreelancerID
 	} else {
 		return nil, ErrNotParticipant
 	}
 
-	// Invariant: Duplicate review prevention (each participant can submit at most ONE review per contract)
 	hasReviewed, err := s.repo.HasUserReviewedContract(ctx, contractID, callerID)
 	if err != nil {
 		return nil, err

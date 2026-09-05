@@ -6,14 +6,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
 )
 
 var (
 	ErrNotFound        = errors.New("user not found")
 	ErrProfileNotFound = errors.New("profile not found")
-	ErrInvalidRole     = errors.New("invalid role: must be student or employer")
+	ErrInvalidRole     = errors.New("invalid role: must be member or admin")
 	ErrInvalidInput    = errors.New("invalid input")
 	ErrUnauthorized    = errors.New("unauthorized: missing or invalid credentials")
 )
@@ -26,53 +25,19 @@ func NewService(repo UserRepository) *Service {
 	return &Service{repo: repo}
 }
 
-// SyncUser ensures the Keycloak authenticated user is persisted idempotently in PostgreSQL.
+// SyncUser ensures the authenticated user is persisted idempotently in PostgreSQL.
 func (s *Service) SyncUser(ctx context.Context, claims *auth.UserClaims, req SyncUserRequest) (*User, error) {
 	if claims == nil || claims.UserID == "" {
 		return nil, ErrUnauthorized
 	}
 
-	userUUID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		return nil, ErrInvalidInput
-	}
-
-	// Determine role
-	requestedRole := strings.ToLower(strings.TrimSpace(req.Role))
-
-	// Privilege escalation prevention: callers cannot assign themselves "admin" unless claims.HasRole("admin") is true
-	if requestedRole == "admin" && !claims.HasRole("admin") {
-		return nil, ErrInvalidRole
-	}
-
-	// User selection in req.Role must strictly be "student" or "employer" (or empty, or admin if verified via claim)
-	if requestedRole != "" && requestedRole != "student" && requestedRole != "employer" && requestedRole != "admin" {
-		return nil, ErrInvalidRole
-	}
-
-	var role string
-	// Prefer claims.Roles as source of truth if defined
+	role := "member"
 	if claims.HasRole("admin") {
 		role = "admin"
-	} else if claims.HasRole("employer") {
-		role = "employer"
-	} else if claims.HasRole("student") {
-		role = "student"
-	} else if requestedRole != "" {
-		// If claims do not specify a role, accept user selection ("student" or "employer")
-		role = requestedRole
-	} else {
-		// Check if user already exists
-		existing, err := s.repo.GetUserByID(ctx, userUUID)
-		if err == nil && existing != nil {
-			role = existing.Role
-		} else {
-			role = "student"
-		}
 	}
 
 	u := &User{
-		ID:    userUUID,
+		ID:    claims.UserID,
 		Email: claims.Email,
 		Role:  role,
 	}
@@ -82,39 +47,25 @@ func (s *Service) SyncUser(ctx context.Context, claims *auth.UserClaims, req Syn
 	}
 
 	// Auto-provision empty profile if not existing
-	if role == "student" {
-		existing, err := s.repo.GetStudentProfile(ctx, userUUID)
-		if err == nil && existing == nil {
-			_ = s.repo.UpsertStudentProfile(ctx, &StudentProfile{
-				UserID:         userUUID,
-				Skills:         []string{},
-				PortfolioLinks: []string{},
-			})
-		}
-	} else if role == "employer" {
-		existing, err := s.repo.GetEmployerProfile(ctx, userUUID)
-		if err == nil && existing == nil {
-			_ = s.repo.UpsertEmployerProfile(ctx, &EmployerProfile{
-				UserID: userUUID,
-			})
-		}
+	existing, err := s.repo.GetProfile(ctx, claims.UserID)
+	if err == nil && existing == nil {
+		_ = s.repo.UpsertProfile(ctx, &Profile{
+			UserID:         claims.UserID,
+			Skills:         []string{},
+			PortfolioLinks: []string{},
+		})
 	}
 
 	return u, nil
 }
 
-// GetMe retrieves the authenticated user's profile summary.
+// GetMe retrieves the authenticated campus member's profile summary.
 func (s *Service) GetMe(ctx context.Context, claims *auth.UserClaims) (*UserProfileSummary, error) {
 	if claims == nil || claims.UserID == "" {
 		return nil, ErrUnauthorized
 	}
 
-	userUUID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		return nil, ErrInvalidInput
-	}
-
-	u, err := s.repo.GetUserByID(ctx, userUUID)
+	u, err := s.repo.GetUserByID(ctx, claims.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -132,47 +83,40 @@ func (s *Service) GetMe(ctx context.Context, claims *auth.UserClaims) (*UserProf
 		EmailVerified: claims.EmailVerified,
 	}
 
-	if u.Role == "student" {
-		sp, err := s.repo.GetStudentProfile(ctx, userUUID)
-		if err == nil && sp != nil {
-			summary.StudentProfile = sp
-		}
-	} else if u.Role == "employer" {
-		ep, err := s.repo.GetEmployerProfile(ctx, userUUID)
-		if err == nil && ep != nil {
-			summary.EmployerProfile = ep
-		}
+	p, err := s.repo.GetProfile(ctx, claims.UserID)
+	if err == nil && p != nil {
+		summary.Profile = p
 	}
 
 	return summary, nil
 }
 
-// GetStudentProfile retrieves the caller student's profile.
-func (s *Service) GetStudentProfile(ctx context.Context, userID uuid.UUID) (*StudentProfile, error) {
-	sp, err := s.repo.GetStudentProfile(ctx, userID)
+// GetProfile retrieves a campus member's profile.
+func (s *Service) GetProfile(ctx context.Context, userID string) (*Profile, error) {
+	p, err := s.repo.GetProfile(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	if sp == nil {
+	if p == nil {
 		return nil, ErrProfileNotFound
 	}
-	return sp, nil
+	return p, nil
 }
 
-// GetStudentProfileByID retrieves a student profile by either profile ID or student user ID.
-func (s *Service) GetStudentProfileByID(ctx context.Context, id uuid.UUID) (*StudentProfile, error) {
-	sp, err := s.repo.GetStudentProfileByID(ctx, id)
+// GetProfileByID retrieves a profile by either profile ID or member user ID.
+func (s *Service) GetProfileByID(ctx context.Context, id string) (*Profile, error) {
+	p, err := s.repo.GetProfileByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if sp == nil {
+	if p == nil {
 		return nil, ErrProfileNotFound
 	}
-	return sp, nil
+	return p, nil
 }
 
-// UpdateStudentProfile updates the student's profile details.
-func (s *Service) UpdateStudentProfile(ctx context.Context, userID uuid.UUID, req UpdateStudentProfileRequest) (*StudentProfile, error) {
+// UpdateProfile updates the campus member's profile details.
+func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdateProfileRequest) (*Profile, error) {
 	firstName := strings.TrimSpace(req.FirstName)
 	if len(firstName) > 100 {
 		return nil, fmt.Errorf("%w: first name must not exceed 100 characters", ErrInvalidInput)
@@ -217,69 +161,41 @@ func (s *Service) UpdateStudentProfile(ctx context.Context, userID uuid.UUID, re
 		}
 	}
 
-	sp := &StudentProfile{
-		UserID:         userID,
-		FirstName:      firstName,
-		LastName:       lastName,
-		Bio:            bio,
-		Department:     department,
-		GraduationYear: req.GraduationYear,
-		Skills:         skills,
-		PortfolioLinks: links,
+	org := strings.TrimSpace(req.Organization)
+	if len(org) > 200 {
+		return nil, fmt.Errorf("%w: organization name must not exceed 200 characters", ErrInvalidInput)
 	}
 
-	if err := s.repo.UpsertStudentProfile(ctx, sp); err != nil {
+	orgWebsite := strings.TrimSpace(req.OrganizationWebsite)
+	if len(orgWebsite) > 500 {
+		return nil, fmt.Errorf("%w: organization website must not exceed 500 characters", ErrInvalidInput)
+	}
+
+	p := &Profile{
+		UserID:              userID,
+		FirstName:           firstName,
+		LastName:            lastName,
+		Bio:                 bio,
+		Department:          department,
+		GraduationYear:      req.GraduationYear,
+		Skills:              skills,
+		PortfolioLinks:      links,
+		Organization:        org,
+		OrganizationWebsite: orgWebsite,
+	}
+
+	if err := s.repo.UpsertProfile(ctx, p); err != nil {
 		return nil, err
 	}
 
-	return sp, nil
+	return p, nil
 }
 
-// GetEmployerProfile retrieves the caller employer's profile.
-func (s *Service) GetEmployerProfile(ctx context.Context, userID uuid.UUID) (*EmployerProfile, error) {
-	ep, err := s.repo.GetEmployerProfile(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	if ep == nil {
-		return nil, ErrProfileNotFound
-	}
-	return ep, nil
+// Backwards-compatibility aliases for other services/tests during unification
+func (s *Service) GetStudentProfile(ctx context.Context, userID string) (*Profile, error) {
+	return s.GetProfile(ctx, userID)
 }
 
-// UpdateEmployerProfile updates the employer's profile details.
-func (s *Service) UpdateEmployerProfile(ctx context.Context, userID uuid.UUID, req UpdateEmployerProfileRequest) (*EmployerProfile, error) {
-	companyOrOrg := strings.TrimSpace(req.CompanyOrOrg)
-	if len(companyOrOrg) > 200 {
-		return nil, fmt.Errorf("%w: company or organization name must not exceed 200 characters", ErrInvalidInput)
-	}
-
-	contactName := strings.TrimSpace(req.ContactName)
-	if len(contactName) > 100 {
-		return nil, fmt.Errorf("%w: contact name must not exceed 100 characters", ErrInvalidInput)
-	}
-
-	description := strings.TrimSpace(req.Description)
-	if len(description) > 5000 {
-		return nil, fmt.Errorf("%w: description must not exceed 5000 characters", ErrInvalidInput)
-	}
-
-	website := strings.TrimSpace(req.Website)
-	if len(website) > 255 {
-		return nil, fmt.Errorf("%w: website URL must not exceed 255 characters", ErrInvalidInput)
-	}
-
-	ep := &EmployerProfile{
-		UserID:       userID,
-		CompanyOrOrg: companyOrOrg,
-		ContactName:  contactName,
-		Description:  description,
-		Website:      website,
-	}
-
-	if err := s.repo.UpsertEmployerProfile(ctx, ep); err != nil {
-		return nil, err
-	}
-
-	return ep, nil
+func (s *Service) GetStudentProfileByID(ctx context.Context, id string) (*Profile, error) {
+	return s.GetProfileByID(ctx, id)
 }

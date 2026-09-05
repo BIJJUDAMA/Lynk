@@ -29,20 +29,20 @@ type JobReader interface {
 	GetJobByID(ctx context.Context, id uuid.UUID) (*job.Job, error)
 }
 
-// StudentProfileReader provides read-only student profile lookup required to auto-attach resumes.
-type StudentProfileReader interface {
-	GetStudentProfile(ctx context.Context, userID uuid.UUID) (*user.StudentProfile, error)
+// ProfileReader provides read-only profile lookup required to auto-attach resumes.
+type ProfileReader interface {
+	GetProfile(ctx context.Context, userID uuid.UUID) (*user.Profile, error)
 }
 
 // Service provides business logic and authorization gates for job applications and contract provisioning.
 type Service struct {
 	repo          ApplicationRepository
 	jobReader     JobReader
-	profileReader StudentProfileReader
+	profileReader ProfileReader
 }
 
 // NewService creates a new application service instance.
-func NewService(repo ApplicationRepository, jobReader JobReader, profileReader StudentProfileReader) *Service {
+func NewService(repo ApplicationRepository, jobReader JobReader, profileReader ProfileReader) *Service {
 	return &Service{
 		repo:          repo,
 		jobReader:     jobReader,
@@ -50,25 +50,20 @@ func NewService(repo ApplicationRepository, jobReader JobReader, profileReader S
 	}
 }
 
-// ApplyToJob enforces the Institutional Email Gate and student-only role checks before recording a job application.
+// ApplyToJob enforces the Institutional Email Gate and resource authorization before recording a job application.
 func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID uuid.UUID, req ApplyRequest) (*Application, error) {
 	if claims == nil {
 		return nil, ErrForbidden
 	}
 
-	// 1. Institutional Email Gate: reject unverified student applicants
+	// 1. Institutional Email Gate: reject unverified applicants
 	if !claims.EmailVerified {
 		return nil, ErrEmailNotVerified
 	}
 
-	// 2. Role Gate: only students can apply to jobs
-	if !claims.HasRole("student") && !claims.HasRole("admin") {
-		return nil, fmt.Errorf("%w: only students can apply to jobs", ErrForbidden)
-	}
-
-	studentID, err := uuid.Parse(claims.UserID)
-	if err != nil || studentID == uuid.Nil {
-		return nil, fmt.Errorf("%w: invalid student user id", ErrInvalidInput)
+	applicantID, err := uuid.Parse(claims.UserID)
+	if err != nil || applicantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: invalid applicant user id", ErrInvalidInput)
 	}
 
 	if jobID == uuid.Nil {
@@ -83,7 +78,7 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 		return nil, fmt.Errorf("%w: cover letter cannot exceed 5000 characters", ErrInvalidInput)
 	}
 
-	// 3. Validate job exists and is open for applications
+	// 2. Validate job exists, is open, and caller is not the job creator
 	if s.jobReader != nil {
 		targetJob, err := s.jobReader.GetJobByID(ctx, jobID)
 		if err != nil {
@@ -98,13 +93,13 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 		if targetJob.Status != job.StatusOpen {
 			return nil, ErrJobNotOpen
 		}
-		if targetJob.EmployerID == studentID {
+		if targetJob.CreatedBy == applicantID {
 			return nil, fmt.Errorf("%w: cannot apply to your own job", ErrForbidden)
 		}
 	}
 
-	// 4. Duplicate prevention check
-	existing, err := s.repo.GetApplicationByJobAndStudent(ctx, jobID, studentID)
+	// 3. Duplicate prevention check
+	existing, err := s.repo.GetApplicationByJobAndApplicant(ctx, jobID, applicantID)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +107,7 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 		return nil, ErrDuplicateApplication
 	}
 
-	// 5. Resume key resolution: prioritize explicitly passed key, fallback to student profile resume
+	// 4. Resume key resolution: prioritize explicitly passed key, fallback to user profile resume
 	var resumeKey *string
 	if req.ResumeKey != nil && strings.TrimSpace(*req.ResumeKey) != "" {
 		trimmed := strings.TrimSpace(*req.ResumeKey)
@@ -121,7 +116,7 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 		}
 		resumeKey = &trimmed
 	} else if s.profileReader != nil {
-		profile, err := s.profileReader.GetStudentProfile(ctx, studentID)
+		profile, err := s.profileReader.GetProfile(ctx, applicantID)
 		if err == nil && profile != nil && profile.ResumeKey != nil && strings.TrimSpace(*profile.ResumeKey) != "" {
 			resumeKey = profile.ResumeKey
 		}
@@ -130,7 +125,7 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 	app := &Application{
 		ID:          uuid.New(),
 		JobID:       jobID,
-		StudentID:   studentID,
+		ApplicantID: applicantID,
 		CoverLetter: coverLetter,
 		ResumeKey:   resumeKey,
 		Status:      StatusPending,
@@ -143,14 +138,10 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 	return app, nil
 }
 
-// ListJobApplications retrieves applications for a given job, enforcing owner-only employer authorization.
+// ListJobApplications retrieves applications for a given job, enforcing owner-only authorization.
 func (s *Service) ListJobApplications(ctx context.Context, claims *auth.UserClaims, jobID uuid.UUID) ([]*ApplicationWithDetails, error) {
 	if claims == nil {
 		return nil, ErrForbidden
-	}
-
-	if !claims.HasRole("employer") && !claims.HasRole("admin") {
-		return nil, fmt.Errorf("%w: only employers can view job applications", ErrForbidden)
 	}
 
 	callerID, err := uuid.Parse(claims.UserID)
@@ -173,8 +164,8 @@ func (s *Service) ListJobApplications(ctx context.Context, claims *auth.UserClai
 		if targetJob == nil {
 			return nil, ErrJobNotFound
 		}
-		if targetJob.EmployerID != callerID && !claims.HasRole("admin") {
-			return nil, fmt.Errorf("%w: only the employer who posted the job can view its applications", ErrForbidden)
+		if targetJob.CreatedBy != callerID && !claims.HasRole("admin") {
+			return nil, fmt.Errorf("%w: only the member who posted the job can view its applications", ErrForbidden)
 		}
 	}
 
@@ -188,22 +179,18 @@ func (s *Service) ListJobApplications(ctx context.Context, claims *auth.UserClai
 	return apps, nil
 }
 
-// ListMyApplications retrieves all applications submitted by the calling student.
+// ListMyApplications retrieves all applications submitted by the calling campus member.
 func (s *Service) ListMyApplications(ctx context.Context, claims *auth.UserClaims) ([]*ApplicationWithDetails, error) {
 	if claims == nil {
 		return nil, ErrForbidden
 	}
 
-	if !claims.HasRole("student") && !claims.HasRole("admin") {
-		return nil, fmt.Errorf("%w: only students can view their submitted applications", ErrForbidden)
-	}
-
-	studentID, err := uuid.Parse(claims.UserID)
-	if err != nil || studentID == uuid.Nil {
+	applicantID, err := uuid.Parse(claims.UserID)
+	if err != nil || applicantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: invalid user id", ErrInvalidInput)
 	}
 
-	apps, err := s.repo.ListApplicationsByStudent(ctx, studentID)
+	apps, err := s.repo.ListApplicationsByApplicant(ctx, applicantID)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +200,7 @@ func (s *Service) ListMyApplications(ctx context.Context, claims *auth.UserClaim
 	return apps, nil
 }
 
-// GetApplicationByID retrieves single application details, allowing only the applicant student or job owner employer.
+// GetApplicationByID retrieves single application details, allowing only the applicant or job creator.
 func (s *Service) GetApplicationByID(ctx context.Context, claims *auth.UserClaims, appID uuid.UUID) (*ApplicationWithDetails, error) {
 	if claims == nil {
 		return nil, ErrForbidden
@@ -236,29 +223,29 @@ func (s *Service) GetApplicationByID(ctx context.Context, claims *auth.UserClaim
 		return nil, ErrApplicationNotFound
 	}
 
-	// Verify authorization: caller must be applicant student or job employer
-	isApplicant := app.StudentID == callerID
-	isJobEmployer := app.Job != nil && app.Job.EmployerID == callerID
+	// Verify authorization: caller must be applicant or job creator
+	isApplicant := app.ApplicantID == callerID
+	isJobOwner := app.Job != nil && app.Job.CreatedBy == callerID
 
-	if !isApplicant && !isJobEmployer && !claims.HasRole("admin") {
+	if !isApplicant && !isJobOwner && !claims.HasRole("admin") {
 		// Fallback check against job repository if job summary was omitted
 		if s.jobReader != nil && app.Job == nil {
 			if targetJob, err := s.jobReader.GetJobByID(ctx, app.JobID); err == nil && targetJob != nil {
-				if targetJob.EmployerID == callerID {
-					isJobEmployer = true
+				if targetJob.CreatedBy == callerID {
+					isJobOwner = true
 				}
 			}
 		}
 	}
 
-	if !isApplicant && !isJobEmployer && !claims.HasRole("admin") {
-		return nil, fmt.Errorf("%w: you are neither the applicant student nor the job owner", ErrForbidden)
+	if !isApplicant && !isJobOwner && !claims.HasRole("admin") {
+		return nil, fmt.Errorf("%w: you are neither the applicant nor the job creator", ErrForbidden)
 	}
 
 	return app, nil
 }
 
-// UpdateApplicationStatus allows the employer who posted the job to accept or reject an application.
+// UpdateApplicationStatus allows the member who posted the job to accept or reject an application.
 // When accepting, an atomic transaction transitions application to 'accepted', others to 'rejected',
 // job to 'in_progress', and creates an active Contract.
 func (s *Service) UpdateApplicationStatus(
@@ -269,10 +256,6 @@ func (s *Service) UpdateApplicationStatus(
 ) (*ApplicationWithDetails, *Contract, error) {
 	if claims == nil {
 		return nil, nil, ErrForbidden
-	}
-
-	if !claims.HasRole("employer") && !claims.HasRole("admin") {
-		return nil, nil, fmt.Errorf("%w: only employers can accept or reject applications", ErrForbidden)
 	}
 
 	callerID, err := uuid.Parse(claims.UserID)
@@ -298,19 +281,19 @@ func (s *Service) UpdateApplicationStatus(
 		return nil, nil, ErrApplicationNotFound
 	}
 
-	// Verify employer ownership of the job
+	// Verify creator ownership of the job
 	isOwner := false
-	if existing.Job != nil && existing.Job.EmployerID == callerID {
+	if existing.Job != nil && existing.Job.CreatedBy == callerID {
 		isOwner = true
 	} else if s.jobReader != nil {
 		targetJob, jErr := s.jobReader.GetJobByID(ctx, existing.JobID)
-		if jErr == nil && targetJob != nil && targetJob.EmployerID == callerID {
+		if jErr == nil && targetJob != nil && targetJob.CreatedBy == callerID {
 			isOwner = true
 		}
 	}
 
 	if !isOwner && !claims.HasRole("admin") {
-		return nil, nil, fmt.Errorf("%w: only the employer who posted the job can update application status", ErrForbidden)
+		return nil, nil, fmt.Errorf("%w: only the member who posted the job can update application status", ErrForbidden)
 	}
 
 	if existing.Status != StatusPending {

@@ -1,19 +1,17 @@
 package user
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
 	"github.com/lynk/backend/internal/storage"
 )
 
-// Handler handles user authentication sync and profile management endpoints.
+// Handler handles user authentication sync and unified profile management endpoints.
 type Handler struct {
 	service  *Service
 	repo     UserRepository
@@ -49,19 +47,28 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 	r.Post("/auth/sync", h.SyncUser)
 	r.Get("/auth/me", h.GetMe)
 
-	// Student profiles & resume streaming
-	r.Get("/profile/student", h.GetMyStudentProfile)
-	r.Put("/profile/student", h.UpdateMyStudentProfile)
+	// Unified profile & resume streaming
+	r.Get("/profile/me", h.GetMyProfile)
+	r.Put("/profile/me", h.UpdateMyProfile)
+	r.Get("/profile/{id}", h.GetProfileByID)
+
+	if h.s3Client != nil {
+		r.Post("/profile/resume", h.UploadResume(h.s3Client))
+		r.Get("/profile/resume", h.GetMyResumeURL(h.s3Client))
+		r.Get("/profile/{id}/resume", h.GetMemberResumeURL(h.s3Client))
+	}
+
+	// Backwards compatibility aliases
+	r.Get("/profile/student", h.GetMyProfile)
+	r.Put("/profile/student", h.UpdateMyProfile)
+	r.Get("/profile/student/{id}", h.GetProfileByID)
+	r.Get("/profile/employer", h.GetMyProfile)
+	r.Put("/profile/employer", h.UpdateMyProfile)
 	if h.s3Client != nil {
 		r.Post("/profile/student/resume", h.UploadResume(h.s3Client))
 		r.Get("/profile/student/resume", h.GetMyResumeURL(h.s3Client))
-		r.Get("/profile/student/{id}/resume", h.GetStudentResumeURL(h.s3Client))
+		r.Get("/profile/student/{id}/resume", h.GetMemberResumeURL(h.s3Client))
 	}
-	r.Get("/profile/student/{id}", h.GetStudentProfileByID)
-
-	// Employer profiles
-	r.Get("/profile/employer", h.GetMyEmployerProfile)
-	r.Put("/profile/employer", h.UpdateMyEmployerProfile)
 
 	return r
 }
@@ -83,35 +90,29 @@ func (h *Handler) ProfileRoutes(authMiddleware func(http.Handler) http.Handler) 
 	if authMiddleware != nil {
 		r.Use(authMiddleware)
 	}
-	r.Get("/student", h.GetMyStudentProfile)
-	r.Put("/student", h.UpdateMyStudentProfile)
+	r.Get("/me", h.GetMyProfile)
+	r.Put("/me", h.UpdateMyProfile)
+	r.Get("/{id}", h.GetProfileByID)
+
+	if h.s3Client != nil {
+		r.Post("/resume", h.UploadResume(h.s3Client))
+		r.Get("/resume", h.GetMyResumeURL(h.s3Client))
+		r.Get("/{id}/resume", h.GetMemberResumeURL(h.s3Client))
+	}
+
+	// Backwards compatibility aliases
+	r.Get("/student", h.GetMyProfile)
+	r.Put("/student", h.UpdateMyProfile)
+	r.Get("/student/{id}", h.GetProfileByID)
+	r.Get("/employer", h.GetMyProfile)
+	r.Put("/employer", h.UpdateMyProfile)
 	if h.s3Client != nil {
 		r.Post("/student/resume", h.UploadResume(h.s3Client))
 		r.Get("/student/resume", h.GetMyResumeURL(h.s3Client))
-		r.Get("/student/{id}/resume", h.GetStudentResumeURL(h.s3Client))
+		r.Get("/student/{id}/resume", h.GetMemberResumeURL(h.s3Client))
 	}
-	r.Get("/student/{id}", h.GetStudentProfileByID)
-	r.Get("/employer", h.GetMyEmployerProfile)
-	r.Put("/employer", h.UpdateMyEmployerProfile)
+
 	return r
-}
-
-// isStudent checks affirmative student authorization via JWT claims or database user record.
-func (h *Handler) isStudent(ctx context.Context, claims *auth.UserClaims, userUUID uuid.UUID) bool {
-	if claims.HasRole("student") {
-		return true
-	}
-	u, err := h.repo.GetUserByID(ctx, userUUID)
-	return err == nil && u != nil && u.Role == "student"
-}
-
-// isEmployer checks affirmative employer authorization via JWT claims or database user record.
-func (h *Handler) isEmployer(ctx context.Context, claims *auth.UserClaims, userUUID uuid.UUID) bool {
-	if claims.HasRole("employer") {
-		return true
-	}
-	u, err := h.repo.GetUserByID(ctx, userUUID)
-	return err == nil && u != nil && u.Role == "employer"
 }
 
 // SyncUser handles POST /api/v1/auth/sync
@@ -133,7 +134,7 @@ func (h *Handler) SyncUser(w http.ResponseWriter, r *http.Request) {
 	user, err := h.service.SyncUser(r.Context(), claims, req)
 	if err != nil {
 		if errors.Is(err, ErrInvalidRole) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_ROLE", "Role must be student or employer")
+			writeJSONError(w, http.StatusBadRequest, "INVALID_ROLE", "Role must be member or admin")
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
@@ -172,78 +173,56 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 	writeJSONSuccess(w, http.StatusOK, summary)
 }
 
-// GetMyStudentProfile handles GET /api/v1/profile/student
-func (h *Handler) GetMyStudentProfile(w http.ResponseWriter, r *http.Request) {
+// GetMyProfile handles GET /api/v1/profile/me
+func (h *Handler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
 		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
 		return
 	}
 
-	userUUID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
-		return
-	}
-
-	if !h.isStudent(r.Context(), claims, userUUID) {
-		writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Student role required")
-		return
-	}
-
-	profile, err := h.service.GetStudentProfile(r.Context(), userUUID)
+	profile, err := h.service.GetProfile(r.Context(), claims.UserID)
 	if err != nil {
 		if errors.Is(err, ErrProfileNotFound) {
-			writeJSONError(w, http.StatusNotFound, "PROFILE_NOT_FOUND", "Student profile not found")
+			writeJSONError(w, http.StatusNotFound, "PROFILE_NOT_FOUND", "Profile not found")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get student profile")
+		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get profile")
 		return
 	}
 
 	writeJSONSuccess(w, http.StatusOK, profile)
 }
 
-// UpdateMyStudentProfile handles PUT /api/v1/profile/student
-func (h *Handler) UpdateMyStudentProfile(w http.ResponseWriter, r *http.Request) {
+// UpdateMyProfile handles PUT /api/v1/profile/me
+func (h *Handler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
 		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
 		return
 	}
 
-	userUUID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
-		return
-	}
-
-	if !h.isStudent(r.Context(), claims, userUUID) {
-		writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Student role required")
-		return
-	}
-
-	var req UpdateStudentProfileRequest
+	var req UpdateProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON body")
 		return
 	}
 
-	profile, err := h.service.UpdateStudentProfile(r.Context(), userUUID, req)
+	profile, err := h.service.UpdateProfile(r.Context(), claims.UserID, req)
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
 			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update student profile")
+		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update profile")
 		return
 	}
 
 	writeJSONSuccess(w, http.StatusOK, profile)
 }
 
-// GetStudentProfileByID handles GET /api/v1/profile/student/{id}
-func (h *Handler) GetStudentProfileByID(w http.ResponseWriter, r *http.Request) {
+// GetProfileByID handles GET /api/v1/profile/{id}
+func (h *Handler) GetProfileByID(w http.ResponseWriter, r *http.Request) {
 	_, err := auth.GetUserContext(r.Context())
 	if err != nil {
 		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
@@ -251,93 +230,43 @@ func (h *Handler) GetStudentProfileByID(w http.ResponseWriter, r *http.Request) 
 	}
 
 	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid student ID")
+	if idStr == "" {
+		writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid profile ID")
 		return
 	}
 
-	profile, err := h.service.GetStudentProfileByID(r.Context(), id)
+	profile, err := h.service.GetProfileByID(r.Context(), idStr)
 	if err != nil {
 		if errors.Is(err, ErrProfileNotFound) {
-			writeJSONError(w, http.StatusNotFound, "PROFILE_NOT_FOUND", "Student profile not found")
+			writeJSONError(w, http.StatusNotFound, "PROFILE_NOT_FOUND", "Profile not found")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve student profile")
+		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve profile")
 		return
 	}
 
 	writeJSONSuccess(w, http.StatusOK, profile)
 }
 
-// GetMyEmployerProfile handles GET /api/v1/profile/employer
+// Backwards compatibility handler aliases
+func (h *Handler) GetMyStudentProfile(w http.ResponseWriter, r *http.Request) {
+	h.GetMyProfile(w, r)
+}
+
+func (h *Handler) UpdateMyStudentProfile(w http.ResponseWriter, r *http.Request) {
+	h.UpdateMyProfile(w, r)
+}
+
+func (h *Handler) GetStudentProfileByID(w http.ResponseWriter, r *http.Request) {
+	h.GetProfileByID(w, r)
+}
+
 func (h *Handler) GetMyEmployerProfile(w http.ResponseWriter, r *http.Request) {
-	claims, err := auth.GetUserContext(r.Context())
-	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
-		return
-	}
-
-	userUUID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
-		return
-	}
-
-	if !h.isEmployer(r.Context(), claims, userUUID) {
-		writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Employer role required")
-		return
-	}
-
-	profile, err := h.service.GetEmployerProfile(r.Context(), userUUID)
-	if err != nil {
-		if errors.Is(err, ErrProfileNotFound) {
-			writeJSONError(w, http.StatusNotFound, "PROFILE_NOT_FOUND", "Employer profile not found")
-			return
-		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get employer profile")
-		return
-	}
-
-	writeJSONSuccess(w, http.StatusOK, profile)
+	h.GetMyProfile(w, r)
 }
 
-// UpdateMyEmployerProfile handles PUT /api/v1/profile/employer
 func (h *Handler) UpdateMyEmployerProfile(w http.ResponseWriter, r *http.Request) {
-	claims, err := auth.GetUserContext(r.Context())
-	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
-		return
-	}
-
-	userUUID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
-		return
-	}
-
-	if !h.isEmployer(r.Context(), claims, userUUID) {
-		writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Employer role required")
-		return
-	}
-
-	var req UpdateEmployerProfileRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON body")
-		return
-	}
-
-	profile, err := h.service.UpdateEmployerProfile(r.Context(), userUUID, req)
-	if err != nil {
-		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
-			return
-		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update employer profile")
-		return
-	}
-
-	writeJSONSuccess(w, http.StatusOK, profile)
+	h.UpdateMyProfile(w, r)
 }
 
 func writeJSONSuccess(w http.ResponseWriter, status int, data interface{}) {

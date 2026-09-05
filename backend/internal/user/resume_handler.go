@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
 	"github.com/lynk/backend/internal/storage"
 )
@@ -19,9 +18,9 @@ const (
 	PresignedURLExpiry = 15 * time.Minute
 )
 
-// UploadResume handles POST /api/v1/profile/student/resume.
+// UploadResume handles POST /api/v1/profile/resume.
 // Enforces 5MB max body size, validates .pdf/.docx extensions, streams directly to MinIO,
-// and updates the student profile record in PostgreSQL.
+// and updates the campus member profile record in PostgreSQL.
 func (h *Handler) UploadResume(s3Client storage.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		client := s3Client
@@ -34,26 +33,14 @@ func (h *Handler) UploadResume(s3Client storage.Client) http.HandlerFunc {
 		}
 
 		claims, err := auth.GetUserContext(r.Context())
-		if err != nil {
+		if err != nil || claims == nil || claims.UserID == "" {
 			writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
 			return
 		}
 
-		userUUID, err := uuid.Parse(claims.UserID)
-		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
-			return
-		}
-
-		// Email verification gate (Hard Invariant: student email must be verified)
+		// Email verification gate (Hard Invariant: institutional email must be verified)
 		if !claims.EmailVerified {
 			writeJSONError(w, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "University email must be verified before performing this action")
-			return
-		}
-
-		// Affirmative student role check
-		if !h.isStudent(r.Context(), claims, userUUID) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Student role required")
 			return
 		}
 
@@ -64,6 +51,11 @@ func (h *Handler) UploadResume(s3Client storage.Client) http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "FILE_TOO_LARGE", "Resume must not exceed 5MB")
 			return
 		}
+		defer func() {
+			if r.MultipartForm != nil {
+				_ = r.MultipartForm.RemoveAll()
+			}
+		}()
 
 		file, header, err := r.FormFile("resume")
 		if err != nil {
@@ -89,7 +81,6 @@ func (h *Handler) UploadResume(s3Client storage.Client) http.HandlerFunc {
 			return
 		}
 
-		// Canonical Content-Type strictly normalized based on validated extension
 		var contentType string
 		if ext == ".pdf" {
 			contentType = "application/pdf"
@@ -100,7 +91,7 @@ func (h *Handler) UploadResume(s3Client storage.Client) http.HandlerFunc {
 		filename := filepath.Base(header.Filename)
 
 		// 3. Generate sanitized object key via storage.GenerateResumeKey
-		key := storage.GenerateResumeKey(userUUID.String(), filename)
+		key := storage.GenerateResumeKey(claims.UserID, filename)
 
 		// 4. Stream directly to s3Client.UploadResume
 		if err := client.UploadResume(r.Context(), key, contentType, file); err != nil {
@@ -108,23 +99,23 @@ func (h *Handler) UploadResume(s3Client storage.Client) http.HandlerFunc {
 			return
 		}
 
-		// 5. Record resume_key, resume_filename, resume_byte_size via repo.UpdateStudentResume
-		if err := h.repo.UpdateStudentResume(r.Context(), userUUID, key, filename, header.Size); err != nil {
+		// 5. Record resume metadata via repo.UpdateResume
+		if err := h.repo.UpdateResume(r.Context(), claims.UserID, key, filename, header.Size); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update profile resume metadata")
 			return
 		}
 
 		writeJSONSuccess(w, http.StatusOK, map[string]interface{}{
-			"message":     "Resume uploaded successfully",
-			"filename":    filename,
-			"byte_size":   header.Size,
-			"resume_key":  key,
+			"message":    "Resume uploaded successfully",
+			"filename":   filename,
+			"byte_size":  header.Size,
+			"resume_key": key,
 		})
 	}
 }
 
-// GetMyResumeURL handles GET /api/v1/profile/student/resume.
-// Retrieves the authenticated student's resume and generates a 15-minute presigned download URL.
+// GetMyResumeURL handles GET /api/v1/profile/resume.
+// Retrieves the authenticated campus member's resume and generates a 15-minute presigned download URL.
 func (h *Handler) GetMyResumeURL(s3Client storage.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		client := s3Client
@@ -137,25 +128,14 @@ func (h *Handler) GetMyResumeURL(s3Client storage.Client) http.HandlerFunc {
 		}
 
 		claims, err := auth.GetUserContext(r.Context())
-		if err != nil {
+		if err != nil || claims == nil || claims.UserID == "" {
 			writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
 			return
 		}
 
-		userUUID, err := uuid.Parse(claims.UserID)
+		profile, err := h.repo.GetProfile(r.Context(), claims.UserID)
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
-			return
-		}
-
-		if !h.isStudent(r.Context(), claims, userUUID) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Student role required")
-			return
-		}
-
-		profile, err := h.repo.GetStudentProfile(r.Context(), userUUID)
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve student profile")
+			writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve profile")
 			return
 		}
 
@@ -183,15 +163,14 @@ func (h *Handler) GetMyResumeURL(s3Client storage.Client) http.HandlerFunc {
 	}
 }
 
-// GetResumeURL is an alias for GetMyResumeURL for backwards compatibility with the original plan.
+// GetResumeURL is an alias for GetMyResumeURL.
 func (h *Handler) GetResumeURL(s3Client storage.Client) http.HandlerFunc {
 	return h.GetMyResumeURL(s3Client)
 }
 
-// GetStudentResumeURL handles GET /api/v1/profile/student/{id}/resume.
-// Retrieves a student's resume by ID parameter and generates a 15-minute presigned download URL.
-// Accessible to employers, admins, or the student resume owner.
-func (h *Handler) GetStudentResumeURL(s3Client storage.Client) http.HandlerFunc {
+// GetMemberResumeURL handles GET /api/v1/profile/{id}/resume.
+// Retrieves a campus member's resume by ID parameter and generates a 15-minute presigned download URL.
+func (h *Handler) GetMemberResumeURL(s3Client storage.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		client := s3Client
 		if client == nil {
@@ -202,48 +181,31 @@ func (h *Handler) GetStudentResumeURL(s3Client storage.Client) http.HandlerFunc 
 			return
 		}
 
-		claims, err := auth.GetUserContext(r.Context())
+		_, err := auth.GetUserContext(r.Context())
 		if err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
 			return
 		}
 
-		callerUUID, err := uuid.Parse(claims.UserID)
-		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
-			return
-		}
-
 		idStr := chi.URLParam(r, "id")
-		targetID, err := uuid.Parse(idStr)
-		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid student ID")
+		if idStr == "" {
+			writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid profile ID")
 			return
 		}
 
-		profile, err := h.repo.GetStudentProfileByID(r.Context(), targetID)
+		profile, err := h.repo.GetProfileByID(r.Context(), idStr)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve student profile")
+			writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve profile")
 			return
 		}
 
 		if profile == nil {
-			writeJSONError(w, http.StatusNotFound, "PROFILE_NOT_FOUND", "Student profile not found")
+			writeJSONError(w, http.StatusNotFound, "PROFILE_NOT_FOUND", "Profile not found")
 			return
 		}
 
 		if profile.ResumeKey == nil || *profile.ResumeKey == "" {
 			writeJSONError(w, http.StatusNotFound, "RESUME_NOT_FOUND", "No resume found for this profile")
-			return
-		}
-
-		// Authorization: employer, admin, or the student owner themselves
-		isOwner := profile.UserID == callerUUID || profile.ID == callerUUID
-		isEmp := h.isEmployer(r.Context(), claims, callerUUID)
-		isAdmin := claims.HasRole("admin")
-
-		if !isOwner && !isEmp && !isAdmin {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Access denied: employer, admin, or profile owner role required")
 			return
 		}
 
@@ -264,4 +226,9 @@ func (h *Handler) GetStudentResumeURL(s3Client storage.Client) http.HandlerFunc 
 			"filename":     filename,
 		})
 	}
+}
+
+// GetStudentResumeURL is an alias for GetMemberResumeURL.
+func (h *Handler) GetStudentResumeURL(s3Client storage.Client) http.HandlerFunc {
+	return h.GetMemberResumeURL(s3Client)
 }

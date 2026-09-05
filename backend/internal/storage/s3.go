@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,11 +17,12 @@ import (
 )
 
 type Config struct {
-	Endpoint  string
-	AccessKey string
-	SecretKey string
-	Bucket    string
-	UseSSL    bool
+	Endpoint       string
+	PublicEndpoint string
+	AccessKey      string
+	SecretKey      string
+	Bucket         string
+	UseSSL         bool
 }
 
 type Client interface {
@@ -29,9 +31,10 @@ type Client interface {
 }
 
 type S3Client struct {
-	client        *s3.Client
-	presignClient *s3.PresignClient
-	bucket        string
+	client         *s3.Client
+	presignClient  *s3.PresignClient
+	bucket         string
+	publicEndpoint string
 }
 
 var _ Client = (*S3Client)(nil)
@@ -76,10 +79,28 @@ func NewS3Client(ctx context.Context, cfg Config) (*S3Client, error) {
 	presignClient := s3.NewPresignClient(client)
 
 	return &S3Client{
-		client:        client,
-		presignClient: presignClient,
-		bucket:        cfg.Bucket,
+		client:         client,
+		presignClient:  presignClient,
+		bucket:         cfg.Bucket,
+		publicEndpoint: cfg.PublicEndpoint,
 	}, nil
+}
+
+func (s *S3Client) rewritePresignedURL(rawURL string) string {
+	if s.publicEndpoint == "" {
+		return rawURL
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	pub, err := url.Parse(s.publicEndpoint)
+	if err != nil || pub.Host == "" || pub.Scheme == "" {
+		return rawURL
+	}
+	parsed.Scheme = pub.Scheme
+	parsed.Host = pub.Host
+	return parsed.String()
 }
 
 func (s *S3Client) UploadResume(ctx context.Context, key string, contentType string, body io.Reader) error {
@@ -103,5 +124,5 @@ func (s *S3Client) GetPresignedDownloadURL(ctx context.Context, key string, expi
 	if err != nil {
 		return "", fmt.Errorf("presign get object: %w", err)
 	}
-	return req.URL, nil
+	return s.rewritePresignedURL(req.URL), nil
 }

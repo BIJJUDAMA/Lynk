@@ -43,41 +43,45 @@ func (r *Repository) CreateJob(ctx context.Context, job *Job) error {
 		job.Status = StatusOpen
 	}
 	query := `
-		INSERT INTO jobs (id, employer_id, title, description, budget, pay_type, required_skills, department, deadline, status, created_at, updated_at)
+		INSERT INTO jobs (id, created_by, title, description, budget, pay_type, required_skills, department, deadline, status, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
 		RETURNING created_at, updated_at;
 	`
 	return r.db.QueryRow(ctx, query,
-		job.ID, job.EmployerID, job.Title, job.Description, job.Budget, job.PayType,
+		job.ID, job.CreatedBy, job.Title, job.Description, job.Budget, job.PayType,
 		job.RequiredSkills, job.Department, job.Deadline, job.Status,
 	).Scan(&job.CreatedAt, &job.UpdatedAt)
 }
 
-// GetJobByID retrieves a job by UUID along with public employer profile info.
+// GetJobByID retrieves a job by UUID along with public creator profile info.
 func (r *Repository) GetJobByID(ctx context.Context, id uuid.UUID) (*Job, error) {
 	query := `
 		SELECT 
-			j.id, j.employer_id, j.title, j.description, j.budget, j.pay_type, 
+			j.id, j.created_by, j.title, j.description, j.budget, j.pay_type, 
 			j.required_skills, j.department, j.deadline, j.status, j.created_at, j.updated_at,
 			u.id, COALESCE(u.email, ''), 
-			COALESCE(ep.company_or_org, ''), COALESCE(ep.contact_name, ''), COALESCE(ep.website, '')
+			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.department, ''),
+			COALESCE(p.organization, ''), COALESCE(p.organization_website, '')
 		FROM jobs j
-		LEFT JOIN users u ON j.employer_id = u.id
-		LEFT JOIN employer_profiles ep ON ep.user_id = u.id
+		LEFT JOIN users u ON j.created_by = u.id
+		LEFT JOIN profiles p ON p.user_id = u.id
 		WHERE j.id = $1;
 	`
 	var (
 		j            Job
-		empID        *uuid.UUID
-		empEmail     string
-		empCompany   string
-		empContact   string
-		empWebsite   string
+		creatorID    *uuid.UUID
+		creatorEmail string
+		firstName    string
+		lastName     string
+		dept         string
+		org          string
+		orgWebsite   string
 	)
+
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&j.ID, &j.EmployerID, &j.Title, &j.Description, &j.Budget, &j.PayType,
+		&j.ID, &j.CreatedBy, &j.Title, &j.Description, &j.Budget, &j.PayType,
 		&j.RequiredSkills, &j.Department, &j.Deadline, &j.Status, &j.CreatedAt, &j.UpdatedAt,
-		&empID, &empEmail, &empCompany, &empContact, &empWebsite,
+		&creatorID, &creatorEmail, &firstName, &lastName, &dept, &org, &orgWebsite,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -85,22 +89,27 @@ func (r *Repository) GetJobByID(ctx context.Context, id uuid.UUID) (*Job, error)
 	if err != nil {
 		return nil, err
 	}
+
 	if j.RequiredSkills == nil {
 		j.RequiredSkills = []string{}
 	}
-	if empID != nil {
-		j.Employer = &EmployerInfo{
-			ID:           *empID,
-			Email:        empEmail,
-			CompanyOrOrg: empCompany,
-			ContactName:  empContact,
-			Website:      empWebsite,
+
+	if creatorID != nil {
+		j.Creator = &CreatorInfo{
+			ID:                  *creatorID,
+			Email:               creatorEmail,
+			FirstName:           firstName,
+			LastName:            lastName,
+			Department:          dept,
+			Organization:        org,
+			OrganizationWebsite: orgWebsite,
 		}
 	}
+
 	return &j, nil
 }
 
-// UpdateJob updates an existing job record and refreshes updated_at timestamp.
+// UpdateJob updates an existing job record.
 func (r *Repository) UpdateJob(ctx context.Context, job *Job) error {
 	if job.RequiredSkills == nil {
 		job.RequiredSkills = []string{}
@@ -108,135 +117,154 @@ func (r *Repository) UpdateJob(ctx context.Context, job *Job) error {
 	query := `
 		UPDATE jobs
 		SET title = $1, description = $2, budget = $3, pay_type = $4,
-		    required_skills = $5, department = $6, deadline = $7, status = $8,
-		    updated_at = NOW()
+		    required_skills = $5, department = $6, deadline = $7, status = $8, updated_at = NOW()
 		WHERE id = $9
 		RETURNING updated_at;
 	`
 	return r.db.QueryRow(ctx, query,
 		job.Title, job.Description, job.Budget, job.PayType,
-		job.RequiredSkills, job.Department, job.Deadline, job.Status,
-		job.ID,
+		job.RequiredSkills, job.Department, job.Deadline, job.Status, job.ID,
 	).Scan(&job.UpdatedAt)
 }
 
-// DeleteJob soft-cancels a job by updating its status to 'cancelled'.
+// DeleteJob permanently removes a job posting by ID.
 func (r *Repository) DeleteJob(ctx context.Context, id uuid.UUID) error {
-	query := `UPDATE jobs SET status = 'cancelled', updated_at = NOW() WHERE id = $1;`
-	_, err := r.db.Exec(ctx, query, id)
-	return err
+	query := `DELETE FROM jobs WHERE id = $1;`
+	tag, err := r.db.Exec(ctx, query, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
-// ListJobs searches and filters jobs according to criteria in JobFilter.
+// ListJobs retrieves jobs matching the provided filter criteria with search, pagination, and sorting.
 func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, error) {
-	baseQuery := `
-		SELECT 
-			j.id, j.employer_id, j.title, j.description, j.budget, j.pay_type, 
-			j.required_skills, j.department, j.deadline, j.status, j.created_at, j.updated_at,
-			u.id, COALESCE(u.email, ''), 
-			COALESCE(ep.company_or_org, ''), COALESCE(ep.contact_name, ''), COALESCE(ep.website, '')
-		FROM jobs j
-		LEFT JOIN users u ON j.employer_id = u.id
-		LEFT JOIN employer_profiles ep ON ep.user_id = u.id
-	`
-	var conditions []string
-	var args []interface{}
-	argIdx := 1
+	var (
+		conditions []string
+		args       []interface{}
+		argIdx     = 1
+	)
 
-	if filter.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("(j.title ILIKE $%d OR j.description ILIKE $%d)", argIdx, argIdx))
-		args = append(args, "%"+filter.Search+"%")
-		argIdx++
-	}
-	if filter.Department != "" {
-		conditions = append(conditions, fmt.Sprintf("LOWER(j.department) = LOWER($%d)", argIdx))
-		args = append(args, filter.Department)
-		argIdx++
-	}
-	if filter.Skill != "" {
-		conditions = append(conditions, fmt.Sprintf("EXISTS (SELECT 1 FROM unnest(j.required_skills) s WHERE LOWER(s) = LOWER($%d))", argIdx))
-		args = append(args, filter.Skill)
-		argIdx++
-	}
-	for _, sk := range filter.Skills {
-		trimmed := strings.TrimSpace(sk)
-		if trimmed != "" {
-			conditions = append(conditions, fmt.Sprintf("EXISTS (SELECT 1 FROM unnest(j.required_skills) s WHERE LOWER(s) = LOWER($%d))", argIdx))
-			args = append(args, trimmed)
-			argIdx++
-		}
-	}
-	if filter.MinBudget != nil {
-		conditions = append(conditions, fmt.Sprintf("j.budget >= $%d", argIdx))
-		args = append(args, *filter.MinBudget)
-		argIdx++
-	}
-	if filter.MaxBudget != nil {
-		conditions = append(conditions, fmt.Sprintf("j.budget <= $%d", argIdx))
-		args = append(args, *filter.MaxBudget)
-		argIdx++
-	}
-	if filter.PayType != "" {
-		conditions = append(conditions, fmt.Sprintf("j.pay_type = $%d", argIdx))
-		args = append(args, filter.PayType)
-		argIdx++
-	}
+	// Status filter
 	if filter.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("j.status = $%d", argIdx))
 		args = append(args, filter.Status)
 		argIdx++
 	}
-	if filter.EmployerID != nil {
-		conditions = append(conditions, fmt.Sprintf("j.employer_id = $%d", argIdx))
-		args = append(args, *filter.EmployerID)
+
+	// Department filter
+	if filter.Department != "" {
+		conditions = append(conditions, fmt.Sprintf("LOWER(j.department) = LOWER($%d)", argIdx))
+		args = append(args, filter.Department)
+		argIdx++
+	}
+
+	// Single skill filter
+	if filter.Skill != "" {
+		conditions = append(conditions, fmt.Sprintf("$%d = ANY(j.required_skills)", argIdx))
+		args = append(args, filter.Skill)
+		argIdx++
+	}
+
+	// Multiple skills filter (matches jobs containing any of the specified skills)
+	if len(filter.Skills) > 0 {
+		conditions = append(conditions, fmt.Sprintf("j.required_skills && $%d", argIdx))
+		args = append(args, filter.Skills)
+		argIdx++
+	}
+
+	// Min budget
+	if filter.MinBudget != nil {
+		conditions = append(conditions, fmt.Sprintf("j.budget >= $%d", argIdx))
+		args = append(args, *filter.MinBudget)
+		argIdx++
+	}
+
+	// Max budget
+	if filter.MaxBudget != nil {
+		conditions = append(conditions, fmt.Sprintf("j.budget <= $%d", argIdx))
+		args = append(args, *filter.MaxBudget)
+		argIdx++
+	}
+
+	// Pay type
+	if filter.PayType != "" {
+		conditions = append(conditions, fmt.Sprintf("j.pay_type = $%d", argIdx))
+		args = append(args, filter.PayType)
+		argIdx++
+	}
+
+	// CreatedBy filter
+	if filter.CreatedBy != nil {
+		conditions = append(conditions, fmt.Sprintf("j.created_by = $%d", argIdx))
+		args = append(args, *filter.CreatedBy)
+		argIdx++
+	}
+
+	// Search keyword matching title or description (case-insensitive)
+	if filter.Search != "" {
+		conditions = append(conditions, fmt.Sprintf("(j.title ILIKE $%d OR j.description ILIKE $%d)", argIdx, argIdx))
+		args = append(args, "%"+filter.Search+"%")
 		argIdx++
 	}
 
 	whereClause := ""
 	if len(conditions) > 0 {
-		whereClause = " WHERE " + strings.Join(conditions, " AND ")
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
 	}
 
-	orderClause := " ORDER BY j.created_at DESC"
-
-	limitOffsetClause := ""
-	if filter.Limit > 0 {
-		limitOffsetClause += fmt.Sprintf(" LIMIT $%d", argIdx)
-		args = append(args, filter.Limit)
-		argIdx++
-	} else {
-		limitOffsetClause += fmt.Sprintf(" LIMIT $%d", argIdx)
-		args = append(args, 100)
-		argIdx++
+	// Pagination limits
+	limit := 20
+	if filter.Limit > 0 && filter.Limit <= 100 {
+		limit = filter.Limit
 	}
+	offset := 0
 	if filter.Offset > 0 {
-		limitOffsetClause += fmt.Sprintf(" OFFSET $%d", argIdx)
-		args = append(args, filter.Offset)
-		argIdx++
+		offset = filter.Offset
 	}
 
-	fullQuery := baseQuery + whereClause + orderClause + limitOffsetClause
+	query := fmt.Sprintf(`
+		SELECT 
+			j.id, j.created_by, j.title, j.description, j.budget, j.pay_type, 
+			j.required_skills, j.department, j.deadline, j.status, j.created_at, j.updated_at,
+			u.id, COALESCE(u.email, ''), 
+			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.department, ''),
+			COALESCE(p.organization, ''), COALESCE(p.organization_website, '')
+		FROM jobs j
+		LEFT JOIN users u ON j.created_by = u.id
+		LEFT JOIN profiles p ON p.user_id = u.id
+		%s
+		ORDER BY j.created_at DESC
+		LIMIT $%d OFFSET $%d;
+	`, whereClause, argIdx, argIdx+1)
 
-	rows, err := r.db.Query(ctx, fullQuery, args...)
+	args = append(args, limit, offset)
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	jobs := make([]*Job, 0)
+	var jobs []*Job
 	for rows.Next() {
 		var (
 			j            Job
-			empID        *uuid.UUID
-			empEmail     string
-			empCompany   string
-			empContact   string
-			empWebsite   string
+			creatorID    *uuid.UUID
+			creatorEmail string
+			firstName    string
+			lastName     string
+			dept         string
+			org          string
+			orgWebsite   string
 		)
 		err := rows.Scan(
-			&j.ID, &j.EmployerID, &j.Title, &j.Description, &j.Budget, &j.PayType,
+			&j.ID, &j.CreatedBy, &j.Title, &j.Description, &j.Budget, &j.PayType,
 			&j.RequiredSkills, &j.Department, &j.Deadline, &j.Status, &j.CreatedAt, &j.UpdatedAt,
-			&empID, &empEmail, &empCompany, &empContact, &empWebsite,
+			&creatorID, &creatorEmail, &firstName, &lastName, &dept, &org, &orgWebsite,
 		)
 		if err != nil {
 			return nil, err
@@ -244,19 +272,27 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 		if j.RequiredSkills == nil {
 			j.RequiredSkills = []string{}
 		}
-		if empID != nil {
-			j.Employer = &EmployerInfo{
-				ID:           *empID,
-				Email:        empEmail,
-				CompanyOrOrg: empCompany,
-				ContactName:  empContact,
-				Website:      empWebsite,
+		if creatorID != nil {
+			j.Creator = &CreatorInfo{
+				ID:                  *creatorID,
+				Email:               creatorEmail,
+				FirstName:           firstName,
+				LastName:            lastName,
+				Department:          dept,
+				Organization:        org,
+				OrganizationWebsite: orgWebsite,
 			}
 		}
 		jobs = append(jobs, &j)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
+	if jobs == nil {
+		jobs = []*Job{}
+	}
+
 	return jobs, nil
 }

@@ -27,9 +27,9 @@ func NewService(repo JobRepository) *Service {
 }
 
 // CreateJob validates and creates a new job posting.
-func (s *Service) CreateJob(ctx context.Context, employerID uuid.UUID, req CreateJobRequest) (*Job, error) {
-	if employerID == uuid.Nil {
-		return nil, fmt.Errorf("%w: valid employer ID is required", ErrInvalidInput)
+func (s *Service) CreateJob(ctx context.Context, createdBy uuid.UUID, req CreateJobRequest) (*Job, error) {
+	if createdBy == uuid.Nil {
+		return nil, fmt.Errorf("%w: valid creator ID is required", ErrInvalidInput)
 	}
 
 	title := strings.TrimSpace(req.Title)
@@ -63,7 +63,7 @@ func (s *Service) CreateJob(ctx context.Context, employerID uuid.UUID, req Creat
 
 	job := &Job{
 		ID:             uuid.New(),
-		EmployerID:     employerID,
+		CreatedBy:      createdBy,
 		Title:          title,
 		Description:    desc,
 		Budget:         req.Budget,
@@ -99,40 +99,31 @@ func (s *Service) GetJobByID(ctx context.Context, id uuid.UUID) (*Job, error) {
 
 // ListJobs retrieves jobs matching the provided filter criteria.
 func (s *Service) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, error) {
-	jobs, err := s.repo.ListJobs(ctx, filter)
+	return s.repo.ListJobs(ctx, filter)
+}
+
+// GetMyJobs retrieves all jobs posted by the specified creator.
+func (s *Service) GetMyJobs(ctx context.Context, createdBy uuid.UUID) ([]*Job, error) {
+	if createdBy == uuid.Nil {
+		return nil, fmt.Errorf("%w: invalid creator ID", ErrInvalidInput)
+	}
+	return s.repo.ListJobs(ctx, JobFilter{CreatedBy: &createdBy})
+}
+
+// UpdateJob updates an existing job if caller owns the job.
+func (s *Service) UpdateJob(ctx context.Context, callerID uuid.UUID, id uuid.UUID, req UpdateJobRequest) (*Job, error) {
+	if id == uuid.Nil {
+		return nil, fmt.Errorf("%w: invalid job ID", ErrInvalidInput)
+	}
+
+	job, err := s.GetJobByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if jobs == nil {
-		jobs = make([]*Job, 0)
-	}
-	return jobs, nil
-}
 
-// ListMyJobs retrieves all jobs posted by the specified employer.
-func (s *Service) ListMyJobs(ctx context.Context, employerID uuid.UUID) ([]*Job, error) {
-	if employerID == uuid.Nil {
-		return nil, fmt.Errorf("%w: invalid employer ID", ErrInvalidInput)
-	}
-	return s.ListJobs(ctx, JobFilter{EmployerID: &employerID})
-}
-
-// UpdateJob validates updates and enforces owner-only authorization.
-func (s *Service) UpdateJob(ctx context.Context, jobID, callerID uuid.UUID, req UpdateJobRequest) (*Job, error) {
-	if jobID == uuid.Nil || callerID == uuid.Nil {
-		return nil, fmt.Errorf("%w: invalid job or user ID", ErrInvalidInput)
-	}
-
-	existing, err := s.repo.GetJobByID(ctx, jobID)
-	if err != nil {
-		return nil, err
-	}
-	if existing == nil {
-		return nil, ErrJobNotFound
-	}
-
-	if existing.EmployerID != callerID {
-		return nil, fmt.Errorf("%w: only the employer who created this job can update it", ErrForbidden)
+	// Resource-based ownership check
+	if job.CreatedBy != callerID {
+		return nil, ErrForbidden
 	}
 
 	if req.Title != nil {
@@ -143,7 +134,7 @@ func (s *Service) UpdateJob(ctx context.Context, jobID, callerID uuid.UUID, req 
 		if len(t) > 200 {
 			return nil, fmt.Errorf("%w: title cannot exceed 200 characters", ErrInvalidInput)
 		}
-		existing.Title = t
+		job.Title = t
 	}
 
 	if req.Description != nil {
@@ -151,14 +142,14 @@ func (s *Service) UpdateJob(ctx context.Context, jobID, callerID uuid.UUID, req 
 		if d == "" {
 			return nil, fmt.Errorf("%w: description cannot be empty", ErrInvalidInput)
 		}
-		existing.Description = d
+		job.Description = d
 	}
 
 	if req.Budget != nil {
 		if *req.Budget < 0 {
 			return nil, fmt.Errorf("%w: budget must be non-negative", ErrInvalidInput)
 		}
-		existing.Budget = *req.Budget
+		job.Budget = *req.Budget
 	}
 
 	if req.PayType != nil {
@@ -166,11 +157,7 @@ func (s *Service) UpdateJob(ctx context.Context, jobID, callerID uuid.UUID, req 
 		if pt != PayTypeFixed && pt != PayTypeHourly {
 			return nil, fmt.Errorf("%w: pay_type must be 'fixed' or 'hourly'", ErrInvalidInput)
 		}
-		existing.PayType = pt
-	}
-
-	if req.RequiredSkills != nil {
-		existing.RequiredSkills = cleanSkills(*req.RequiredSkills)
+		job.PayType = pt
 	}
 
 	if req.Department != nil {
@@ -178,65 +165,61 @@ func (s *Service) UpdateJob(ctx context.Context, jobID, callerID uuid.UUID, req 
 		if len(dept) > 100 {
 			return nil, fmt.Errorf("%w: department cannot exceed 100 characters", ErrInvalidInput)
 		}
-		existing.Department = dept
+		job.Department = dept
+	}
+
+	if req.RequiredSkills != nil {
+		job.RequiredSkills = cleanSkills(*req.RequiredSkills)
 	}
 
 	if req.Deadline != nil {
-		existing.Deadline = req.Deadline.Time()
+		job.Deadline = req.Deadline.Time()
 	}
 
 	if req.Status != nil {
 		st := strings.ToLower(strings.TrimSpace(*req.Status))
 		if st != StatusOpen && st != StatusInProgress && st != StatusClosed && st != StatusCancelled {
-			return nil, fmt.Errorf("%w: status must be 'open', 'in_progress', 'closed', or 'cancelled'", ErrInvalidInput)
+			return nil, fmt.Errorf("%w: invalid status '%s'", ErrInvalidInput, st)
 		}
-		existing.Status = st
+		job.Status = st
 	}
 
-	if err := s.repo.UpdateJob(ctx, existing); err != nil {
+	if err := s.repo.UpdateJob(ctx, job); err != nil {
 		return nil, err
 	}
 
-	return existing, nil
+	return job, nil
 }
 
-// DeleteJob validates and deletes a job enforcing owner-only authorization.
-func (s *Service) DeleteJob(ctx context.Context, jobID, callerID uuid.UUID) error {
-	if jobID == uuid.Nil || callerID == uuid.Nil {
-		return fmt.Errorf("%w: invalid job or user ID", ErrInvalidInput)
+// DeleteJob removes a job posting if caller owns the job.
+func (s *Service) DeleteJob(ctx context.Context, callerID uuid.UUID, id uuid.UUID) error {
+	if id == uuid.Nil {
+		return fmt.Errorf("%w: invalid job ID", ErrInvalidInput)
 	}
 
-	existing, err := s.repo.GetJobByID(ctx, jobID)
+	job, err := s.GetJobByID(ctx, id)
 	if err != nil {
 		return err
 	}
-	if existing == nil {
-		return ErrJobNotFound
+
+	if job.CreatedBy != callerID {
+		return ErrForbidden
 	}
 
-	if existing.EmployerID != callerID {
-		return fmt.Errorf("%w: only the employer who created this job can delete it", ErrForbidden)
-	}
-
-	return s.repo.DeleteJob(ctx, jobID)
+	return s.repo.DeleteJob(ctx, id)
 }
 
-// CancelJob is an alias for DeleteJob, which soft-cancels the job.
-func (s *Service) CancelJob(ctx context.Context, jobID, callerID uuid.UUID) error {
-	return s.DeleteJob(ctx, jobID, callerID)
-}
-
-func cleanSkills(raw []string) []string {
-	if raw == nil {
+func cleanSkills(skills []string) []string {
+	if skills == nil {
 		return []string{}
 	}
-	cleaned := make([]string, 0, len(raw))
+	var cleaned []string
 	seen := make(map[string]bool)
-	for _, s := range raw {
-		trimmed := strings.TrimSpace(s)
-		if trimmed != "" && !seen[strings.ToLower(trimmed)] {
-			seen[strings.ToLower(trimmed)] = true
-			cleaned = append(cleaned, trimmed)
+	for _, skill := range skills {
+		s := strings.TrimSpace(skill)
+		if s != "" && !seen[strings.ToLower(s)] {
+			seen[strings.ToLower(s)] = true
+			cleaned = append(cleaned, s)
 		}
 	}
 	return cleaned

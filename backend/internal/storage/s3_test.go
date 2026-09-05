@@ -1,4 +1,4 @@
-package storage_test
+package storage
 
 import (
 	"context"
@@ -6,14 +6,12 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/lynk/backend/internal/storage"
 )
 
 func TestResumeKeyGeneration(t *testing.T) {
 	userID := "c7a82e9b-43a9-4679-b14a-579b4d13e317"
 	filename := "John Doe Resume.pdf"
-	key := storage.GenerateResumeKey(userID, filename)
+	key := GenerateResumeKey(userID, filename)
 
 	if !strings.HasPrefix(key, "resumes/"+userID+"/") {
 		t.Errorf("key does not contain user prefix: %s", key)
@@ -26,14 +24,14 @@ func TestResumeKeyGeneration(t *testing.T) {
 	}
 
 	// Uniqueness check: two calls with same parameters should produce unique keys
-	key2 := storage.GenerateResumeKey(userID, filename)
+	key2 := GenerateResumeKey(userID, filename)
 	if key == key2 {
 		t.Errorf("expected generated keys to be unique, got identical keys: %s", key)
 	}
 
 	// Path traversal check: directory traversal inputs must be stripped to base filename
 	traversalFilename := "../../evil.pdf"
-	traversalKey := storage.GenerateResumeKey(userID, traversalFilename)
+	traversalKey := GenerateResumeKey(userID, traversalFilename)
 	if strings.Contains(traversalKey, "..") {
 		t.Errorf("key contains path traversal characters: %s", traversalKey)
 	}
@@ -43,7 +41,7 @@ func TestResumeKeyGeneration(t *testing.T) {
 }
 
 func TestNewS3Client_Success(t *testing.T) {
-	cfg := storage.Config{
+	cfg := Config{
 		Endpoint:  "http://localhost:9000",
 		AccessKey: "minio_admin",
 		SecretKey: "minio_password",
@@ -51,7 +49,7 @@ func TestNewS3Client_Success(t *testing.T) {
 		UseSSL:    false,
 	}
 
-	client, err := storage.NewS3Client(context.Background(), cfg)
+	client, err := NewS3Client(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("unexpected error creating S3 client: %v", err)
 	}
@@ -59,8 +57,8 @@ func TestNewS3Client_Success(t *testing.T) {
 		t.Fatalf("expected non-nil S3 client")
 	}
 
-	// Verify it implements the storage.Client interface
-	var _ storage.Client = client
+	// Verify it implements the Client interface
+	var _ Client = client
 }
 
 func TestNewS3Client_EndpointWithoutScheme(t *testing.T) {
@@ -92,7 +90,7 @@ func TestNewS3Client_EndpointWithoutScheme(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := storage.Config{
+			cfg := Config{
 				Endpoint:  tc.endpoint,
 				AccessKey: "test_access",
 				SecretKey: "test_secret",
@@ -100,7 +98,7 @@ func TestNewS3Client_EndpointWithoutScheme(t *testing.T) {
 				UseSSL:    tc.useSSL,
 			}
 
-			client, err := storage.NewS3Client(context.Background(), cfg)
+			client, err := NewS3Client(context.Background(), cfg)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -126,7 +124,7 @@ func TestNewS3Client_EndpointWithoutScheme(t *testing.T) {
 }
 
 func TestGetPresignedDownloadURL(t *testing.T) {
-	cfg := storage.Config{
+	cfg := Config{
 		Endpoint:  "http://localhost:9000",
 		AccessKey: "minio_admin",
 		SecretKey: "minio_password",
@@ -134,7 +132,7 @@ func TestGetPresignedDownloadURL(t *testing.T) {
 		UseSSL:    false,
 	}
 
-	client, err := storage.NewS3Client(context.Background(), cfg)
+	client, err := NewS3Client(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -176,5 +174,107 @@ func TestGetPresignedDownloadURL(t *testing.T) {
 	}
 	if queryParams.Get("X-Amz-Expires") != "900" {
 		t.Errorf("expected 900 seconds expiry (15m), got: %s", queryParams.Get("X-Amz-Expires"))
+	}
+}
+
+func TestS3Client_PublicEndpointRewriting(t *testing.T) {
+	testCases := []struct {
+		name           string
+		publicEndpoint string
+		rawURL         string
+		expected       string
+	}{
+		{
+			name:           "Rewrite internal minio host to localhost public endpoint",
+			publicEndpoint: "http://localhost:9000",
+			rawURL:         "http://minio:9000/resumes/resumes/user-1/file.pdf?X-Amz-Signature=xyz&X-Amz-Algorithm=AWS4-HMAC-SHA256",
+			expected:       "http://localhost:9000/resumes/resumes/user-1/file.pdf?X-Amz-Signature=xyz&X-Amz-Algorithm=AWS4-HMAC-SHA256",
+		},
+		{
+			name:           "Rewrite to HTTPS public endpoint with custom domain and port",
+			publicEndpoint: "https://s3.campus.edu:8443",
+			rawURL:         "http://minio:9000/resumes/resumes/user-2/resume.pdf?param=1",
+			expected:       "https://s3.campus.edu:8443/resumes/resumes/user-2/resume.pdf?param=1",
+		},
+		{
+			name:           "Empty public endpoint leaves URL untouched",
+			publicEndpoint: "",
+			rawURL:         "http://minio:9000/resumes/resumes/user-3/resume.pdf?param=2",
+			expected:       "http://minio:9000/resumes/resumes/user-3/resume.pdf?param=2",
+		},
+		{
+			name:           "Malformed raw URL returns rawURL unchanged",
+			publicEndpoint: "http://localhost:9000",
+			rawURL:         "://invalid-url",
+			expected:       "://invalid-url",
+		},
+		{
+			name:           "Malformed public endpoint returns rawURL unchanged",
+			publicEndpoint: "://invalid-public-endpoint",
+			rawURL:         "http://minio:9000/resumes/resumes/user-4/resume.pdf",
+			expected:       "http://minio:9000/resumes/resumes/user-4/resume.pdf",
+		},
+		{
+			name:           "Public endpoint with trailing slash rewrites cleanly without altering path",
+			publicEndpoint: "http://localhost:9000/",
+			rawURL:         "http://minio:9000/resumes/resumes/user-5/resume.pdf?key=val",
+			expected:       "http://localhost:9000/resumes/resumes/user-5/resume.pdf?key=val",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &S3Client{
+				bucket:         "resumes",
+				publicEndpoint: tc.publicEndpoint,
+			}
+
+			rewritten := client.rewritePresignedURL(tc.rawURL)
+			if rewritten != tc.expected {
+				t.Errorf("expected rewritten URL to be:\n%s\ngot:\n%s", tc.expected, rewritten)
+			}
+		})
+	}
+}
+
+func TestGetPresignedDownloadURL_WithPublicEndpoint(t *testing.T) {
+	cfg := Config{
+		Endpoint:       "http://minio:9000",
+		PublicEndpoint: "http://localhost:9000",
+		AccessKey:      "minio_admin",
+		SecretKey:      "minio_password",
+		Bucket:         "resumes",
+		UseSSL:         false,
+	}
+
+	client, err := NewS3Client(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	key := "resumes/user-abc/resume.pdf"
+	expiry := 10 * time.Minute
+
+	downloadURL, err := client.GetPresignedDownloadURL(context.Background(), key, expiry)
+	if err != nil {
+		t.Fatalf("failed to generate presigned download url: %v", err)
+	}
+
+	parsedURL, err := url.Parse(downloadURL)
+	if err != nil {
+		t.Fatalf("failed to parse presigned url: %v", err)
+	}
+
+	if parsedURL.Scheme != "http" {
+		t.Errorf("expected scheme http, got: %s", parsedURL.Scheme)
+	}
+	if parsedURL.Host != "localhost:9000" {
+		t.Errorf("expected host localhost:9000, got: %s", parsedURL.Host)
+	}
+	if !strings.HasPrefix(parsedURL.Path, "/resumes/"+key) {
+		t.Errorf("expected path to start with /resumes/%s, got: %s", key, parsedURL.Path)
+	}
+	if parsedURL.Query().Get("X-Amz-Signature") == "" {
+		t.Errorf("expected presigned signature to be present")
 	}
 }

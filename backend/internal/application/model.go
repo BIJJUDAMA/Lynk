@@ -21,11 +21,11 @@ const (
 	ContractStatusCancelled = "cancelled"
 )
 
-// Application represents a student's proposal/application to a posted job.
+// Application represents a campus member's proposal/application to a posted job.
 type Application struct {
 	ID          uuid.UUID `json:"id"`
 	JobID       uuid.UUID `json:"job_id"`
-	StudentID   uuid.UUID `json:"student_id"`
+	ApplicantID uuid.UUID `json:"applicant_id"`
 	CoverLetter string    `json:"cover_letter"`
 	ResumeKey   *string   `json:"resume_key,omitempty"`
 	Status      string    `json:"status"` // pending, accepted, rejected
@@ -33,8 +33,8 @@ type Application struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// StudentSummary provides public student applicant details attached to an application.
-type StudentSummary struct {
+// ApplicantSummary provides public applicant details attached to an application.
+type ApplicantSummary struct {
 	ID             uuid.UUID `json:"id"`
 	Email          string    `json:"email"`
 	FirstName      string    `json:"first_name"`
@@ -50,7 +50,7 @@ type StudentSummary struct {
 // JobSummary provides job context attached to an application.
 type JobSummary struct {
 	ID          uuid.UUID `json:"id"`
-	EmployerID  uuid.UUID `json:"employer_id"`
+	CreatedBy   uuid.UUID `json:"created_by"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
 	Budget      float64   `json:"budget"`
@@ -59,13 +59,13 @@ type JobSummary struct {
 	Status      string    `json:"status"`
 }
 
-// Contract represents an active or executed agreement between employer and student.
+// Contract represents an active or executed agreement between job creator (client) and applicant (freelancer).
 type Contract struct {
 	ID            uuid.UUID  `json:"id"`
 	JobID         uuid.UUID  `json:"job_id"`
 	ApplicationID uuid.UUID  `json:"application_id"`
-	EmployerID    uuid.UUID  `json:"employer_id"`
-	StudentID     uuid.UUID  `json:"student_id"`
+	ClientID      uuid.UUID  `json:"client_id"`
+	FreelancerID  uuid.UUID  `json:"freelancer_id"`
 	AgreedBudget  float64    `json:"agreed_budget"`
 	Status        string     `json:"status"`
 	StartedAt     *time.Time `json:"started_at,omitempty"`
@@ -77,18 +77,18 @@ type Contract struct {
 // ApplicationWithDetails enriches Application with joined job, applicant, and contract details.
 type ApplicationWithDetails struct {
 	Application
-	Job      *JobSummary     `json:"job,omitempty"`
-	Student  *StudentSummary `json:"student,omitempty"`
-	Contract *Contract       `json:"contract,omitempty"`
+	Job       *JobSummary       `json:"job,omitempty"`
+	Applicant *ApplicantSummary `json:"applicant,omitempty"`
+	Contract  *Contract         `json:"contract,omitempty"`
 }
 
-// ApplyRequest contains the payload submitted by a student when applying for a job.
+// ApplyRequest contains the payload submitted when applying for a job.
 type ApplyRequest struct {
 	CoverLetter string  `json:"cover_letter"`
 	ResumeKey   *string `json:"resume_key,omitempty"`
 }
 
-// UpdateApplicationStatusRequest contains payload for employer accept/reject actions.
+// UpdateApplicationStatusRequest contains payload for job creator accept/reject actions.
 type UpdateApplicationStatusRequest struct {
 	Status string `json:"status"` // "accepted" or "rejected"
 }

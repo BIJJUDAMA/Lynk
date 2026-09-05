@@ -28,63 +28,52 @@ func NewHandler(service *Service, repo JobRepository) *Handler {
 }
 
 // Routes constructs a chi.Router mounting all job routes.
-// Literal paths (/mine) are registered before parameterized paths (/{id}) to prevent route shadowing.
 func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Router {
 	r := chi.NewRouter()
 
 	// Public routes
 	r.Get("/", h.ListJobs)
 	r.Get("/jobs", h.ListJobs)
-	r.Get("/api/v1/jobs", h.ListJobs)
 
-	// Protected routes (employer only)
+	// Protected routes (any verified campus member)
 	if authMiddleware != nil {
 		r.Group(func(pr chi.Router) {
 			pr.Use(authMiddleware)
 
 			pr.Post("/", h.CreateJob)
 			pr.Post("/jobs", h.CreateJob)
-			pr.Post("/api/v1/jobs", h.CreateJob)
 
 			pr.Get("/mine", h.GetMyJobs)
 			pr.Get("/jobs/mine", h.GetMyJobs)
-			pr.Get("/api/v1/jobs/mine", h.GetMyJobs)
 
 			pr.Put("/{id}", h.UpdateJob)
 			pr.Put("/jobs/{id}", h.UpdateJob)
-			pr.Put("/api/v1/jobs/{id}", h.UpdateJob)
 
 			pr.Delete("/{id}", h.DeleteJob)
 			pr.Delete("/jobs/{id}", h.DeleteJob)
-			pr.Delete("/api/v1/jobs/{id}", h.DeleteJob)
 		})
 	} else {
 		r.Post("/", h.CreateJob)
 		r.Post("/jobs", h.CreateJob)
-		r.Post("/api/v1/jobs", h.CreateJob)
 
 		r.Get("/mine", h.GetMyJobs)
 		r.Get("/jobs/mine", h.GetMyJobs)
-		r.Get("/api/v1/jobs/mine", h.GetMyJobs)
 
 		r.Put("/{id}", h.UpdateJob)
 		r.Put("/jobs/{id}", h.UpdateJob)
-		r.Put("/api/v1/jobs/{id}", h.UpdateJob)
 
 		r.Delete("/{id}", h.DeleteJob)
 		r.Delete("/jobs/{id}", h.DeleteJob)
-		r.Delete("/api/v1/jobs/{id}", h.DeleteJob)
 	}
 
 	// Public single job detail route
 	r.Get("/{id}", h.GetJobByID)
 	r.Get("/jobs/{id}", h.GetJobByID)
-	r.Get("/api/v1/jobs/{id}", h.GetJobByID)
 
 	return r
 }
 
-// ListJobs handles GET /api/v1/jobs (Public with search & filter params)
+// ListJobs handles GET /api/v1/jobs
 func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	filter := JobFilter{
@@ -107,18 +96,17 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	if limitStr := strings.TrimSpace(q.Get("limit")); limitStr != "" {
 		if val, err := strconv.Atoi(limitStr); err == nil {
-			if val > 100 {
-				val = 100
-			}
 			filter.Limit = val
 		}
-	}
-	if filter.Limit > 100 {
-		filter.Limit = 100
 	}
 	if offsetStr := strings.TrimSpace(q.Get("offset")); offsetStr != "" {
 		if val, err := strconv.Atoi(offsetStr); err == nil {
 			filter.Offset = val
+		}
+	}
+	if createdByStr := strings.TrimSpace(q.Get("created_by")); createdByStr != "" {
+		if val, err := uuid.Parse(createdByStr); err == nil {
+			filter.CreatedBy = &val
 		}
 	}
 
@@ -131,11 +119,10 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSONSuccess(w, http.StatusOK, jobs)
 }
 
-// GetJobByID handles GET /api/v1/jobs/{id} (Public)
+// GetJobByID handles GET /api/v1/jobs/{id}
 func (h *Handler) GetJobByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	if idStr == "" {
-		// Fallback if accessed via direct path
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		idStr = parts[len(parts)-1]
 	}
@@ -159,7 +146,7 @@ func (h *Handler) GetJobByID(w http.ResponseWriter, r *http.Request) {
 	writeJSONSuccess(w, http.StatusOK, job)
 }
 
-// CreateJob handles POST /api/v1/jobs (Employer only)
+// CreateJob handles POST /api/v1/jobs (Any verified campus member)
 func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
@@ -167,12 +154,13 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !claims.HasRole("employer") && !claims.HasRole("admin") {
-		writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Employer role required")
+	// Verification check: campus email must be verified to post opportunities
+	if !claims.EmailVerified {
+		writeJSONError(w, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Campus verification required to post opportunities")
 		return
 	}
 
-	employerUUID, err := uuid.Parse(claims.UserID)
+	userUUID, err := uuid.Parse(claims.UserID)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
 		return
@@ -181,17 +169,17 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	var req CreateJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		if errors.Is(err, io.EOF) {
-			writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Request body cannot be empty")
+			writeJSONError(w, http.StatusBadRequest, "EMPTY_BODY", "Request body cannot be empty")
 			return
 		}
-		writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		writeJSONError(w, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body")
 		return
 	}
 
-	job, err := h.service.CreateJob(r.Context(), employerUUID, req)
+	job, err := h.service.CreateJob(r.Context(), userUUID, req)
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			writeJSONError(w, http.StatusBadRequest, "VALIDATION_FAILED", err.Error())
 			return
 		}
 		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create job")
@@ -201,7 +189,7 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	writeJSONSuccess(w, http.StatusCreated, job)
 }
 
-// GetMyJobs handles GET /api/v1/jobs/mine (Employer only)
+// GetMyJobs handles GET /api/v1/jobs/mine
 func (h *Handler) GetMyJobs(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
@@ -209,27 +197,22 @@ func (h *Handler) GetMyJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !claims.HasRole("employer") && !claims.HasRole("admin") {
-		writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Employer role required")
-		return
-	}
-
-	employerUUID, err := uuid.Parse(claims.UserID)
+	userUUID, err := uuid.Parse(claims.UserID)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
 		return
 	}
 
-	jobs, err := h.service.ListMyJobs(r.Context(), employerUUID)
+	jobs, err := h.service.GetMyJobs(r.Context(), userUUID)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve employer jobs")
+		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve your jobs")
 		return
 	}
 
 	writeJSONSuccess(w, http.StatusOK, jobs)
 }
 
-// UpdateJob handles PUT /api/v1/jobs/{id} (Employer owner only)
+// UpdateJob handles PUT /api/v1/jobs/{id}
 func (h *Handler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
@@ -237,12 +220,7 @@ func (h *Handler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !claims.HasRole("employer") && !claims.HasRole("admin") {
-		writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Employer role required")
-		return
-	}
-
-	callerUUID, err := uuid.Parse(claims.UserID)
+	userUUID, err := uuid.Parse(claims.UserID)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
 		return
@@ -253,8 +231,7 @@ func (h *Handler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		idStr = parts[len(parts)-1]
 	}
-
-	jobUUID, err := uuid.Parse(idStr)
+	jobID, err := uuid.Parse(idStr)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "INVALID_ID", "Invalid job UUID")
 		return
@@ -262,36 +239,32 @@ func (h *Handler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 
 	var req UpdateJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		if errors.Is(err, io.EOF) {
-			writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Request body cannot be empty")
-			return
-		}
-		writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		writeJSONError(w, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body")
 		return
 	}
 
-	updated, err := h.service.UpdateJob(r.Context(), jobUUID, callerUUID, req)
+	job, err := h.service.UpdateJob(r.Context(), userUUID, jobID, req)
 	if err != nil {
 		if errors.Is(err, ErrJobNotFound) {
 			writeJSONError(w, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found")
 			return
 		}
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Only the job creator can edit this opportunity")
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			writeJSONError(w, http.StatusBadRequest, "VALIDATION_FAILED", err.Error())
 			return
 		}
 		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update job")
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, updated)
+	writeJSONSuccess(w, http.StatusOK, job)
 }
 
-// DeleteJob handles DELETE /api/v1/jobs/{id} (Employer owner only)
+// DeleteJob handles DELETE /api/v1/jobs/{id}
 func (h *Handler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
@@ -299,12 +272,7 @@ func (h *Handler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !claims.HasRole("employer") && !claims.HasRole("admin") {
-		writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Employer role required")
-		return
-	}
-
-	callerUUID, err := uuid.Parse(claims.UserID)
+	userUUID, err := uuid.Parse(claims.UserID)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
 		return
@@ -315,34 +283,27 @@ func (h *Handler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		idStr = parts[len(parts)-1]
 	}
-
-	jobUUID, err := uuid.Parse(idStr)
+	jobID, err := uuid.Parse(idStr)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "INVALID_ID", "Invalid job UUID")
 		return
 	}
 
-	if err := h.service.DeleteJob(r.Context(), jobUUID, callerUUID); err != nil {
+	err = h.service.DeleteJob(r.Context(), userUUID, jobID)
+	if err != nil {
 		if errors.Is(err, ErrJobNotFound) {
 			writeJSONError(w, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found")
 			return
 		}
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Only the job creator can delete this opportunity")
 			return
 		}
 		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete job")
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, map[string]string{
-		"message": "Job cancelled successfully",
-	})
-}
-
-// CancelJob is an alias for DeleteJob.
-func (h *Handler) CancelJob(w http.ResponseWriter, r *http.Request) {
-	h.DeleteJob(w, r)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func writeJSONSuccess(w http.ResponseWriter, status int, data interface{}) {

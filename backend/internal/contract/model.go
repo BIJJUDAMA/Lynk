@@ -26,13 +26,13 @@ var (
 	ErrInvalidInput      = errors.New("invalid input")
 )
 
-// Contract represents an agreement between employer and student in the marketplace.
+// Contract represents an agreement between client (job creator) and freelancer in the marketplace.
 type Contract struct {
 	ID            uuid.UUID  `json:"id"`
 	JobID         uuid.UUID  `json:"job_id"`
 	ApplicationID uuid.UUID  `json:"application_id"`
-	EmployerID    uuid.UUID  `json:"employer_id"`
-	StudentID     uuid.UUID  `json:"student_id"`
+	ClientID      uuid.UUID  `json:"client_id"`
+	FreelancerID  uuid.UUID  `json:"freelancer_id"`
 	AgreedBudget  float64    `json:"agreed_budget"`
 	Status        string     `json:"status"` // draft, active, completed, cancelled
 	StartedAt     *time.Time `json:"started_at,omitempty"`
@@ -44,7 +44,7 @@ type Contract struct {
 // JobSummary provides job context attached to a contract.
 type JobSummary struct {
 	ID          uuid.UUID `json:"id"`
-	EmployerID  uuid.UUID `json:"employer_id"`
+	CreatedBy   uuid.UUID `json:"created_by"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
 	Budget      float64   `json:"budget"`
@@ -53,8 +53,8 @@ type JobSummary struct {
 	Status      string    `json:"status"`
 }
 
-// StudentSummary provides student participant details attached to a contract.
-type StudentSummary struct {
+// MemberSummary provides participant details attached to a contract.
+type MemberSummary struct {
 	ID             uuid.UUID `json:"id"`
 	Email          string    `json:"email"`
 	FirstName      string    `json:"first_name"`
@@ -63,20 +63,12 @@ type StudentSummary struct {
 	GraduationYear int       `json:"graduation_year"`
 }
 
-// EmployerSummary provides employer participant details attached to a contract.
-type EmployerSummary struct {
-	ID           uuid.UUID `json:"id"`
-	Email        string    `json:"email"`
-	CompanyOrOrg string    `json:"company_or_org"`
-	ContactName  string    `json:"contact_name"`
-}
-
-// ContractWithDetails enriches Contract with joined job, employer, and student participant details.
+// ContractWithDetails enriches Contract with joined job, client, and freelancer details.
 type ContractWithDetails struct {
 	Contract
-	Job      *JobSummary      `json:"job,omitempty"`
-	Employer *EmployerSummary `json:"employer,omitempty"`
-	Student  *StudentSummary  `json:"student,omitempty"`
+	Job        *JobSummary    `json:"job,omitempty"`
+	Client     *MemberSummary `json:"client,omitempty"`
+	Freelancer *MemberSummary `json:"freelancer,omitempty"`
 }
 
 // UpdateContractStatusRequest contains payload for status transitions.
@@ -85,12 +77,6 @@ type UpdateContractStatusRequest struct {
 }
 
 // ValidateTransition validates contract state machine transitions.
-// Allowed transitions:
-//   - draft -> active or cancelled
-//   - active -> completed or cancelled
-// Invariants:
-//   - Cannot transition to completed unless currently active.
-//   - Terminal states: completed and cancelled cannot transition to any other status.
 func ValidateTransition(current, target string) error {
 	curr := strings.ToLower(strings.TrimSpace(current))
 	tgt := strings.ToLower(strings.TrimSpace(target))

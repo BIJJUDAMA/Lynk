@@ -38,7 +38,7 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 		rt.Post("/api/v1/jobs/{id}/applications", h.ApplyToJob)
 		rt.Get("/api/v1/jobs/{id}/applications", h.ListJobApplications)
 
-		// Student submitted applications (MUST precede /{id})
+		// Member submitted applications (MUST precede /{id})
 		rt.Get("/mine", h.GetMyApplications)
 		rt.Get("/applications/mine", h.GetMyApplications)
 		rt.Get("/api/v1/applications/mine", h.GetMyApplications)
@@ -88,7 +88,7 @@ func (h *Handler) ApplicationRoutes(authMiddleware func(http.Handler) http.Handl
 	return r
 }
 
-// ApplyToJob handles POST /api/v1/jobs/{id}/applications (Student applies with cover letter).
+// ApplyToJob handles POST /api/v1/jobs/{id}/applications (Member applies with cover letter).
 func (h *Handler) ApplyToJob(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
@@ -96,15 +96,9 @@ func (h *Handler) ApplyToJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Institutional Email Gate: Reject unverified student applicants with 403 Forbidden
+	// Institutional Email Gate: Reject unverified applicants with 403 Forbidden
 	if !claims.EmailVerified {
 		writeJSONError(w, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "University email must be verified before applying to jobs")
-		return
-	}
-
-	// Only students can apply to jobs
-	if !claims.HasRole("student") && !claims.HasRole("admin") {
-		writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Only students can apply to jobs")
 		return
 	}
 
@@ -157,16 +151,11 @@ func (h *Handler) ApplyToJob(w http.ResponseWriter, r *http.Request) {
 	writeJSONSuccess(w, http.StatusCreated, app)
 }
 
-// ListJobApplications handles GET /api/v1/jobs/{id}/applications (Employer views applications).
+// ListJobApplications handles GET /api/v1/jobs/{id}/applications (Job Creator views applications).
 func (h *Handler) ListJobApplications(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
 		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
-		return
-	}
-
-	if !claims.HasRole("employer") && !claims.HasRole("admin") {
-		writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Only employers can view job applications")
 		return
 	}
 
@@ -193,16 +182,11 @@ func (h *Handler) ListJobApplications(w http.ResponseWriter, r *http.Request) {
 	writeJSONSuccess(w, http.StatusOK, apps)
 }
 
-// GetMyApplications handles GET /api/v1/applications/mine (Student views own applications).
+// GetMyApplications handles GET /api/v1/applications/mine (Member views own applications).
 func (h *Handler) GetMyApplications(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
 		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
-		return
-	}
-
-	if !claims.HasRole("student") && !claims.HasRole("admin") {
-		writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Only students can view submitted applications")
 		return
 	}
 
@@ -219,7 +203,7 @@ func (h *Handler) GetMyApplications(w http.ResponseWriter, r *http.Request) {
 	writeJSONSuccess(w, http.StatusOK, apps)
 }
 
-// GetApplicationByID handles GET /api/v1/applications/{id} (Applicant or Job Owner).
+// GetApplicationByID handles GET /api/v1/applications/{id} (Applicant or Job Creator).
 func (h *Handler) GetApplicationByID(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
@@ -250,16 +234,11 @@ func (h *Handler) GetApplicationByID(w http.ResponseWriter, r *http.Request) {
 	writeJSONSuccess(w, http.StatusOK, app)
 }
 
-// UpdateApplicationStatus handles PATCH /api/v1/applications/{id}/status (Employer accepts/rejects).
+// UpdateApplicationStatus handles PATCH /api/v1/applications/{id}/status (Job Creator accepts/rejects).
 func (h *Handler) UpdateApplicationStatus(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
 		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
-		return
-	}
-
-	if !claims.HasRole("employer") && !claims.HasRole("admin") {
-		writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Only employers can accept or reject applications")
 		return
 	}
 

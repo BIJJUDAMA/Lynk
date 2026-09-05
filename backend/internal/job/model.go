@@ -22,30 +22,32 @@ const (
 	StatusCancelled  = "cancelled"
 )
 
-// EmployerInfo represents public employer metadata attached to job postings.
-type EmployerInfo struct {
-	ID           uuid.UUID `json:"id"`
-	Email        string    `json:"email"`
-	CompanyOrOrg string    `json:"company_or_org"`
-	ContactName  string    `json:"contact_name"`
-	Website      string    `json:"website"`
+// CreatorInfo represents public campus member metadata attached to job postings.
+type CreatorInfo struct {
+	ID                  uuid.UUID `json:"id"`
+	Email               string    `json:"email"`
+	FirstName           string    `json:"first_name"`
+	LastName            string    `json:"last_name"`
+	Department          string    `json:"department"`
+	Organization        string    `json:"organization,omitempty"`
+	OrganizationWebsite string    `json:"organization_website,omitempty"`
 }
 
 // Job represents a job posting in the Lynk marketplace.
 type Job struct {
-	ID             uuid.UUID     `json:"id"`
-	EmployerID     uuid.UUID     `json:"employer_id"`
-	Title          string        `json:"title"`
-	Description    string        `json:"description"`
-	Budget         float64       `json:"budget"`
-	PayType        string        `json:"pay_type"`
-	RequiredSkills []string      `json:"required_skills"`
-	Department     string        `json:"department"`
-	Deadline       *time.Time    `json:"deadline,omitempty"`
-	Status         string        `json:"status"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
-	Employer       *EmployerInfo `json:"employer,omitempty"`
+	ID             uuid.UUID    `json:"id"`
+	CreatedBy      uuid.UUID    `json:"created_by"`
+	Title          string       `json:"title"`
+	Description    string       `json:"description"`
+	Budget         float64      `json:"budget"`
+	PayType        string       `json:"pay_type"`
+	RequiredSkills []string     `json:"required_skills"`
+	Department     string       `json:"department"`
+	Deadline       *time.Time   `json:"deadline,omitempty"`
+	Status         string       `json:"status"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+	Creator        *CreatorInfo `json:"creator,omitempty"`
 }
 
 // CreateJobRequest contains the payload required to post a new job.
@@ -81,7 +83,7 @@ type JobFilter struct {
 	MaxBudget  *float64   `json:"max_budget,omitempty"`
 	PayType    string     `json:"pay_type,omitempty"`
 	Status     string     `json:"status,omitempty"`
-	EmployerID *uuid.UUID `json:"employer_id,omitempty"`
+	CreatedBy  *uuid.UUID `json:"created_by,omitempty"`
 	Limit      int        `json:"limit,omitempty"`
 	Offset     int        `json:"offset,omitempty"`
 }
