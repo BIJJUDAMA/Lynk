@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -9,7 +7,7 @@ services:
       POSTGRES_USER: lynk_user
       POSTGRES_PASSWORD: lynk_password
       POSTGRES_DB: lynk_db
-      POSTGRES_MULTIPLE_DATABASES: "lynk_db,keycloak_db"
+      POSTGRES_MULTIPLE_DATABASES: "lynk_db,supertokens_db"
     ports:
       - "5432:5432"
     volumes:
@@ -23,33 +21,25 @@ services:
       timeout: 5s
       retries: 5
 
-  keycloak:
-    image: quay.io/keycloak/keycloak:24.0
-    container_name: lynk-keycloak
+  supertokens:
+    image: registry.supertokens.io/supertokens/supertokens-postgresql:9.2
+    container_name: lynk-supertokens
     restart: unless-stopped
-    command: start-dev --import-realm
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
-      KC_DB_USERNAME: lynk_user
-      KC_DB_PASSWORD: lynk_password
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin_password
-      KC_HEALTH_ENABLED: "true"
-    ports:
-      - "8081:8080"
-    volumes:
-      - ./.docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm.json:ro
     depends_on:
       postgres:
         condition: service_healthy
+    environment:
+      POSTGRESQL_CONNECTION_URI: "postgresql://lynk_user:lynk_password@postgres:5432/supertokens_db"
+      API_KEYS: "lynk_supertokens_secret_api_key_2026"
+    ports:
+      - "3567:3567"
     networks:
       - lynk-net
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/3567 && echo -e 'GET /hello HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'Hello'"]
       interval: 10s
       timeout: 5s
-      retries: 6
+      retries: 5
 
   minio:
     image: minio/minio:RELEASE.2024-01-18T22-51-28Z
@@ -97,8 +87,12 @@ services:
       PORT: "8080"
       DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
       MIGRATIONS_DIR: "/app/migrations"
-      KEYCLOAK_JWKS_URL: "http://keycloak:8080/realms/lynk/protocol/openid-connect/certs"
+      SUPERTOKENS_CONNECTION_URI: "http://supertokens:3567"
+      SUPERTOKENS_API_KEY: "lynk_supertokens_secret_api_key_2026"
+      API_DOMAIN: "http://localhost:8080"
+      WEBSITE_DOMAIN: "http://localhost:3000"
       MINIO_ENDPOINT: "minio:9000"
+      MINIO_PUBLIC_ENDPOINT: "http://localhost:9000"
       MINIO_ACCESS_KEY: "minio_admin"
       MINIO_SECRET_KEY: "minio_password"
       MINIO_BUCKET: "resumes"
@@ -109,7 +103,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      keycloak:
+      supertokens:
         condition: service_healthy
       minio:
         condition: service_healthy
