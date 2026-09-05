@@ -98,17 +98,20 @@ export default function ContractDetailPage() {
 
   const reviews = useMemo(() => reviewsData ?? [], [reviewsData]);
 
-  // Determine user participant status
+  // Determine user participant status (unified: client_id/freelancer_id with fallback to legacy aliases)
   const currentUserId = backendUser?.id || user?.id;
-  const isStudent =
-    Boolean(currentUserId && contract?.student_id === currentUserId) ||
-    Boolean(role === "student" && user?.email && contract?.student?.email === user.email);
+  const freelancerId = contract?.freelancer_id || contract?.student_id;
+  const clientId = contract?.client_id || contract?.employer_id;
 
-  const isEmployer =
-    Boolean(currentUserId && contract?.employer_id === currentUserId) ||
-    Boolean(role === "employer" && user?.email && contract?.employer?.email === user.email);
+  const isFreelancer =
+    Boolean(currentUserId && freelancerId === currentUserId) ||
+    Boolean(user?.email && (contract?.freelancer?.email === user.email || contract?.student?.email === user.email));
 
-  const isParticipant = isStudent || isEmployer;
+  const isClient =
+    Boolean(currentUserId && clientId === currentUserId) ||
+    Boolean(user?.email && (contract?.client?.email === user.email || contract?.employer?.email === user.email));
+
+  const isParticipant = isFreelancer || isClient;
 
   // Check if current user has already submitted a review
   const myReview = useMemo(() => {
@@ -123,14 +126,20 @@ export default function ContractDetailPage() {
   const hasReviewed = Boolean(myReview);
 
   // Counterparty display
-  const counterpartyName = isStudent
-    ? contract?.employer?.company_or_org ||
-      contract?.employer?.contact_name ||
-      "Employer"
-    : `${contract?.student?.first_name ?? ""} ${contract?.student?.last_name ?? ""}`.trim() ||
-      "Student";
+  const clientName =
+    contract?.client?.company_or_org ||
+    `${contract?.client?.first_name ?? ""} ${contract?.client?.last_name ?? ""}`.trim() ||
+    contract?.employer?.company_or_org ||
+    contract?.employer?.contact_name ||
+    "Client";
 
-  const counterpartyRole = isStudent ? "Employer" : "Student";
+  const freelancerName =
+    `${contract?.freelancer?.first_name ?? ""} ${contract?.freelancer?.last_name ?? ""}`.trim() ||
+    `${contract?.student?.first_name ?? ""} ${contract?.student?.last_name ?? ""}`.trim() ||
+    "Freelancer";
+
+  const counterpartyName = isFreelancer ? clientName : freelancerName;
+  const counterpartyRole = isFreelancer ? "Client" : "Freelancer";
 
   // State Transition Handlers
   const handleTransitionStatus = async (targetStatus: "completed" | "cancelled") => {
@@ -420,15 +429,17 @@ export default function ContractDetailPage() {
                 <span>Cancel Contract</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setShowCompleteModal(true)}
-                disabled={isUpdatingStatus}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-emerald-600/20 transition hover:bg-emerald-500 disabled:opacity-50"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>Mark as Completed</span>
-              </button>
+              {isClient && (
+                <button
+                  type="button"
+                  onClick={() => setShowCompleteModal(true)}
+                  disabled={isUpdatingStatus}
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-emerald-600/20 transition hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>Mark as Completed</span>
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -491,7 +502,7 @@ export default function ContractDetailPage() {
               </div>
             </div>
 
-            {isStudent && (
+            {isFreelancer && (
               <span className="rounded-full bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300">
                 You
               </span>
@@ -560,7 +571,7 @@ export default function ContractDetailPage() {
               </div>
             </div>
 
-            {isEmployer && (
+            {isClient && (
               <span className="rounded-full bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300">
                 You
               </span>

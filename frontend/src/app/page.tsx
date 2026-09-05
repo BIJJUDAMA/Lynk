@@ -4,14 +4,11 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import {
   Briefcase,
-  ShieldCheck,
   ArrowRight,
   Sparkles,
-  CheckCircle2,
   FileText,
   Star,
   GraduationCap,
-  Users,
   Check,
   ChevronRight,
 } from "lucide-react";
@@ -20,94 +17,29 @@ import { listJobs } from "@/lib/api";
 import { JobCard } from "@/components/jobs/JobCard";
 import { animateHero, animateStaggerList } from "@/lib/animations";
 
-// High-quality showcase gigs displayed when database is fresh or offline
-const SHOWCASE_JOBS: Job[] = [
-  {
-    id: "showcase-job-1",
-    employer_id: "showcase-emp-1",
-    title: "Full-Stack Developer for AI Research Portal",
-    description:
-      "Looking for a skilled CS student to build an interactive dashboard visualizing real-time climate telemetry models. Experience with React and REST APIs required.",
-    budget: 1200,
-    pay_type: "fixed",
-    required_skills: ["React", "TypeScript", "Tailwind CSS", "REST APIs"],
-    department: "Computer Science & Engineering",
-    deadline: new Date(Date.now() + 14 * 86400000).toISOString(),
-    status: "open",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    employer: {
-      id: "showcase-emp-1",
-      email: "lab-director@university.edu",
-      company_or_org: "Cognitive Systems Research Lab",
-      contact_name: "Dr. Elena Vance",
-      website: "https://lab.university.edu",
-    },
-  },
-  {
-    id: "showcase-job-2",
-    employer_id: "showcase-emp-2",
-    title: "UI/UX Designer for Campus Dining App Redesign",
-    description:
-      "Redesign user workflows and interactive mobile mockups for the university dining meal plan mobile portal. Need Figma wireframes and design system components.",
-    budget: 800,
-    pay_type: "fixed",
-    required_skills: ["Figma", "UI/UX Design", "Wireframing", "Mobile Design"],
-    department: "Design & Creative Arts",
-    deadline: new Date(Date.now() + 10 * 86400000).toISOString(),
-    status: "open",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    employer: {
-      id: "showcase-emp-2",
-      email: "aux-services@university.edu",
-      company_or_org: "Campus Auxiliary Services",
-      contact_name: "Marcus Holloway",
-      website: "https://services.university.edu",
-    },
-  },
-  {
-    id: "showcase-job-3",
-    employer_id: "showcase-emp-3",
-    title: "Data Analyst for Biotech Cell Microscopy Dataset",
-    description:
-      "Perform exploratory statistical data analysis and write automated python preprocessing scripts for high-content fluorescence microscopy image arrays.",
-    budget: 35,
-    pay_type: "hourly",
-    required_skills: ["Python", "Pandas", "Statistical Analysis", "Jupyter"],
-    department: "Biology & Life Sciences",
-    deadline: new Date(Date.now() + 21 * 86400000).toISOString(),
-    status: "open",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    employer: {
-      id: "showcase-emp-3",
-      email: "bio-informatics@university.edu",
-      company_or_org: "Genomic Medicine Initiative",
-      contact_name: "Prof. Sarah Chen",
-      website: "https://genomics.university.edu",
-    },
-  },
-];
-
 export default function HomePage() {
   const heroRef = useRef<HTMLDivElement | null>(null);
   const jobsGridRef = useRef<HTMLDivElement | null>(null);
-  const [featuredJobs, setFeaturedJobs] = useState<Job[]>(SHOWCASE_JOBS);
-  const [isLiveLoaded, setIsLiveLoaded] = useState(false);
+  const [featuredJobs, setFeaturedJobs] = useState<Job[]>([]);
+  const [isLoadingJobs, setIsLoadingJobs] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
     async function loadFeatured() {
       try {
         const jobs = await listJobs({ limit: 3, status: "open" });
-        if (isMounted && jobs && jobs.length > 0) {
+        if (isMounted && jobs) {
           setFeaturedJobs(jobs);
-          if (jobsGridRef.current) animateStaggerList(jobsGridRef.current);
-          setIsLiveLoaded(true);
+          if (jobsGridRef.current && jobs.length > 0) {
+            animateStaggerList(jobsGridRef.current);
+          }
         }
       } catch {
-        // Fallback silently to showcase jobs if backend is not yet populated
+        // Backend unavailable or empty
+      } finally {
+        if (isMounted) {
+          setIsLoadingJobs(false);
+        }
       }
     }
     loadFeatured();
@@ -121,24 +53,19 @@ export default function HomePage() {
     <div className="flex min-h-screen flex-col selection:bg-emerald-500 selection:text-white">
       <main className="flex-1">
         {/* Hero Section */}
-        <section ref={heroRef} className="relative overflow-hidden pt-12 pb-20 sm:pt-20 sm:pb-28">
+        <section ref={heroRef} className="relative overflow-hidden pt-16 pb-20 sm:pt-24 sm:pb-28">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-3xl text-center">
-              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50/70 px-3.5 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">
-                <Sparkles className="h-3.5 w-3.5" />
-                <span>Verified .edu University Freelance Marketplace</span>
-              </div>
-
               <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 sm:text-6xl dark:text-white">
                 Campus talent you can trust.{" "}
-                <span className="bg-gradient-to-r from-emerald-600 to-emerald-600 bg-clip-text text-transparent">
+                <span className="text-emerald-600 dark:text-emerald-400">
                   Real projects, guaranteed.
                 </span>
               </h1>
 
               <p className="mt-6 text-lg leading-8 text-slate-600 dark:text-slate-300">
-                Lynk bridges verified university students with high-impact freelance jobs,
-                structured milestones, automated contracts, and peer ratings. No spam, no scams.
+                Lynk connects verified university students with freelance opportunities,
+                structured milestones, clear contracts, and peer reviews.
               </p>
 
               <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
@@ -156,27 +83,11 @@ export default function HomePage() {
                   Post a Gig as Employer
                 </Link>
               </div>
-
-              {/* Trust Badges */}
-              <div className="mt-12 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                  <span>Institutional Email Verification</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-emerald-500" />
-                  <span>Structured Milestone Contracts</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Star className="h-4 w-4 text-amber-500" />
-                  <span>Authentic Peer Reviews</span>
-                </div>
-              </div>
             </div>
           </div>
         </section>
 
-        {/* Featured Live Jobs Preview Section */}
+        {/* Featured Opportunities Section */}
         <section className="border-t border-slate-200/80 bg-slate-50/50 py-16 dark:border-slate-800/80 dark:bg-slate-900/30">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
@@ -202,26 +113,57 @@ export default function HomePage() {
               </Link>
             </div>
 
-            {/* Grid of Featured Job Cards */}
-            <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {featuredJobs.map((job) => (
-                <JobCard key={job.id} job={job} />
-              ))}
-            </div>
+            {/* Grid of Featured Job Cards or Empty State */}
+            {isLoadingJobs ? (
+              <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {[1, 2, 3].map((n) => (
+                  <div
+                    key={n}
+                    className="h-64 animate-pulse rounded-[10px] border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900"
+                  />
+                ))}
+              </div>
+            ) : featuredJobs.length > 0 ? (
+              <div ref={jobsGridRef} className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {featuredJobs.map((job) => (
+                  <JobCard key={job.id} job={job} />
+                ))}
+              </div>
+            ) : (
+              <div className="mt-8 rounded-[10px] border border-dashed border-slate-300 bg-white/50 p-12 text-center dark:border-slate-800 dark:bg-slate-900/50">
+                <Briefcase className="mx-auto h-10 w-10 text-slate-400" />
+                <h3 className="mt-3 text-base font-semibold text-slate-900 dark:text-white">
+                  No gigs posted yet
+                </h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Be the first to post a freelance opportunity for university students.
+                </p>
+                <div className="mt-6">
+                  <Link
+                    href="/jobs/create"
+                    className="inline-flex items-center gap-2 rounded-[10px] bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500"
+                  >
+                    Post an Opportunity
+                  </Link>
+                </div>
+              </div>
+            )}
 
-            <div className="mt-10 text-center">
-              <Link
-                href="/jobs"
-                className="inline-flex items-center gap-2 rounded-[10px] border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-              >
-                Explore All Opportunities
-                <ChevronRight className="h-4 w-4" />
-              </Link>
-            </div>
+            {featuredJobs.length > 0 && (
+              <div className="mt-10 text-center">
+                <Link
+                  href="/jobs"
+                  className="inline-flex items-center gap-2 rounded-[10px] border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                >
+                  Explore All Opportunities
+                  <ChevronRight className="h-4 w-4" />
+                </Link>
+              </div>
+            )}
           </div>
         </section>
 
-        {/* Trust Value Proposition Section */}
+        {/* Standards Section */}
         <section className="py-20">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-2xl text-center">
@@ -229,10 +171,10 @@ export default function HomePage() {
                 Institutional Safety Architecture
               </span>
               <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-                The Lynk High-Trust Standard
+                The Lynk Standard
               </h2>
               <p className="mt-4 text-base text-slate-600 dark:text-slate-400">
-                Traditional gig networks are flooded with unverified actors, fake proposals, and payment disputes. Lynk replaces ambiguity with strict cryptographic identity and verifiable contracts.
+                Freelance marketplaces often struggle with unverified accounts and payment disputes. Lynk provides verified identity, structured contracts, and authenticated reviews.
               </p>
             </div>
 
@@ -243,19 +185,19 @@ export default function HomePage() {
                   <GraduationCap className="h-6 w-6" />
                 </div>
                 <h3 className="mt-6 text-lg font-bold text-slate-900 dark:text-white">
-                  Strict .edu Email Verification
+                  Institutional Email Verification
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                  Keycloak OIDC checks ensure only students with active university institutional email addresses can submit proposals or upload resumes.
+                  Every student must verify an active university email address before submitting proposals or sharing credentials.
                 </p>
                 <ul className="mt-4 space-y-2 text-xs text-slate-500 dark:text-slate-400">
                   <li className="flex items-center gap-2">
                     <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    No spam proposals from non-students
+                    Verified university students only
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    Verified department affiliations
+                    Clear department affiliations
                   </li>
                 </ul>
               </div>
@@ -269,16 +211,16 @@ export default function HomePage() {
                   Deterministic Milestone Contracts
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                  Accepted applications automatically generate binding state-machine contracts (Draft &rarr; Active &rarr; Completed), locking in scope and agreed deliverables.
+                  Accepted proposals automatically create structured contracts that track project status from active work through completion.
                 </p>
                 <ul className="mt-4 space-y-2 text-xs text-slate-500 dark:text-slate-400">
                   <li className="flex items-center gap-2">
                     <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    Agreed scope and compensation
+                    Documented scope and compensation
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    Clear completion timestamps
+                    Clear delivery deadlines
                   </li>
                 </ul>
               </div>
@@ -289,15 +231,15 @@ export default function HomePage() {
                   <Star className="h-6 w-6" />
                 </div>
                 <h3 className="mt-6 text-lg font-bold text-slate-900 dark:text-white">
-                  Verified Academic Reputation
+                  Authentic Mutual Feedback
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                  Reviews can only be submitted for completed contracts. Build a permanent, portable track record of on-campus impact that recruiters can trust.
+                  Ratings and reviews can only be submitted once contracts reach completion, ensuring a genuine record of collaboration.
                 </p>
                 <ul className="mt-4 space-y-2 text-xs text-slate-500 dark:text-slate-400">
                   <li className="flex items-center gap-2">
                     <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    1 to 5 star authentic mutual reviews
+                    1 to 5 star verified reviews
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="h-3.5 w-3.5 text-emerald-500" />
@@ -332,7 +274,7 @@ export default function HomePage() {
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                       For University Students
                     </h3>
-                    <p className="text-xs text-slate-500">Monetize your skills with verified campus jobs</p>
+                    <p className="text-xs text-slate-500">Find vetted opportunities across campus</p>
                   </div>
                 </div>
 
@@ -342,9 +284,9 @@ export default function HomePage() {
                       1
                     </span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white">Sign up with institutional email</strong>
+                      <strong className="text-slate-900 dark:text-white">Sign up with your university email</strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Register with your university .edu email and verify your address.
+                        Register with your institutional address to access campus opportunities.
                       </p>
                     </div>
                   </li>
@@ -353,9 +295,9 @@ export default function HomePage() {
                       2
                     </span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white">Build your verified profile & resume</strong>
+                      <strong className="text-slate-900 dark:text-white">Build your profile and resume</strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Add coursework skills, portfolio links, and upload your resume directly to MinIO storage.
+                        Highlight coursework, skills, portfolio links, and your current resume.
                       </p>
                     </div>
                   </li>
@@ -364,9 +306,9 @@ export default function HomePage() {
                       3
                     </span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white">Apply & complete milestone contracts</strong>
+                      <strong className="text-slate-900 dark:text-white">Apply and deliver under contract</strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Submit tailored proposals, execute work under active contracts, and earn verified ratings.
+                        Submit proposals, complete agreed milestones, and earn authentic feedback.
                       </p>
                     </div>
                   </li>
@@ -383,7 +325,7 @@ export default function HomePage() {
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                       For Campus Employers & Labs
                     </h3>
-                    <p className="text-xs text-slate-500">Hire motivated talent with zero administrative friction</p>
+                    <p className="text-xs text-slate-500">Connect with motivated student talent</p>
                   </div>
                 </div>
 
@@ -393,9 +335,9 @@ export default function HomePage() {
                       1
                     </span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white">Post your gig in minutes</strong>
+                      <strong className="text-slate-900 dark:text-white">Post your opportunity</strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Define project deliverables, required skills, budget (fixed or hourly), and deadline.
+                        Define project deliverables, required skills, compensation, and deadline.
                       </p>
                     </div>
                   </li>
@@ -404,9 +346,9 @@ export default function HomePage() {
                       2
                     </span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white">Review verified student proposals</strong>
+                      <strong className="text-slate-900 dark:text-white">Review student proposals</strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Inspect proposals, view authenticated resumes via presigned URLs, and check prior peer reviews.
+                        Evaluate proposals, inspect student resumes, and review past feedback.
                       </p>
                     </div>
                   </li>
@@ -415,9 +357,9 @@ export default function HomePage() {
                       3
                     </span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white">Activate contract & release peer review</strong>
+                      <strong className="text-slate-900 dark:text-white">Coordinate work and provide feedback</strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Accept applicant to start contract, track milestone deliverables, and submit mutual feedback upon completion.
+                        Accept proposals to initiate contracts, monitor deliverables, and leave mutual reviews.
                       </p>
                     </div>
                   </li>
@@ -430,23 +372,23 @@ export default function HomePage() {
         {/* Bottom CTA Banner */}
         <section className="py-16">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="relative overflow-hidden rounded-[10px] bg-gradient-to-r from-emerald-600 to-emerald-600 px-8 py-12 text-center text-white shadow-xl sm:px-16 sm:py-16">
+            <div className="relative overflow-hidden rounded-[10px] bg-emerald-600 px-8 py-12 text-center text-white shadow-xl sm:px-16 sm:py-16">
               <h2 className="text-2xl font-extrabold tracking-tight sm:text-4xl">
-                Ready to explore verified campus opportunities?
+                Ready to explore campus opportunities?
               </h2>
               <p className="mx-auto mt-4 max-w-xl text-sm sm:text-base text-emerald-100">
-                Join verified students and academic departments collaborating across high-impact research, engineering, and creative gigs.
+                Join verified students and university teams collaborating across research, engineering, and creative projects.
               </p>
               <div className="mt-8 flex flex-wrap justify-center gap-4">
                 <Link
                   href="/jobs"
-                  className="rounded-[10px] bg-white px-6 py-3 text-sm font-semibold text-emerald-600 shadow-md transition hover:bg-emerald-50"
+                  className="rounded-[10px] bg-white px-6 py-3 text-sm font-semibold text-emerald-700 shadow-md transition hover:bg-emerald-50"
                 >
                   Explore Active Gigs
                 </Link>
                 <Link
                   href="/login"
-                  className="rounded-[10px] border border-white/30 bg-white/10 px-6 py-3 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+                  className="rounded-[10px] border border-white/40 bg-white/10 px-6 py-3 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
                 >
                   Sign In with .edu
                 </Link>
@@ -460,16 +402,15 @@ export default function HomePage() {
       <footer className="border-t border-slate-200 bg-white py-8 dark:border-slate-800 dark:bg-slate-900">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6 lg:px-8">
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            &copy; {new Date().getFullYear()} Lynk Marketplace. High-trust university freelancing.
+            &copy; {new Date().getFullYear()} Lynk. All rights reserved.
           </p>
           <div className="flex items-center gap-6 text-xs text-slate-500 dark:text-slate-400">
-            <Link href="/jobs" className="hover:text-emerald-600">
+            <Link href="/jobs" className="hover:text-emerald-600 dark:hover:text-emerald-400">
               Browse Jobs
             </Link>
-            <Link href="/login" className="hover:text-emerald-600">
-              Keycloak IAM
+            <Link href="/login" className="hover:text-emerald-600 dark:hover:text-emerald-400">
+              Sign In
             </Link>
-            <span>PostgreSQL &amp; MinIO Storage</span>
           </div>
         </div>
       </footer>

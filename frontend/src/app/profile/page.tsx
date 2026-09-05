@@ -7,7 +7,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   GraduationCap,
-  Briefcase,
+  Building,
   Globe,
   Plus,
   X,
@@ -15,17 +15,15 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Sparkles,
   ExternalLink,
   Mail,
-  Calendar,
+  FileText,
+  Briefcase,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
-  getStudentProfile,
-  updateStudentProfile,
-  getEmployerProfile,
-  updateEmployerProfile,
+  getMyProfile,
+  updateMyProfile,
   ApiClientError,
 } from "@/lib/api";
 import { useQuery, useMutation } from "@/lib/useApi";
@@ -35,10 +33,7 @@ import {
   isValidUrl,
 } from "@/lib/formatters";
 import { ResumeUploader } from "@/components/profile/ResumeUploader";
-import type {
-  UpdateStudentProfileRequest,
-  UpdateEmployerProfileRequest,
-} from "@/types/api";
+import type { Profile, UpdateProfileRequest } from "@/types/api";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const GRADUATION_YEARS = Array.from({ length: 9 }, (_, i) => CURRENT_YEAR - 2 + i);
@@ -46,778 +41,619 @@ const GRADUATION_YEARS = Array.from({ length: 9 }, (_, i) => CURRENT_YEAR - 2 + 
 export default function ProfilePage() {
   const {
     user,
-    role: authRole,
     isVerified,
     isAuthenticated,
     isLoading: isAuthLoading,
     login,
   } = useAuth();
 
-  // Active tab role: defaults to user's assigned role, or "student"
-  const [activeRole, setActiveRole] = useState<"student" | "employer">("student");
-
-  useEffect(() => {
-    if (authRole === "employer") {
-      setActiveRole("employer");
-    } else if (authRole === "student") {
-      setActiveRole("student");
-    }
-  }, [authRole]);
-
-  // Queries for existing profile data
+  // Query unified campus profile
   const {
-    data: studentProfile,
-    isLoading: isStudentLoading,
-    refetch: refetchStudentProfile,
-  } = useQuery(getStudentProfile, {
-    enabled: isAuthenticated && activeRole === "student",
+    data: profile,
+    isLoading: isProfileLoading,
+    refetch: refetchProfile,
+  } = useQuery(getMyProfile, {
+    enabled: isAuthenticated,
   });
 
-  const {
-    data: employerProfile,
-    isLoading: isEmployerLoading,
-    refetch: refetchEmployerProfile,
-  } = useQuery(getEmployerProfile, {
-    enabled: isAuthenticated && activeRole === "employer",
-  });
-
-  // Student Form State
+  // Form State
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [department, setDepartment] = useState(COMMON_DEPARTMENTS[0]);
-  const [graduationYear, setGraduationYear] = useState(CURRENT_YEAR + 2);
+  const [customDepartment, setCustomDepartment] = useState("");
+  const [graduationYear, setGraduationYear] = useState<number | undefined>(CURRENT_YEAR + 2);
   const [bio, setBio] = useState("");
+  const [organization, setOrganization] = useState("");
+  const [orgWebsite, setOrgWebsite] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
   const [newSkillInput, setNewSkillInput] = useState("");
   const [portfolioLinks, setPortfolioLinks] = useState<string[]>([]);
   const [newLinkInput, setNewLinkInput] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
 
-  // Employer Form State
-  const [companyOrOrg, setCompanyOrOrg] = useState("");
-  const [contactName, setContactName] = useState("");
-  const [employerDesc, setEmployerDesc] = useState("");
-  const [website, setWebsite] = useState("");
-
-  // Feedback notifications
+  // Status feedback
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Populate Student Form
+  // Sync loaded profile into form state
   useEffect(() => {
-    if (studentProfile) {
-      setFirstName(studentProfile.first_name || "");
-      setLastName(studentProfile.last_name || "");
-      setDepartment(studentProfile.department || COMMON_DEPARTMENTS[0]);
-      setGraduationYear(studentProfile.graduation_year || CURRENT_YEAR + 2);
-      setBio(studentProfile.bio || "");
-      setSkills(studentProfile.skills || []);
-      setPortfolioLinks(studentProfile.portfolio_links || []);
-    }
-  }, [studentProfile]);
-
-  // Populate Employer Form
-  useEffect(() => {
-    if (employerProfile) {
-      setCompanyOrOrg(employerProfile.company_or_org || "");
-      setContactName(employerProfile.contact_name || "");
-      setEmployerDesc(employerProfile.description || "");
-      setWebsite(employerProfile.website || "");
-    }
-  }, [employerProfile]);
-
-  // Mutations
-  const { mutate: mutateStudentProfile, isLoading: isSavingStudent } =
-    useMutation<UpdateStudentProfileRequest, unknown>(
-      (data, client) => updateStudentProfile(data, client),
-      {
-        onSuccess: () => {
-          setSuccessMessage("Student profile updated successfully!");
-          setErrorMessage(null);
-          refetchStudentProfile();
-          setTimeout(() => setSuccessMessage(null), 4000);
-        },
-        onError: (err) => {
-          setErrorMessage(err.message || "Failed to update student profile.");
-          setSuccessMessage(null);
-        },
+    if (profile) {
+      setFirstName(profile.first_name || "");
+      setLastName(profile.last_name || "");
+      if (COMMON_DEPARTMENTS.includes(profile.department)) {
+        setDepartment(profile.department);
+        setCustomDepartment("");
+      } else if (profile.department) {
+        setDepartment("Other");
+        setCustomDepartment(profile.department);
       }
-    );
-
-  const { mutate: mutateEmployerProfile, isLoading: isSavingEmployer } =
-    useMutation<UpdateEmployerProfileRequest, unknown>(
-      (data, client) => updateEmployerProfile(data, client),
-      {
-        onSuccess: () => {
-          setSuccessMessage("Employer profile updated successfully!");
-          setErrorMessage(null);
-          refetchEmployerProfile();
-          setTimeout(() => setSuccessMessage(null), 4000);
-        },
-        onError: (err) => {
-          setErrorMessage(err.message || "Failed to update employer profile.");
-          setSuccessMessage(null);
-        },
+      setGraduationYear(profile.graduation_year || undefined);
+      setBio(profile.bio || profile.description || "");
+      setOrganization(profile.organization || profile.company_or_org || "");
+      setOrgWebsite(profile.organization_website || profile.website || "");
+      setSkills(Array.isArray(profile.skills) ? profile.skills : []);
+      setPortfolioLinks(Array.isArray(profile.portfolio_links) ? profile.portfolio_links : []);
+    } else if (user) {
+      if (user.name) {
+        const parts = user.name.split(" ");
+        setFirstName(parts[0] || "");
+        setLastName(parts.slice(1).join(" ") || "");
       }
-    );
+    }
+  }, [profile, user]);
 
-  // Skill tag management
-  const handleAddSkill = (skillToAdd: string) => {
-    const trimmed = skillToAdd.trim();
-    if (!trimmed) return;
-    if (skills.some((s) => s.toLowerCase() === trimmed.toLowerCase())) {
+  // Mutation for updating profile
+  const { mutate: mutateProfile, isLoading: isSaving } = useMutation(
+    async (payload: UpdateProfileRequest) => {
+      return await updateMyProfile(payload);
+    }
+  );
+
+  const handleAddSkill = (skillToAdd?: string) => {
+    const s = (skillToAdd || newSkillInput).trim();
+    if (!s) return;
+    if (skills.some((existing) => existing.toLowerCase() === s.toLowerCase())) {
       setNewSkillInput("");
       return;
     }
-    setSkills([...skills, trimmed]);
+    if (skills.length >= 15) {
+      setErrorMessage("Maximum 15 skills allowed.");
+      return;
+    }
+    setSkills([...skills, s]);
     setNewSkillInput("");
+    setErrorMessage(null);
   };
 
   const handleRemoveSkill = (skillToRemove: string) => {
     setSkills(skills.filter((s) => s !== skillToRemove));
   };
 
-  // Portfolio link management
   const handleAddLink = () => {
-    const trimmed = newLinkInput.trim();
-    if (!trimmed) return;
+    const raw = newLinkInput.trim();
+    if (!raw) return;
 
-    if (!isValidUrl(trimmed)) {
-      setLinkError("URL must start with http:// or https:// (e.g. https://github.com/my-work)");
+    let targetUrl = raw;
+    if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
+      targetUrl = "https://" + raw;
+    }
+
+    if (!isValidUrl(targetUrl)) {
+      setLinkError("Please enter a valid URL (e.g. https://github.com/username)");
       return;
     }
 
-    if (portfolioLinks.includes(trimmed)) {
-      setLinkError("This link is already added.");
+    if (portfolioLinks.includes(targetUrl)) {
+      setNewLinkInput("");
+      setLinkError(null);
       return;
     }
 
-    setPortfolioLinks([...portfolioLinks, trimmed]);
+    if (portfolioLinks.length >= 5) {
+      setLinkError("Maximum 5 links allowed.");
+      return;
+    }
+
+    setPortfolioLinks([...portfolioLinks, targetUrl]);
     setNewLinkInput("");
     setLinkError(null);
   };
 
   const handleRemoveLink = (linkToRemove: string) => {
-    setPortfolioLinks(portfolioLinks.filter((link) => link !== linkToRemove));
+    setPortfolioLinks(portfolioLinks.filter((l) => l !== linkToRemove));
   };
 
-  // Form Submissions
-  const handleSaveStudent = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage(null);
     setSuccessMessage(null);
+    setErrorMessage(null);
 
-    if (!firstName.trim() || !lastName.trim()) {
-      setErrorMessage("First name and last name are required.");
-      return;
-    }
+    const effectiveDepartment = department === "Other" ? customDepartment.trim() : department;
 
-    await mutateStudentProfile({
+    const payload: UpdateProfileRequest = {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
-      department,
-      graduation_year: Number(graduationYear),
+      department: effectiveDepartment || undefined,
+      graduation_year: graduationYear ? Number(graduationYear) : undefined,
       bio: bio.trim(),
       skills,
       portfolio_links: portfolioLinks,
-    });
-  };
+      organization: organization.trim() || undefined,
+      organization_website: orgWebsite.trim() || undefined,
+    };
 
-  const handleSaveEmployer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-    setSuccessMessage(null);
-
-    if (!companyOrOrg.trim() || !contactName.trim()) {
-      setErrorMessage("Company/Organization and contact name are required.");
-      return;
+    try {
+      await mutateProfile(payload);
+      setSuccessMessage("Campus profile updated successfully.");
+      refetchProfile();
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err) {
+      if (err instanceof ApiClientError) {
+        setErrorMessage(err.message || "Failed to update profile.");
+      } else {
+        setErrorMessage("An unexpected error occurred while saving profile.");
+      }
     }
-
-    await mutateEmployerProfile({
-      company_or_org: companyOrOrg.trim(),
-      contact_name: contactName.trim(),
-      description: employerDesc.trim(),
-      website: website.trim(),
-    });
   };
 
-  // Auth & Loading Guard
   if (isAuthLoading) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8 animate-pulse space-y-8">
-        <div className="h-10 w-64 rounded-[10px] bg-slate-200 dark:bg-slate-800" />
-        <div className="h-48 rounded-[10px] bg-slate-100 dark:bg-slate-800/60" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 h-96 rounded-[10px] bg-slate-100 dark:bg-slate-800/60" />
-          <div className="h-96 rounded-[10px] bg-slate-100 dark:bg-slate-800/60" />
-        </div>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 lg:px-8">
-        <div className="rounded-[10px] border border-slate-200 bg-white p-10 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[10px] bg-emerald-50 dark:bg-emerald-950/50 text-primary dark:bg-emerald-950/60 dark:text-emerald-500 mb-6">
-            <UserIcon className="h-8 w-8" />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-            Sign In Required
-          </h2>
-          <p className="mx-auto mt-3 max-w-md text-sm text-slate-600 dark:text-slate-400">
-            Please sign in with your verified university credentials to manage your student profile, upload your resume, or hire campus talent.
-          </p>
-          <div className="mt-8">
-            <button
-              onClick={() => login({ redirectPath: "/profile" })}
-              className="inline-flex items-center gap-2 rounded-[10px] bg-primary text-primary-foreground px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-sm transition hover:bg-primary"
-            >
-              <span>Sign In with University Account</span>
-            </button>
-          </div>
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+          <UserIcon className="h-6 w-6" />
+        </div>
+        <h2 className="mt-4 text-xl font-semibold tracking-tight text-foreground">
+          Authentication Required
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Please sign in with your campus credentials to view and manage your profile.
+        </p>
+        <div className="mt-6">
+          <button
+            onClick={() => login()}
+            className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
+          >
+            Sign In with Campus Account
+          </button>
         </div>
       </div>
     );
   }
-
-  const isProfileLoading =
-    activeRole === "student" ? isStudentLoading : isEmployerLoading;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      {/* Header Profile Identity Section */}
-      <div className="rounded-[10px] border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-8 mb-8">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-          <div className="flex items-start gap-4">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[10px] bg-primary text-primary-foreground text-white text-xl font-bold shadow-md shadow-sm">
-              {user?.name ? user.name.slice(0, 2).toUpperCase() : <UserIcon className="h-8 w-8" />}
+      {/* Header Profile Identity Banner */}
+      <div className="mb-8 rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-primary/10 text-xl font-bold text-primary">
+              {firstName ? firstName[0].toUpperCase() : user.email[0].toUpperCase()}
+              {lastName ? lastName[0].toUpperCase() : ""}
             </div>
             <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-                  {user?.name || "Campus Member"}
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                  {firstName || lastName ? `${firstName} ${lastName}`.trim() : "Campus Member"}
                 </h1>
-                {/* Institutional Email Verification Status Badge */}
                 {isVerified ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
                     <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                    Verified .edu Student
+                    <span>Verified .edu</span>
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
                     <ShieldAlert className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                    Unverified .edu Email
+                    <span>Verification Pending</span>
                   </span>
                 )}
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
-                <span className="flex items-center gap-1">
-                  <Mail className="h-3.5 w-3.5" />
-                  {user?.email}
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <Mail className="h-3 w-3" />
+                  {user.email}
                 </span>
-                <span className="capitalize font-medium text-slate-700 dark:text-slate-300">
-                  Role: {authRole || "Member"}
-                </span>
+                {profile?.department && (
+                  <span>• Department: {profile.department}</span>
+                )}
+                {profile?.organization && (
+                  <span>• Org / Lab: {profile.organization}</span>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Role Navigation Tabs */}
-          <div className="flex items-center gap-2 rounded-[10px] bg-slate-100 p-1.5 dark:bg-slate-800 self-start sm:self-auto">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveRole("student");
-                setSuccessMessage(null);
-                setErrorMessage(null);
-              }}
-              className={`flex items-center gap-1.5 rounded-[10px] px-3.5 py-2 text-xs font-semibold transition ${
-                activeRole === "student"
-                  ? "bg-white text-primary shadow-sm dark:bg-slate-700 dark:text-white"
-                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-              }`}
+          <div className="flex items-center gap-3">
+            <Link
+              href="/activity"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3.5 py-2 text-xs font-medium text-foreground transition hover:bg-muted"
             >
-              <GraduationCap className="h-4 w-4" />
-              <span>Student Profile</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveRole("employer");
-                setSuccessMessage(null);
-                setErrorMessage(null);
-              }}
-              className={`flex items-center gap-1.5 rounded-[10px] px-3.5 py-2 text-xs font-semibold transition ${
-                activeRole === "employer"
-                  ? "bg-white text-primary shadow-sm dark:bg-slate-700 dark:text-white"
-                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-              }`}
-            >
-              <Briefcase className="h-4 w-4" />
-              <span>Employer Profile</span>
-            </button>
+              <Briefcase className="h-3.5 w-3.5" />
+              <span>My Activity</span>
+            </Link>
           </div>
         </div>
-
-        {/* Unverified Institutional Email Banner */}
-        {!isVerified && (
-          <div className="mt-6 flex items-start gap-3 rounded-[10px] border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
-            <ShieldAlert className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-            <div className="leading-relaxed">
-              <strong className="font-semibold">Action Required for University Verification:</strong> Your institutional email address is currently unverified in Keycloak. You may complete your profile details now, but verified university email status is mandatory before you can upload resumes or apply for campus jobs.
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Feedback Alerts */}
+      {/* Notifications */}
       {successMessage && (
-        <div className="mb-6 flex items-center gap-2.5 rounded-[10px] border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">
+        <div className="mb-6 flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <span>{successMessage}</span>
         </div>
       )}
 
       {errorMessage && (
-        <div className="mb-6 flex items-center gap-2.5 rounded-[10px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300">
-          <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
+        <div className="mb-6 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+          <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* Main Profile Editor Panels */}
-      {activeRole === "student" ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left / Middle: Student Profile Form */}
-          <div className="lg:col-span-2 space-y-8">
-            <form
-              onSubmit={handleSaveStudent}
-              className="rounded-[10px] border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-8 space-y-6"
-            >
-              <div className="border-b border-slate-100 pb-4 dark:border-slate-800 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                    Academic & Personal Details
-                  </h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Showcase your major, graduation timeline, and skills to campus employers.
-                  </p>
-                </div>
-                {isProfileLoading && (
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                )}
-              </div>
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+        {/* Left 2 Cols: Unified Profile Form */}
+        <div className="lg:col-span-2 space-y-8">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Identity & Department */}
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+              <h2 className="text-base font-semibold text-foreground">
+                Campus Identity & Details
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Your personal details, academic department, and affiliation.
+              </p>
 
-              {/* Name fields */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    First Name <span className="text-rose-500">*</span>
+                  <label className="block text-xs font-medium text-foreground">
+                    First Name
                   </label>
                   <input
                     type="text"
-                    required
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="e.g. Alex"
-                    className="w-full rounded-[10px] border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-ring/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
+                    placeholder="e.g. Sarah"
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Last Name <span className="text-rose-500">*</span>
+                  <label className="block text-xs font-medium text-foreground">
+                    Last Name
                   </label>
                   <input
                     type="text"
-                    required
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
-                    placeholder="e.g. Rivera"
-                    className="w-full rounded-[10px] border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-ring/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
+                    placeholder="e.g. Chen"
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
-              </div>
-
-              {/* Department & Graduation Year */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Academic Department / Major <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      className="w-full appearance-none rounded-[10px] border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-ring/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
-                    >
-                      {COMMON_DEPARTMENTS.map((dept) => (
-                        <option key={dept} value={dept}>
-                          {dept}
-                        </option>
-                      ))}
-                    </select>
-                    <GraduationCap className="pointer-events-none absolute right-3.5 top-3 h-4 w-4 text-slate-400" />
-                  </div>
-                </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Expected Graduation Year <span className="text-rose-500">*</span>
+                  <label className="block text-xs font-medium text-foreground">
+                    Department / Discipline
                   </label>
-                  <div className="relative">
-                    <select
-                      value={graduationYear}
-                      onChange={(e) => setGraduationYear(Number(e.target.value))}
-                      className="w-full appearance-none rounded-[10px] border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-ring/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
-                    >
-                      {GRADUATION_YEARS.map((yr) => (
-                        <option key={yr} value={yr}>
-                          {yr}
-                        </option>
-                      ))}
-                    </select>
-                    <Calendar className="pointer-events-none absolute right-3.5 top-3 h-4 w-4 text-slate-400" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Bio with Character Counter */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Student Bio
-                  </label>
-                  <span
-                    className={`text-[11px] font-mono ${
-                      bio.length > 900
-                        ? "text-rose-500 font-bold"
-                        : "text-slate-400 dark:text-slate-500"
-                    }`}
+                  <select
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   >
-                    {bio.length} / 1000 characters
-                  </span>
+                    {COMMON_DEPARTMENTS.map((dept) => (
+                      <option key={dept} value={dept}>
+                        {dept}
+                      </option>
+                    ))}
+                    <option value="Other">Other (Custom)</option>
+                  </select>
+                  {department === "Other" && (
+                    <input
+                      type="text"
+                      value={customDepartment}
+                      onChange={(e) => setCustomDepartment(e.target.value)}
+                      placeholder="Specify your department"
+                      className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                    />
+                  )}
                 </div>
-                <textarea
-                  rows={4}
-                  maxLength={1000}
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                  placeholder="Introduce yourself, your academic focus, relevant coursework, lab experiences, and what projects you're excited to work on..."
-                  className="w-full rounded-[10px] border border-slate-200 bg-slate-50/50 p-3.5 text-sm text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-ring/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
-                />
-              </div>
 
-              {/* Skills Tags Management */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Skills & Technical Competencies
-                </label>
-                <div className="flex items-center gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-foreground">
+                    Graduation Year (Optional)
+                  </label>
+                  <select
+                    value={graduationYear || ""}
+                    onChange={(e) => setGraduationYear(e.target.value ? Number(e.target.value) : undefined)}
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">Not Applicable / Faculty / Staff</option>
+                    {GRADUATION_YEARS.map((yr) => (
+                      <option key={yr} value={yr}>
+                        Class of {yr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-foreground">
+                    Affiliation / Lab / Org (Optional)
+                  </label>
                   <input
                     type="text"
-                    value={newSkillInput}
-                    onChange={(e) => setNewSkillInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddSkill(newSkillInput);
-                      }
-                    }}
-                    placeholder="Add a skill (e.g. Next.js, Python, Figma) and press Enter"
-                    className="flex-1 rounded-[10px] border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-ring/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
+                    value={organization}
+                    onChange={(e) => setOrganization(e.target.value)}
+                    placeholder="e.g. AI Robotics Lab, CS Club, or Company"
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
                   />
-                  <button
-                    type="button"
-                    onClick={() => handleAddSkill(newSkillInput)}
-                    className="inline-flex items-center gap-1 rounded-[10px] bg-slate-100 px-3.5 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>Add</span>
-                  </button>
                 </div>
 
-                {/* Popular Skill Presets */}
-                <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 mr-1">
-                    Popular:
+                <div>
+                  <label className="block text-xs font-medium text-foreground">
+                    Affiliation Website (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={orgWebsite}
+                    onChange={(e) => setOrgWebsite(e.target.value)}
+                    placeholder="https://lab.university.edu"
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Bio */}
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-foreground">
+                  About & Background
+                </h2>
+                <span className="text-xs text-muted-foreground">
+                  {bio.length} / 1000 characters
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Introduce yourself, your research interests, freelance offerings, or what projects you are hiring for.
+              </p>
+
+              <textarea
+                rows={4}
+                maxLength={1000}
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                placeholder="Share your focus, project experience, research background, or campus initiatives..."
+                className="mt-3 w-full rounded-lg border border-border bg-background p-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+
+            {/* Skills & Coursework */}
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+              <h2 className="text-base font-semibold text-foreground">
+                Skills & Technical Competencies
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Highlight skills relevant for taking on campus gigs or evaluating proposals.
+              </p>
+
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  value={newSkillInput}
+                  onChange={(e) => setNewSkillInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddSkill();
+                    }
+                  }}
+                  placeholder="e.g. Python, Next.js, Figma, PyTorch..."
+                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddSkill()}
+                  className="inline-flex items-center gap-1 rounded-lg bg-secondary px-3 py-2 text-xs font-medium text-secondary-foreground hover:bg-secondary/80"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add
+                </button>
+              </div>
+
+              {/* Current tags */}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {skills.map((skill) => (
+                  <span
+                    key={skill}
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium text-foreground"
+                  >
+                    <span>{skill}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSkill(skill)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
                   </span>
-                  {POPULAR_SKILLS.map((preset) => (
+                ))}
+              </div>
+
+              {/* Popular presets */}
+              <div className="mt-4 pt-3 border-t border-border/50">
+                <span className="text-[11px] font-medium text-muted-foreground">Suggested Skills:</span>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {POPULAR_SKILLS.slice(0, 8).map((preset) => (
                     <button
                       key={preset}
                       type="button"
+                      disabled={skills.includes(preset)}
                       onClick={() => handleAddSkill(preset)}
-                      className={`rounded-[10px] px-2 py-0.5 text-[11px] font-medium transition ${
-                        skills.includes(preset)
-                          ? "bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300"
-                          : "bg-slate-100 text-slate-600 hover:bg-emerald-50 dark:bg-emerald-950/50 hover:text-primary dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
-                      }`}
+                      className="rounded-md border border-border/60 bg-background px-2 py-0.5 text-[11px] text-muted-foreground hover:border-border hover:text-foreground disabled:opacity-40"
                     >
                       + {preset}
                     </button>
                   ))}
                 </div>
-
-                {/* Active Skill Badges */}
-                {skills.length > 0 && (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {skills.map((skill) => (
-                      <span
-                        key={skill}
-                        className="inline-flex items-center gap-1.5 rounded-[10px] bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200"
-                      >
-                        <span>{skill}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveSkill(skill)}
-                          className="rounded-full p-0.5 hover:bg-emerald-200/60 dark:hover:bg-emerald-800/60 transition"
-                          title="Remove skill"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
+            </div>
 
-              {/* Portfolio & External Links */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  External Portfolio, GitHub, or Research Links
-                </label>
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="url"
-                      value={newLinkInput}
-                      onChange={(e) => {
-                        setNewLinkInput(e.target.value);
-                        if (linkError) setLinkError(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          handleAddLink();
-                        }
-                      }}
-                      placeholder="https://github.com/your-handle or https://portfolio.me"
-                      className="w-full rounded-[10px] border border-slate-200 bg-slate-50/50 pl-9 pr-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-ring/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
-                    />
-                    <Globe className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAddLink}
-                    className="inline-flex items-center gap-1 rounded-[10px] bg-slate-100 px-3.5 py-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>Add Link</span>
-                  </button>
-                </div>
-                {linkError && (
-                  <p className="mt-1.5 text-xs text-rose-600 dark:text-rose-400 font-medium">
-                    {linkError}
-                  </p>
-                )}
+            {/* Links & Portfolios */}
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+              <h2 className="text-base font-semibold text-foreground">
+                External Portfolio & Links
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                GitHub, LinkedIn, personal portfolio, or research publications.
+              </p>
 
-                {/* Added Portfolio Links List */}
-                {portfolioLinks.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    {portfolioLinks.map((link) => (
-                      <div
-                        key={link}
-                        className="flex items-center justify-between rounded-[10px] border border-slate-100 bg-slate-50/60 px-3.5 py-2 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-300"
-                      >
-                        <a
-                          href={link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 hover:text-primary truncate max-w-md transition"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                          <span className="truncate">{link}</span>
-                        </a>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveLink(link)}
-                          className="rounded-[10px] p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition"
-                          title="Remove link"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Save Button */}
-              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  value={newLinkInput}
+                  onChange={(e) => {
+                    setNewLinkInput(e.target.value);
+                    setLinkError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddLink();
+                    }
+                  }}
+                  placeholder="https://github.com/username"
+                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                />
                 <button
-                  type="submit"
-                  disabled={isSavingStudent}
-                  className="inline-flex items-center gap-2 rounded-[10px] bg-primary text-primary-foreground px-6 py-2.5 text-sm font-semibold text-white shadow-sm shadow-sm transition hover:bg-primary disabled:opacity-50"
+                  type="button"
+                  onClick={handleAddLink}
+                  className="inline-flex items-center gap-1 rounded-lg bg-secondary px-3 py-2 text-xs font-medium text-secondary-foreground hover:bg-secondary/80"
                 >
-                  {isSavingStudent ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Saving Profile...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4" />
-                      <span>Save Profile</span>
-                    </>
-                  )}
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Link
                 </button>
               </div>
-            </form>
-          </div>
 
-          {/* Right Column: Resume Uploader Card */}
-          <div className="space-y-6">
-            <div className="rounded-[10px] border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-7">
-              <div className="mb-4">
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  Student Resume
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Your resume will automatically attach to job proposals submitted on campus.
+              {linkError && (
+                <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">
+                  {linkError}
                 </p>
-              </div>
-
-              <ResumeUploader
-                resumeKey={studentProfile?.resume_key}
-                resumeFilename={studentProfile?.resume_filename}
-                resumeByteSize={studentProfile?.resume_byte_size}
-                updatedAt={studentProfile?.updated_at}
-                isVerified={isVerified}
-                onUploadSuccess={() => {
-                  refetchStudentProfile();
-                }}
-              />
-            </div>
-
-            {/* Application Quick Link Card */}
-            <div className="rounded-[10px] border border-border bg-gradient-to-br from-emerald-50/50 to-card p-6 shadow-sm dark:from-card dark:to-card">
-              <div className="flex items-center gap-2.5 text-primary dark:text-emerald-500 mb-2">
-                <Sparkles className="h-5 w-5" />
-                <h4 className="text-sm font-bold">Applications & Contracts</h4>
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed mb-4">
-                Track all your submitted gig proposals, review acceptances, and view active contracts.
-              </p>
-              <Link
-                href="/applications"
-                className="inline-flex items-center justify-center w-full rounded-[10px] border border-emerald-200 bg-card px-4 py-2.5 text-xs font-semibold text-emerald-800 dark:border-emerald-800/50 dark:bg-card dark:text-emerald-300 shadow-sm transition hover:bg-emerald-50 dark:hover:bg-accent"
-              >
-                Go to Applications Dashboard
-              </Link>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* Employer Profile Form */
-        <div className="max-w-2xl">
-          <form
-            onSubmit={handleSaveEmployer}
-            className="rounded-[10px] border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-8 space-y-6"
-          >
-            <div className="border-b border-slate-100 pb-4 dark:border-slate-800 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                  Employer / Campus Organization Profile
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Information displayed on your campus gig postings and applicant contracts.
-                </p>
-              </div>
-              {isEmployerLoading && (
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
               )}
-            </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Organization / Company / Lab Name <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={companyOrOrg}
-                onChange={(e) => setCompanyOrOrg(e.target.value)}
-                placeholder="e.g. Distributed Systems Research Lab or Campus Activities Board"
-                className="w-full rounded-[10px] border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-ring/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Primary Contact Name <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={contactName}
-                onChange={(e) => setContactName(e.target.value)}
-                placeholder="e.g. Dr. Sarah Jenkins"
-                className="w-full rounded-[10px] border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-ring/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                About Your Organization
-              </label>
-              <textarea
-                rows={4}
-                value={employerDesc}
-                onChange={(e) => setEmployerDesc(e.target.value)}
-                placeholder="Describe your research team, university club, startup, or department mission..."
-                className="w-full rounded-[10px] border border-slate-200 bg-slate-50/50 p-3.5 text-sm text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-ring/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Official Website or Lab Link
-              </label>
-              <div className="relative">
-                <input
-                  type="url"
-                  value={website}
-                  onChange={(e) => setWebsite(e.target.value)}
-                  placeholder="https://lab.university.edu"
-                  className="w-full rounded-[10px] border border-slate-200 bg-slate-50/50 pl-9 pr-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-ring/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
-                />
-                <Globe className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <div className="mt-3 space-y-1.5">
+                {portfolioLinks.map((link) => (
+                  <div
+                    key={link}
+                    className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-xs"
+                  >
+                    <a
+                      href={link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-primary hover:underline truncate max-w-[85%]"
+                    >
+                      <Globe className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{link}</span>
+                      <ExternalLink className="h-3 w-3 shrink-0" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveLink(link)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+            {/* Save Action */}
+            <div className="flex justify-end">
               <button
                 type="submit"
-                disabled={isSavingEmployer}
-                className="inline-flex items-center gap-2 rounded-[10px] bg-primary text-primary-foreground px-6 py-2.5 text-sm font-semibold text-white shadow-sm shadow-sm transition hover:bg-primary disabled:opacity-50"
+                disabled={isSaving}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50"
               >
-                {isSavingEmployer ? (
+                {isSaving ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Saving Profile...</span>
+                    <span>Saving Changes...</span>
                   </>
                 ) : (
                   <>
                     <Save className="h-4 w-4" />
-                    <span>Save Employer Profile</span>
+                    <span>Save Profile Changes</span>
                   </>
                 )}
               </button>
             </div>
           </form>
         </div>
-      )}
+
+        {/* Right 1 Col: Resume & Account Verification */}
+        <div className="space-y-6">
+          {/* Resume Management */}
+          <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              <h2 className="text-base font-semibold text-foreground">
+                Resume Document
+              </h2>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Uploaded resumes are stored securely in dedicated object storage and streamed to prospective collaborators.
+            </p>
+
+            <div className="mt-4">
+              <ResumeUploader
+                resumeKey={profile?.resume_key}
+                resumeFilename={profile?.resume_filename}
+                resumeByteSize={profile?.resume_byte_size}
+                updatedAt={profile?.updated_at}
+                isVerified={isVerified}
+                onUploadSuccess={() => {
+                  refetchProfile();
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Verification Status Card */}
+          <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+            <h3 className="text-sm font-semibold text-foreground">
+              Campus Account Trust
+            </h3>
+            <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+              Lynk enforces institutional authenticity. One account allows you to post jobs, hire applicants, submit proposals, and sign milestone contracts.
+            </p>
+
+            <div className="mt-4 space-y-2 text-xs">
+              <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                <span className="text-muted-foreground">Institutional Email</span>
+                <span className="font-mono text-foreground truncate max-w-[150px]">{user.email}</span>
+              </div>
+              <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                <span className="text-muted-foreground">Verification Status</span>
+                <span className={isVerified ? "text-emerald-600 font-medium" : "text-amber-600 font-medium"}>
+                  {isVerified ? "Verified" : "Pending"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-muted-foreground">Member Role</span>
+                <span className="capitalize font-medium text-foreground">Campus Member</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -115,10 +115,10 @@ function JobSearchContent() {
           </p>
         </div>
 
-        {/* Action Button for Employers */}
-        {isAuthenticated && role === "employer" && (
+        {/* Action Button for Campus Members */}
+        {isAuthenticated && (
           <Link
-            href="/jobs/new"
+            href="/jobs/create"
             className="inline-flex items-center gap-2 self-start rounded-[10px] bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500"
           >
             <PlusCircle className="h-4 w-4" />

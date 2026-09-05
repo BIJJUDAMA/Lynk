@@ -107,7 +107,7 @@ export default function JobApplicantsPage() {
     useCallback((client) => listJobApplications(jobId, client), [jobId]),
     {
       deps: [jobId],
-      enabled: Boolean(isAuthenticated && role === "employer" && jobId),
+      enabled: Boolean(isAuthenticated && jobId),
     }
   );
 
@@ -128,13 +128,16 @@ export default function JobApplicantsPage() {
   // Employer ownership check
   const isJobOwner =
     job &&
-    (job.employer_id === backendUser?.id ||
+    (job.created_by === backendUser?.id ||
+      job.created_by === user?.id ||
+      job.employer_id === backendUser?.id ||
       job.employer_id === user?.id ||
+      (job.creator && (job.creator.id === backendUser?.id || job.creator.id === user?.id)) ||
       (job.employer && (job.employer.id === backendUser?.id || job.employer.id === user?.id)));
 
   // Handle Resume Presigned Download
   const handleDownloadResume = async (app: ApplicationWithDetails) => {
-    const studentId = app.student?.id || app.student_id;
+    const studentId = app.applicant?.id || app.applicant_id || app.student?.id || app.student_id;
     if (!studentId) return;
 
     setDownloadingResumeId(app.id);
@@ -249,23 +252,23 @@ export default function JobApplicantsPage() {
             <Lock className="h-7 w-7" />
           </div>
           <h1 className="mt-4 text-2xl font-bold text-slate-900 dark:text-white">
-            Employer Sign In Required
+            Campus Sign In Required
           </h1>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-            Please sign in with your employer account to review student applicants for this job posting.
+            Please sign in with your campus account to review proposals for this opportunity.
           </p>
           <div className="mt-6">
             <button
               onClick={() =>
                 login({
                   redirectPath: `/jobs/${jobId}/applicants`,
-                  roleHint: "employer",
+                  
                 })
               }
               className="inline-flex items-center gap-2 rounded-[10px] bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary/90"
             >
               <Briefcase className="h-4 w-4" />
-              <span>Sign In as Employer</span>
+              <span>Sign In with Campus Account</span>
             </button>
           </div>
         </div>
@@ -273,33 +276,7 @@ export default function JobApplicantsPage() {
     );
   }
 
-  // Non-employer role gate
-  if (role !== "employer") {
-    return (
-      <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 lg:px-8 text-center">
-        <div className="rounded-[10px] border border-amber-200 bg-amber-50/60 p-8 dark:border-amber-900/50 dark:bg-amber-950/30">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
-            <AlertCircle className="h-7 w-7" />
-          </div>
-          <h1 className="mt-4 text-2xl font-bold text-slate-900 dark:text-white">
-            Employer Access Only
-          </h1>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-            Candidate review and contract initiation are reserved for verified employers.
-          </p>
-          <div className="mt-6">
-            <Link
-              href="/jobs"
-              className="inline-flex items-center gap-2 rounded-[10px] bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary/90"
-            >
-              <GraduationCap className="h-4 w-4" />
-              <span>Explore Student Opportunities</span>
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
+
 
   // Job error
   if (jobError || !job) {
@@ -323,11 +300,11 @@ export default function JobApplicantsPage() {
             Retry
           </button>
           <Link
-            href="/employer/jobs"
+            href="/activity"
             className="inline-flex items-center gap-2 rounded-[10px] border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Back to My Jobs
+            Back to My Activity
           </Link>
         </div>
       </div>
@@ -346,7 +323,7 @@ export default function JobApplicantsPage() {
             Unauthorized Access
           </h1>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-            You can only review applicants for job postings created by your employer account.
+            You can only review applicants for opportunities created by your campus account.
           </p>
           <div className="mt-6 flex justify-center gap-3">
             <Link
@@ -666,14 +643,17 @@ export default function JobApplicantsPage() {
         {!applicantsLoading &&
           !applicantsError &&
           filteredApplications.map((app) => {
-            const student = app.student;
+            const student = app.applicant || app.student;
+            const applicantIdentifier = app.applicant_id || app.student_id || app.id || "";
             const studentFullName = student
               ? `${student.first_name} ${student.last_name}`.trim() || student.email
-              : `Student ID: ${app.student_id.slice(0, 8)}...`;
+              : applicantIdentifier
+              ? `Applicant ID: ${applicantIdentifier.slice(0, 8)}...`
+              : "Applicant";
 
             const initials = student?.first_name
               ? `${student.first_name[0]}${student.last_name ? student.last_name[0] : ""}`.toUpperCase()
-              : "ST";
+              : "MB";
 
             const statusStyles = getApplicationStatusBadgeClasses(app.status);
             const hasResume = Boolean(
@@ -703,7 +683,7 @@ export default function JobApplicantsPage() {
                         </h3>
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
                           <ShieldCheck className="h-3 w-3" />
-                          Verified Student
+                          Campus Verified
                         </span>
                       </div>
 

@@ -91,10 +91,13 @@ export function getStatusBadgeClasses(status: JobStatus): {
 
 export function JobCard({ job, className }: JobCardProps) {
   const statusStyles = getStatusBadgeClasses(job.status);
-  const employerName =
-    job.employer?.company_or_org ||
-    job.employer?.contact_name ||
-    "Campus Employer";
+  const posterName =
+    job.creator?.first_name || job.creator?.last_name
+      ? `${job.creator.first_name || ""} ${job.creator.last_name || ""}`.trim()
+      : job.creator?.organization ||
+        job.employer?.company_or_org ||
+        job.employer?.contact_name ||
+        "Campus Member";
 
   const skills = job.required_skills ?? [];
   const visibleSkills = skills.slice(0, 4);
@@ -140,7 +143,7 @@ export function JobCard({ job, className }: JobCardProps) {
           </div>
         </div>
 
-        {/* Job Title & Employer */}
+        {/* Job Title & Creator */}
         <div className="mt-2">
           <Link
             href={`/jobs/${job.id}`}
@@ -153,7 +156,7 @@ export function JobCard({ job, className }: JobCardProps) {
 
           <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
             <Building2 className="h-3.5 w-3.5 text-slate-400" />
-            <span className="truncate">{employerName}</span>
+            <span className="truncate">{posterName}</span>
           </div>
         </div>
 

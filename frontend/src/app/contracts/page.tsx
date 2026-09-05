@@ -80,26 +80,26 @@ export default function ContractsPage() {
         return false;
       }
 
-      // Search filter (matches job title, employer, or student)
+        // Search filter (matches job title, client/employer, or freelancer/student)
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
         const titleMatch = c.job?.title?.toLowerCase().includes(query) ?? false;
         const companyMatch =
-          c.employer?.company_or_org?.toLowerCase().includes(query) ?? false;
-        const employerNameMatch =
-          c.employer?.contact_name?.toLowerCase().includes(query) ?? false;
-        const studentNameMatch =
-          `${c.student?.first_name ?? ""} ${c.student?.last_name ?? ""}`
+          (c.client?.company_or_org ?? c.employer?.company_or_org ?? "").toLowerCase().includes(query);
+        const clientNameMatch =
+          (c.client?.contact_name ?? c.employer?.contact_name ?? "").toLowerCase().includes(query);
+        const freelancerNameMatch =
+          `${c.freelancer?.first_name ?? c.student?.first_name ?? ""} ${c.freelancer?.last_name ?? c.student?.last_name ?? ""}`
             .toLowerCase()
             .includes(query);
         const deptMatch =
-          c.student?.department?.toLowerCase().includes(query) ?? false;
+          (c.freelancer?.department ?? c.student?.department ?? "").toLowerCase().includes(query);
 
         return (
           titleMatch ||
           companyMatch ||
-          employerNameMatch ||
-          studentNameMatch ||
+          clientNameMatch ||
+          freelancerNameMatch ||
           deptMatch
         );
       }
@@ -155,25 +155,22 @@ export default function ContractsPage() {
           </div>
         </div>
 
-        {/* Quick action buttons based on user role */}
+        {/* Quick action buttons for campus members */}
         <div className="flex items-center gap-3">
-          {role === "employer" ? (
-            <Link
-              href="/employer/jobs"
-              className="inline-flex items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            >
-              <Briefcase className="h-4 w-4 text-primary dark:text-emerald-500" />
-              <span>My Job Postings</span>
-            </Link>
-          ) : (
-            <Link
-              href="/jobs"
-              className="inline-flex items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            >
-              <Search className="h-4 w-4 text-primary dark:text-emerald-500" />
-              <span>Explore Jobs</span>
-            </Link>
-          )}
+          <Link
+            href="/jobs/create"
+            className="inline-flex items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            <Briefcase className="h-4 w-4 text-primary dark:text-emerald-500" />
+            <span>Post a Job</span>
+          </Link>
+          <Link
+            href="/jobs"
+            className="inline-flex items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
+            <Search className="h-4 w-4 text-primary dark:text-emerald-500" />
+            <span>Explore Jobs</span>
+          </Link>
         </div>
       </div>
 
@@ -343,28 +340,23 @@ export default function ContractsPage() {
             No contracts yet
           </h3>
           <p className="mx-auto mt-2 max-w-md text-xs text-slate-500 dark:text-slate-400">
-            {role === "employer"
-              ? "When you accept a student's proposal from your job applicant dashboard, an active contract is created automatically."
-              : "When an employer accepts your job application, an active contract will appear here to track work and reviews."}
+            When an application is accepted, an active contract will appear here to track deliverables, milestones, and peer reviews.
           </p>
-          <div className="mt-6">
-            {role === "employer" ? (
-              <Link
-                href="/employer/jobs"
-                className="inline-flex items-center gap-2 rounded-[10px] bg-primary text-primary-foreground px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-sm transition hover:bg-primary"
-              >
-                <Briefcase className="h-4 w-4" />
-                <span>View Job Postings</span>
-              </Link>
-            ) : (
-              <Link
-                href="/jobs"
-                className="inline-flex items-center gap-2 rounded-[10px] bg-primary text-primary-foreground px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-sm transition hover:bg-primary"
-              >
-                <Search className="h-4 w-4" />
-                <span>Explore Open Jobs</span>
-              </Link>
-            )}
+          <div className="mt-6 flex justify-center gap-3">
+            <Link
+              href="/jobs"
+              className="inline-flex items-center gap-2 rounded-[10px] bg-primary text-primary-foreground px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-sm transition hover:bg-primary"
+            >
+              <Search className="h-4 w-4" />
+              <span>Explore Open Jobs</span>
+            </Link>
+            <Link
+              href="/jobs/create"
+              className="inline-flex items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              <Briefcase className="h-4 w-4" />
+              <span>Post a Job</span>
+            </Link>
           </div>
         </div>
       )}
@@ -400,20 +392,30 @@ export default function ContractsPage() {
         <div className="mt-6 space-y-4">
           {filteredContracts.map((contract) => {
             const badge = getContractStatusBadgeClasses(contract.status);
-            const isStudent =
-              contract.student_id === backendUser?.id ||
-              contract.student_id === user?.id ||
-              role === "student";
+            const currentUserId = backendUser?.id || user?.id;
+            const freelancerId = contract.freelancer_id || contract.student_id;
 
-            const counterpartyName = isStudent
-              ? contract.employer?.company_or_org ||
+
+            const isFreelancer =
+              Boolean(currentUserId && freelancerId === currentUserId) ||
+              Boolean(
+                user?.email &&
+                  (contract.freelancer?.email === user.email ||
+                    contract.student?.email === user.email)
+              );
+
+
+            const counterpartyName = isFreelancer
+              ? contract.client?.company_or_org ||
+                `${contract.client?.first_name ?? ""} ${contract.client?.last_name ?? ""}`.trim() ||
+                contract.employer?.company_or_org ||
                 contract.employer?.contact_name ||
-                "Employer"
-              : `${contract.student?.first_name ?? ""} ${
-                  contract.student?.last_name ?? ""
-                }`.trim() || "Student";
+                "Client"
+              : `${contract.freelancer?.first_name ?? ""} ${contract.freelancer?.last_name ?? ""}`.trim() ||
+                `${contract.student?.first_name ?? ""} ${contract.student?.last_name ?? ""}`.trim() ||
+                "Freelancer";
 
-            const counterpartyRole = isStudent ? "Employer" : "Student";
+            const counterpartyRole = isFreelancer ? "Client" : "Freelancer";
 
             return (
               <div
@@ -449,7 +451,7 @@ export default function ContractsPage() {
                     <div className="mt-3 flex flex-wrap items-center gap-y-2 gap-x-4 text-xs text-slate-600 dark:text-slate-400">
                       {/* Counterparty */}
                       <div className="flex items-center gap-1.5">
-                        {isStudent ? (
+                        {isFreelancer ? (
                           <Building2 className="h-3.5 w-3.5 text-primary dark:text-emerald-500" />
                         ) : (
                           <GraduationCap className="h-3.5 w-3.5 text-primary dark:text-emerald-500" />
@@ -460,9 +462,9 @@ export default function ContractsPage() {
                             {counterpartyName}
                           </strong>
                         </span>
-                        {!isStudent && contract.student?.department && (
+                        {!isFreelancer && (contract.freelancer?.department || contract.student?.department) && (
                           <span className="text-slate-400">
-                            • {contract.student.department}
+                            • {contract.freelancer?.department || contract.student?.department}
                           </span>
                         )}
                       </div>

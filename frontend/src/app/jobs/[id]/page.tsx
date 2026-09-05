@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  Building2,
   Calendar,
   Clock,
   DollarSign,
@@ -20,10 +19,19 @@ import {
   FileText,
   RotateCcw,
   Lock,
+  Users,
+  User as UserIcon,
 } from "lucide-react";
-import { Job, StudentProfile } from "@/types/api";
-import { getJobById, applyToJob, getStudentProfile, isEmailNotVerifiedError } from "@/lib/api";
-import { useQuery, useMutation } from "@/lib/useApi";
+import { Job, Profile, ApplicationWithDetails } from "@/types/api";
+import {
+  getJobById,
+  applyToJob,
+  getMyProfile,
+  getMyApplications,
+  isEmailNotVerifiedError,
+  ApiClientError,
+} from "@/lib/api";
+import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   formatBudget,
@@ -42,7 +50,6 @@ export default function JobDetailPage() {
     backendUser,
     isAuthenticated,
     isVerified,
-    role,
     login,
     isLoading: authLoading,
   } = useAuth();
@@ -64,12 +71,33 @@ export default function JobDetailPage() {
     [jobId]
   );
 
-  // If student is authenticated and verified, check if they have a resume on file
-  const { data: studentProfile } = useQuery<StudentProfile>(
-    useCallback((client) => getStudentProfile(client), []),
+  // Fetch member profile for resume attachment
+  const { data: memberProfile } = useQuery<Profile>(
+    useCallback((client) => getMyProfile(client), []),
     {
-      enabled: Boolean(isAuthenticated && role === "student" && isVerified),
+      enabled: Boolean(isAuthenticated && isVerified),
     }
+  );
+
+  // Fetch member's existing applications to check if already applied
+  const { data: myApplications } = useQuery<ApplicationWithDetails[]>(
+    useCallback((client) => getMyApplications(client), []),
+    {
+      enabled: Boolean(isAuthenticated),
+    }
+  );
+
+  const existingApplication = myApplications?.find((app) => app.job_id === jobId);
+  const alreadyApplied = Boolean(existingApplication || hasAppliedSuccess);
+
+  // Determine if current viewer is the creator of this job
+  const isCreator = Boolean(
+    isAuthenticated &&
+    job &&
+    (job.created_by === user?.id ||
+      job.created_by === backendUser?.id ||
+      job.employer_id === user?.id ||
+      job.employer_id === backendUser?.id)
   );
 
   // Handle application submission
@@ -86,7 +114,7 @@ export default function JobDetailPage() {
     try {
       await applyToJob(jobId, {
         cover_letter: coverLetter.trim(),
-        resume_key: studentProfile?.resume_key ?? undefined,
+        resume_key: memberProfile?.resume_key ?? undefined,
       });
       setHasAppliedSuccess(true);
     } catch (err: unknown) {
@@ -94,6 +122,8 @@ export default function JobDetailPage() {
         setSubmitError(
           "Institutional email verification required. Please verify your .edu email before applying."
         );
+      } else if (err instanceof ApiClientError) {
+        setSubmitError(err.message);
       } else if (err instanceof Error) {
         setSubmitError(err.message);
       } else {
@@ -108,17 +138,16 @@ export default function JobDetailPage() {
   if (jobLoading || authLoading) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-        <div className="h-6 w-32 animate-pulse rounded-[10px] bg-slate-200 dark:bg-slate-800" />
-        <div className="mt-6 rounded-[10px] border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="h-8 w-2/3 animate-pulse rounded-[10px] bg-slate-200 dark:bg-slate-800" />
+        <div className="h-6 w-32 animate-pulse rounded bg-muted" />
+        <div className="mt-6 rounded-xl border border-border bg-card p-8 shadow-sm">
+          <div className="h-8 w-2/3 animate-pulse rounded bg-muted" />
           <div className="mt-4 flex gap-3">
-            <div className="h-6 w-24 animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
-            <div className="h-6 w-32 animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
+            <div className="h-6 w-24 animate-pulse rounded-full bg-muted" />
+            <div className="h-6 w-32 animate-pulse rounded-full bg-muted" />
           </div>
           <div className="mt-8 space-y-3">
-            <div className="h-4 w-full animate-pulse rounded-[10px] bg-slate-100 dark:bg-slate-800" />
-            <div className="h-4 w-5/6 animate-pulse rounded-[10px] bg-slate-100 dark:bg-slate-800" />
-            <div className="h-4 w-4/6 animate-pulse rounded-[10px] bg-slate-100 dark:bg-slate-800" />
+            <div className="h-4 w-full animate-pulse rounded bg-muted" />
+            <div className="h-4 w-5/6 animate-pulse rounded bg-muted" />
           </div>
         </div>
       </div>
@@ -129,26 +158,26 @@ export default function JobDetailPage() {
   if (jobError || !job) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[10px] bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
-          <AlertCircle className="h-8 w-8" />
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10 text-red-600 dark:text-red-400">
+          <AlertCircle className="h-6 w-6" />
         </div>
-        <h1 className="mt-4 text-2xl font-bold text-slate-900 dark:text-white">
-          Job Not Found
+        <h1 className="mt-4 text-xl font-bold text-foreground">
+          Opportunity Not Found
         </h1>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+        <p className="mt-2 text-sm text-muted-foreground">
           {jobError?.message || "The requested job posting does not exist or has been removed."}
         </p>
         <div className="mt-6 flex justify-center gap-4">
           <button
             onClick={() => refetchJob()}
-            className="inline-flex items-center gap-2 rounded-[10px] bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             Retry
           </button>
           <Link
             href="/jobs"
-            className="inline-flex items-center gap-2 rounded-[10px] border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2 text-xs font-medium text-foreground hover:bg-muted"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Browse All Jobs
@@ -159,14 +188,13 @@ export default function JobDetailPage() {
   }
 
   const statusStyles = getStatusBadgeClasses(job.status);
-  const employerName =
-    job.employer?.company_or_org ||
-    job.employer?.contact_name ||
-    "Campus Employer";
-  const isEmployerOwner =
-    isAuthenticated &&
-    role === "employer" &&
-    (backendUser?.id === job.employer_id || user?.id === job.employer_id);
+  const creatorDisplayName =
+    job.creator?.first_name || job.creator?.last_name
+      ? `${job.creator.first_name || ""} ${job.creator.last_name || ""}`.trim()
+      : job.creator?.organization ||
+        job.employer?.company_or_org ||
+        job.employer?.contact_name ||
+        "Campus Member";
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
@@ -174,18 +202,45 @@ export default function JobDetailPage() {
       <div className="mb-6">
         <Link
           href="/jobs"
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-emerald-600 dark:text-slate-400 dark:hover:text-emerald-400"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          <span>Back to All Jobs</span>
+          <span>Back to All Opportunities</span>
         </Link>
       </div>
+
+      {/* Creator Banner if viewer owns this job */}
+      {isCreator && (
+        <div className="mb-6 flex flex-col gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Briefcase className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Your Job Posting
+              </p>
+              <p className="text-xs text-muted-foreground">
+                You created this opportunity. You can review applicant proposals and manage contracts.
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href={`/jobs/${job.id}/applicants`}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
+          >
+            <Users className="h-4 w-4" />
+            <span>Manage Applicants</span>
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         {/* Main Job Details Column (2/3 width) */}
         <div className="space-y-6 lg:col-span-2">
           {/* Header Card */}
-          <div className="rounded-[10px] border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-8">
+          <div className="rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8">
             <div className="flex flex-wrap items-center gap-2 pb-4">
               <span
                 className={cn(
@@ -194,370 +249,235 @@ export default function JobDetailPage() {
                   statusStyles.text
                 )}
               >
-                <span className={cn("h-2 w-2 rounded-full", statusStyles.dot)} />
+                <span className={cn("h-1.5 w-1.5 rounded-full", statusStyles.dot)} />
                 {job.status.replace("_", " ")}
               </span>
 
               {job.department && (
-                <span className="inline-flex items-center gap-1 rounded-[10px] bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                  <GraduationCap className="h-3.5 w-3.5 text-slate-500" />
+                <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2.5 py-0.5 text-xs font-medium text-foreground">
+                  <GraduationCap className="h-3.5 w-3.5 text-muted-foreground" />
                   <span>{job.department}</span>
                 </span>
               )}
             </div>
 
-            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               {job.title}
             </h1>
 
-            {/* Employer Meta Row */}
-            <div className="mt-4 flex flex-wrap items-center gap-y-2 gap-x-6 border-t border-slate-100 pt-4 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-400">
-              <div className="flex items-center gap-1.5 font-medium">
-                <Building2 className="h-4 w-4 text-slate-400" />
-                <span className="text-slate-900 dark:text-white font-semibold">
-                  {employerName}
-                </span>
+            {/* Meta Row */}
+            <div className="mt-4 flex flex-wrap items-center gap-y-2 gap-x-6 text-xs text-muted-foreground border-b border-border/60 pb-5">
+              <div className="flex items-center gap-1.5">
+                <UserIcon className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium text-foreground">{creatorDisplayName}</span>
+                {job.creator?.organization && (
+                  <span className="text-muted-foreground">({job.creator.organization})</span>
+                )}
               </div>
-
-              {job.employer?.website && (
-                <a
-                  href={
-                    job.employer.website.startsWith("http")
-                      ? job.employer.website
-                      : `https://${job.employer.website}`
-                  }
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5 text-emerald-600 hover:underline dark:text-emerald-400"
-                >
-                  <Globe className="h-3.5 w-3.5" />
-                  <span>{job.employer.website.replace(/^https?:\/\//, "")}</span>
-                </a>
-              )}
 
               <div className="flex items-center gap-1.5">
-                <Clock className="h-4 w-4 text-slate-400" />
+                <Calendar className="h-4 w-4 text-muted-foreground" />
                 <span>Posted {formatJobDate(job.created_at)}</span>
               </div>
-            </div>
-          </div>
 
-          {/* Job Description Card */}
-          <div className="rounded-[10px] border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-8">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-              Project Description
-            </h2>
-            <div className="mt-4 whitespace-pre-line text-sm leading-relaxed text-slate-700 dark:text-slate-300">
-              {job.description}
+              <div className="flex items-center gap-1.5">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <span>Deadline: {formatJobDate(job.deadline)}</span>
+              </div>
             </div>
 
-            {/* Required Skills Section */}
-            {job.required_skills && job.required_skills.length > 0 && (
-              <div className="mt-8 border-t border-slate-100 pt-6 dark:border-slate-800">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Required Skills & Technologies
-                </h3>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {job.required_skills.map((skill, index) => (
+            {/* Description */}
+            <div className="mt-6">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                Project Description & Requirements
+              </h2>
+              <div className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                {job.description}
+              </div>
+            </div>
+
+            {/* Skills */}
+            <div className="mt-8 border-t border-border/60 pt-6">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                Required Skills & Academic Background
+              </h2>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {job.required_skills && job.required_skills.length > 0 ? (
+                  job.required_skills.map((skill, index) => (
                     <span
                       key={`${skill}-${index}`}
-                      className="inline-flex items-center rounded-[10px] border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                      className="rounded-md border border-border bg-muted/60 px-3 py-1 text-xs font-medium text-foreground"
                     >
                       {skill}
                     </span>
-                  ))}
-                </div>
+                  ))
+                ) : (
+                  <span className="text-xs text-muted-foreground italic">
+                    No specific skills specified
+                  </span>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
 
-        {/* Sidebar Column: Compensation & Apply Gate (1/3 width) */}
+        {/* Right Sidebar: Compensation & Proposal Action */}
         <div className="space-y-6">
           {/* Compensation Card */}
-          <div className="rounded-[10px] border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Compensation & Terms
+          <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Compensation
             </h3>
-
-            <div className="mt-4 flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-slate-900 dark:text-white">
-                ${job.budget}
-              </span>
-              <span className="text-sm font-semibold text-slate-600 dark:text-slate-400">
-                {job.pay_type === "hourly" ? "/ hour" : "total fixed budget"}
-              </span>
+            <div className="mt-2 text-2xl font-bold text-foreground">
+              {formatBudget(job.budget, job.pay_type)}
             </div>
-
-            <div className="mt-4 space-y-2.5 border-t border-slate-100 pt-4 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-400">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-slate-500">
-                  <Calendar className="h-3.5 w-3.5" />
-                  Application Deadline
-                </span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">
-                  {job.deadline ? formatJobDate(job.deadline) : "Flexible"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-slate-500">
-                  <Briefcase className="h-3.5 w-3.5" />
-                  Contract Type
-                </span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200 capitalize">
-                  {job.pay_type} Milestone
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-[10px] border border-emerald-100 bg-emerald-50/60 p-3 text-[11px] text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">
-              <div className="flex items-center gap-1.5 font-semibold">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>Protected by Lynk Contract</span>
-              </div>
-              <p className="mt-1">
-                Accepted proposals generate a structured contract with draft, active, and completed milestones.
-              </p>
-            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {job.pay_type === "hourly"
+                ? "Paid hourly upon contract milestone approval."
+                : "Fixed project price held in milestone escrow."}
+            </p>
           </div>
 
-          {/* Apply Gate Section */}
-          <div className="rounded-[10px] border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Application Status
-            </h3>
-
-            {/* If job is closed / cancelled */}
-            {job.status !== "open" && (
-              <div className="mt-4 rounded-[10px] border border-slate-200 bg-slate-50 p-4 text-center dark:border-slate-700 dark:bg-slate-800/60">
-                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  This gig is currently{" "}
-                  <span className="uppercase font-bold">{job.status.replace("_", " ")}</span>
+          {/* Action Card: Apply or Manage */}
+          <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+            {isCreator ? (
+              /* Creator State */
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Job Management
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  As the creator of this posting, you can review proposals, inspect student resumes, and generate contracts.
                 </p>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                  New proposals are no longer being accepted for this position.
-                </p>
+                <Link
+                  href={`/jobs/${job.id}/applicants`}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
+                >
+                  <Users className="h-4 w-4" />
+                  <span>Review Proposals</span>
+                </Link>
               </div>
-            )}
+            ) : alreadyApplied ? (
+              /* Already Applied State */
+              <div className="space-y-3 text-center">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <h3 className="text-sm font-semibold text-foreground">
+                  Proposal Submitted
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Your application for this opportunity has been received. You will be notified once the creator reviews your proposal.
+                </p>
+                <Link
+                  href="/activity"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2 text-xs font-medium text-foreground hover:bg-muted w-full"
+                >
+                  View in My Activity
+                </Link>
+              </div>
+            ) : !isAuthenticated ? (
+              /* Unauthenticated State */
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Ready to Apply?
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Sign in with your campus account to submit a proposal and attach your resume.
+                </p>
+                <button
+                  onClick={() => login({ redirectPath: `/jobs/${jobId}` })}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
+                >
+                  <Lock className="h-4 w-4" />
+                  <span>Sign In to Apply</span>
+                </button>
+              </div>
+            ) : !isVerified ? (
+              /* Unverified Email State */
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                  <ShieldAlert className="h-4 w-4" />
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Verification Required
+                  </h3>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  You must verify your institutional .edu email address before applying to campus jobs.
+                </p>
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200">
+                  Check your inbox for a verification link or re-authenticate.
+                </div>
+              </div>
+            ) : (
+              /* Proposal Form for Verified Campus Member */
+              <form onSubmit={handleSubmitApplication} className="space-y-4">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Submit Proposal
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Introduce yourself, describe your relevant coursework, and summarize how you would deliver the project.
+                </p>
 
-            {/* Case 1: Unauthenticated User Gate */}
-            {job.status === "open" && !isAuthenticated && (
-              <div className="mt-4 space-y-4">
-                <div className="rounded-[10px] border border-emerald-100 bg-emerald-50/60 p-4 text-xs text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-200">
-                  <div className="flex items-center gap-1.5 font-bold text-emerald-900 dark:text-emerald-300">
-                    <Lock className="h-4 w-4 text-emerald-600" />
-                    <span>Verified University Sign-In Required</span>
+                {submitError && (
+                  <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-700 dark:text-red-300">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>{submitError}</span>
                   </div>
-                  <p className="mt-2 leading-relaxed">
-                    Lynk ensures high trust by allowing only authenticated students with verified university credentials to apply.
-                  </p>
+                )}
+
+                <div>
+                  <label className="block text-xs font-medium text-foreground">
+                    Proposal Cover Letter
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={coverLetter}
+                    onChange={(e) => setCoverLetter(e.target.value)}
+                    placeholder="Describe your qualifications, approach, and availability..."
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background p-2.5 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
+                    <span>Min 20 characters</span>
+                    <span>{coverLetter.length} chars</span>
+                  </div>
+                </div>
+
+                {/* Resume Status */}
+                <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+                  {memberProfile?.resume_key ? (
+                    <div className="flex items-center gap-2 text-foreground">
+                      <FileText className="h-4 w-4 text-primary shrink-0" />
+                      <span className="truncate">
+                        Attached Resume: {memberProfile.resume_filename || "resume.pdf"}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <p>No resume uploaded to your profile yet.</p>
+                      <Link href="/profile" className="text-primary hover:underline font-medium">
+                        Upload resume in Profile &rarr;
+                      </Link>
+                    </div>
+                  )}
                 </div>
 
                 <button
-                  type="button"
-                  onClick={() =>
-                    login({
-                      redirectPath: `/jobs/${job.id}`,
-                      roleHint: "student",
-                    })
-                  }
-                  className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 transition hover:bg-emerald-500"
+                  type="submit"
+                  disabled={isApplying}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50"
                 >
-                  <GraduationCap className="h-4 w-4" />
-                  <span>Sign In with University Email to Apply</span>
-                </button>
-              </div>
-            )}
-
-            {/* Case 2: Employer Role Gate */}
-            {job.status === "open" && isAuthenticated && role === "employer" && (
-              <div className="mt-4 space-y-3">
-                {isEmployerOwner ? (
-                  <div className="rounded-[10px] border border-emerald-200 bg-emerald-50/60 p-4 text-center dark:border-emerald-900/50 dark:bg-emerald-950/30">
-                    <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
-                      You posted this job posting
-                    </p>
-                    <p className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-300">
-                      Review proposals submitted by verified student applicants.
-                    </p>
-                    <Link
-                      href={`/jobs/${job.id}/applicants`}
-                      className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-emerald-600 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-500"
-                    >
-                      <Briefcase className="h-3.5 w-3.5" />
-                      View Applicants
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="rounded-[10px] border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-400">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200">
-                      <Briefcase className="h-4 w-4 text-emerald-600" />
-                      <span>Employer Account Active</span>
-                    </div>
-                    <p className="mt-2 text-[11px] leading-relaxed">
-                      You are signed in as an employer. Job applications are reserved for verified student freelancers. You can post new jobs or manage existing gigs from your dashboard.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Case 3: Student with Unverified Institutional Email Gate */}
-            {job.status === "open" &&
-              isAuthenticated &&
-              role === "student" &&
-              !isVerified && (
-                <div className="mt-4 space-y-4">
-                  <div className="rounded-[10px] border border-amber-200 bg-amber-50/70 p-4 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
-                    <div className="flex items-start gap-2">
-                      <ShieldAlert className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-                      <div>
-                        <h4 className="font-bold">
-                          University Email Verification Required
-                        </h4>
-                        <p className="mt-1.5 text-[11px] leading-relaxed">
-                          Your student account requires verified institutional email address (e.g. <code>@university.edu</code>) before submitting proposals or uploading resumes.
-                        </p>
-                        <p className="mt-2 text-[11px] font-medium text-amber-800 dark:text-amber-300">
-                          Please check your university inbox for the verification email sent during registration, or click below to re-authenticate.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled
-                    className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-[10px] bg-slate-200 py-3 text-xs font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                  >
-                    <Lock className="h-4 w-4" />
-                    <span>Apply Disabled (Verification Required)</span>
-                  </button>
-                </div>
-              )}
-
-            {/* Case 4: Student with Verified Institutional Email -> Submit Proposal */}
-            {job.status === "open" &&
-              isAuthenticated &&
-              role === "student" &&
-              isVerified && (
-                <div className="mt-4">
-                  {hasAppliedSuccess ? (
-                    <div className="rounded-[10px] border border-emerald-200 bg-emerald-50 p-5 text-center dark:border-emerald-900/50 dark:bg-emerald-950/40">
-                      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900 dark:text-emerald-300">
-                        <CheckCircle2 className="h-6 w-6" />
-                      </div>
-                      <h4 className="mt-3 text-sm font-bold text-emerald-900 dark:text-emerald-200">
-                        Proposal Submitted!
-                      </h4>
-                      <p className="mt-1.5 text-xs text-emerald-700 dark:text-emerald-300">
-                        Your application was received by {employerName}. You will be notified once they review your proposal and initiate the contract.
-                      </p>
-                      <div className="mt-4">
-                        <Link
-                          href="/jobs"
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 underline hover:text-emerald-900 dark:text-emerald-200"
-                        >
-                          Browse more jobs &rarr;
-                        </Link>
-                      </div>
-                    </div>
+                  {isApplying ? (
+                    <span>Submitting...</span>
                   ) : (
-                    <form onSubmit={handleSubmitApplication} className="space-y-4">
-                      <div className="flex items-center justify-between rounded-[10px] bg-emerald-50/70 px-3 py-2 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
-                        <span className="flex items-center gap-1.5">
-                          <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                          Verified Student Account
-                        </span>
-                        <span className="text-[10px] uppercase font-bold text-emerald-600">
-                          Eligible to Apply
-                        </span>
-                      </div>
-
-                      {/* Resume Attachment Info */}
-                      <div className="rounded-[10px] border border-slate-200 bg-slate-50/60 p-3 text-xs dark:border-slate-700 dark:bg-slate-800/50">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-slate-500" />
-                          <span className="font-semibold text-slate-700 dark:text-slate-300">
-                            Resume Attachment:
-                          </span>
-                        </div>
-                        <div className="mt-1.5 pl-6 text-[11px] text-slate-600 dark:text-slate-400">
-                          {studentProfile?.resume_filename ? (
-                            <span className="font-medium text-emerald-700 dark:text-emerald-300">
-                              Attached: {studentProfile.resume_filename}
-                            </span>
-                          ) : (
-                            <span>
-                              No resume uploaded yet. (You can still apply with your cover letter, or upload one in your{" "}
-                              <Link
-                                href="/profile"
-                                className="font-semibold text-emerald-600 hover:underline dark:text-emerald-400"
-                              >
-                                Profile
-                              </Link>
-                              ).
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Cover Letter Input */}
-                      <div>
-                        <label
-                          htmlFor="cover_letter"
-                          className="block text-xs font-bold text-slate-700 dark:text-slate-300"
-                        >
-                          Proposal Cover Letter
-                        </label>
-                        <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                          Briefly introduce yourself and outline why you are a great fit for this gig.
-                        </p>
-                        <textarea
-                          id="cover_letter"
-                          rows={4}
-                          required
-                          value={coverLetter}
-                          onChange={(e) => setCoverLetter(e.target.value)}
-                          placeholder="Explain your relevant coursework, project experience, and availability..."
-                          className="mt-2 w-full rounded-[10px] border border-slate-200 bg-white p-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                        />
-                        <div className="mt-1 flex justify-between text-[10px] text-slate-400">
-                          <span>Minimum 20 characters</span>
-                          <span>{coverLetter.length} chars</span>
-                        </div>
-                      </div>
-
-                      {/* Error Banner */}
-                      {submitError && (
-                        <div className="flex items-start gap-2 rounded-[10px] border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300">
-                          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                          <span>{submitError}</span>
-                        </div>
-                      )}
-
-                      {/* Submit Button */}
-                      <button
-                        type="submit"
-                        disabled={isApplying}
-                        className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-emerald-600 py-3 text-sm font-semibold text-white shadow-md shadow-emerald-500/25 transition hover:bg-emerald-500 disabled:opacity-60"
-                      >
-                        {isApplying ? (
-                          <>
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                            <span>Submitting Proposal...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Send className="h-4 w-4" />
-                            <span>Submit Proposal</span>
-                          </>
-                        )}
-                      </button>
-                    </form>
+                    <>
+                      <Send className="h-3.5 w-3.5" />
+                      <span>Submit Proposal</span>
+                    </>
                   )}
-                </div>
-              )}
+                </button>
+              </form>
+            )}
           </div>
         </div>
       </div>

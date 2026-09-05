@@ -263,7 +263,7 @@ export function ResumeUploader({
                   </span>
                   <span>•</span>
                   <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                    Verified MinIO S3 Object
+                    Uploaded & Active
                   </span>
                 </div>
               </div>
@@ -344,7 +344,7 @@ export function ResumeUploader({
           <div className="mt-4 space-y-1">
             <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
               {isUploading
-                ? "Streaming to MinIO S3 Object Storage..."
+                ? "Uploading resume..."
                 : isDragging
                 ? "Drop your resume file here"
                 : "Drag & drop your resume, or browse files"}
