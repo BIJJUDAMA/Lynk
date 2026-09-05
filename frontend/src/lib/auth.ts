@@ -4,13 +4,6 @@ import type { ApiResponse, User, UserRole } from "../types/api";
 // Configuration & Constants
 // ==========================================
 
-export const KEYCLOAK_CONFIG = {
-  url: process.env.NEXT_PUBLIC_KEYCLOAK_URL || "http://localhost:8081",
-  realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM || "lynk",
-  clientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || "lynk-frontend",
-  scope: "openid profile email roles",
-};
-
 export const API_CONFIG = {
   baseUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1",
 };
@@ -26,7 +19,7 @@ export const STORAGE_KEYS = {
 // Types
 // ==========================================
 
-export type AuthRole = "student" | "employer" | "admin" | null;
+export type AuthRole = "member" | "admin" | null;
 
 export interface AuthTokens {
   accessToken: string;
@@ -46,6 +39,7 @@ export interface JwtClaims {
   name?: string;
   given_name?: string;
   family_name?: string;
+  roles?: string[];
   realm_access?: {
     roles?: string[];
   };
@@ -56,7 +50,7 @@ export interface JwtClaims {
 }
 
 export interface AuthUser {
-  id: string; // Keycloak UUID (sub)
+  id: string; // User ID / sub
   email: string;
   name: string;
   preferredUsername?: string;
@@ -137,185 +131,6 @@ export async function generateCodeChallenge(verifier: string): Promise<string> {
 }
 
 // ==========================================
-// OIDC URL Builders
-// ==========================================
-
-/**
- * Constructs the Keycloak authorization URL with PKCE parameters.
- */
-export async function buildLoginUrl(
-  redirectUri: string,
-  roleHint?: AuthRole
-): Promise<{ url: string; codeVerifier: string }> {
-  const codeVerifier = generateRandomString(64);
-  const codeChallenge = await generateCodeChallenge(codeVerifier);
-
-  const authUrl = new URL(
-    `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/auth`
-  );
-
-  authUrl.searchParams.set("client_id", KEYCLOAK_CONFIG.clientId);
-  authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("scope", KEYCLOAK_CONFIG.scope);
-  authUrl.searchParams.set("redirect_uri", redirectUri);
-  authUrl.searchParams.set("code_challenge", codeChallenge);
-  authUrl.searchParams.set("code_challenge_method", "S256");
-
-  if (roleHint) {
-    saveRoleHint(roleHint);
-  }
-
-  return { url: authUrl.toString(), codeVerifier };
-}
-
-/**
- * Constructs Keycloak registration URL with PKCE parameters.
- */
-export async function buildRegisterUrl(
-  redirectUri: string,
-  roleHint?: AuthRole
-): Promise<{ url: string; codeVerifier: string }> {
-  const codeVerifier = generateRandomString(64);
-  const codeChallenge = await generateCodeChallenge(codeVerifier);
-
-  const registerUrl = new URL(
-    `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/registrations`
-  );
-
-  registerUrl.searchParams.set("client_id", KEYCLOAK_CONFIG.clientId);
-  registerUrl.searchParams.set("response_type", "code");
-  registerUrl.searchParams.set("scope", KEYCLOAK_CONFIG.scope);
-  registerUrl.searchParams.set("redirect_uri", redirectUri);
-  registerUrl.searchParams.set("code_challenge", codeChallenge);
-  registerUrl.searchParams.set("code_challenge_method", "S256");
-
-  if (roleHint) {
-    saveRoleHint(roleHint);
-  }
-
-  return { url: registerUrl.toString(), codeVerifier };
-}
-
-/**
- * Constructs Keycloak RP-initiated logout URL.
- */
-export function buildLogoutUrl(redirectUri: string, idToken?: string): string {
-  const logoutUrl = new URL(
-    `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/logout`
-  );
-
-  logoutUrl.searchParams.set("client_id", KEYCLOAK_CONFIG.clientId);
-  logoutUrl.searchParams.set("post_logout_redirect_uri", redirectUri);
-  if (idToken) {
-    logoutUrl.searchParams.set("id_token_hint", idToken);
-  }
-
-  return logoutUrl.toString();
-}
-
-// ==========================================
-// Token Exchange & Refresh
-// ==========================================
-
-/**
- * Exchanges authorization code and PKCE code_verifier for access and refresh tokens.
- */
-export async function exchangeCodeForTokens(
-  code: string,
-  codeVerifier: string,
-  redirectUri: string
-): Promise<AuthTokens> {
-  const tokenUrl = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/token`;
-
-  const body = new URLSearchParams({
-    grant_type: "authorization_code",
-    client_id: KEYCLOAK_CONFIG.clientId,
-    code,
-    code_verifier: codeVerifier,
-    redirect_uri: redirectUri,
-  });
-
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: body.toString(),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    let errorMsg = `Token exchange failed with HTTP ${response.status}`;
-    try {
-      const errJson = JSON.parse(errorText);
-      errorMsg = errJson.error_description || errJson.error || errorMsg;
-    } catch {
-      // Keep fallback errorMsg
-    }
-    throw new Error(errorMsg);
-  }
-
-  const data = await response.json();
-  const expiresIn = data.expires_in ?? 300;
-
-  return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token,
-    idToken: data.id_token,
-    tokenType: data.token_type,
-    expiresIn,
-    expiresAt: Date.now() + expiresIn * 1000,
-    scope: data.scope,
-  };
-}
-
-/**
- * Refreshes an expired or expiring access token using the refresh token.
- */
-export async function refreshTokens(refreshToken: string): Promise<AuthTokens> {
-  const tokenUrl = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/token`;
-
-  const body = new URLSearchParams({
-    grant_type: "refresh_token",
-    client_id: KEYCLOAK_CONFIG.clientId,
-    refresh_token: refreshToken,
-  });
-
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: body.toString(),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    let errorMsg = `Token refresh failed with HTTP ${response.status}`;
-    try {
-      const errJson = JSON.parse(errorText);
-      errorMsg = errJson.error_description || errJson.error || errorMsg;
-    } catch {
-      // Keep fallback errorMsg
-    }
-    throw new Error(errorMsg);
-  }
-
-  const data = await response.json();
-  const expiresIn = data.expires_in ?? 300;
-
-  return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token || refreshToken,
-    idToken: data.id_token,
-    tokenType: data.token_type,
-    expiresIn,
-    expiresAt: Date.now() + expiresIn * 1000,
-    scope: data.scope,
-  };
-}
-
-// ==========================================
 // JWT Decoding & User Extraction
 // ==========================================
 
@@ -349,21 +164,22 @@ export function decodeJwtClaims(token: string): JwtClaims | null {
  * Extracts a normalized AuthUser model from decoded JWT claims.
  */
 export function extractUserFromClaims(claims: JwtClaims): AuthUser {
-  const roles = claims.realm_access?.roles ?? [];
-  let role: AuthRole = null;
+  const rawRoles = [
+    ...(claims.roles ?? []),
+    ...(claims.realm_access?.roles ?? []),
+  ];
+  let role: AuthRole = "member";
 
-  if (roles.includes("admin")) {
+  if (rawRoles.includes("admin")) {
     role = "admin";
-  } else if (roles.includes("employer")) {
-    role = "employer";
-  } else if (roles.includes("student")) {
-    role = "student";
+  } else if (rawRoles.includes("member")) {
+    role = "member";
   }
 
   const displayName =
     claims.name ||
     claims.preferred_username ||
-    (claims.email ? claims.email.split("@")[0] : "User");
+    (claims.email ? claims.email.split("@")[0] : "Campus Member");
 
   return {
     id: claims.sub,
@@ -372,7 +188,7 @@ export function extractUserFromClaims(claims: JwtClaims): AuthUser {
     preferredUsername: claims.preferred_username,
     isVerified: Boolean(claims.email_verified),
     role,
-    roles,
+    roles: rawRoles,
   };
 }
 
@@ -458,7 +274,7 @@ export function clearRedirectPath(): void {
 // ==========================================
 
 /**
- * Synchronizes the Keycloak authenticated user with the Go backend PostgreSQL database.
+ * Synchronizes the SuperTokens authenticated user with the Go backend PostgreSQL database.
  * Calls POST /api/v1/auth/sync with Bearer token.
  */
 export async function syncUserWithBackend(

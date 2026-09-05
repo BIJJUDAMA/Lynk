@@ -9,26 +9,14 @@ import React, {
   useMemo,
 } from "react";
 import {
-  AuthRole,
-  AuthTokens,
-  AuthUser,
-  buildLoginUrl,
-  buildLogoutUrl,
-  buildRegisterUrl,
-  clearCodeVerifier,
-  clearRedirectPath,
-  clearRoleHint,
-  clearTokens,
-  decodeJwtClaims,
-  extractUserFromClaims,
-  getStoredTokens,
-  refreshTokens,
-  saveCodeVerifier,
-  saveRedirectPath,
-  saveRoleHint,
-  saveTokens,
-} from "@/lib/auth";
-import { User } from "@/types/api";
+  initSuperTokens,
+  Session,
+  EmailPassword,
+  EmailVerification,
+} from "@/lib/supertokens";
+import { isEduEmail } from "@/lib/email-validation";
+import { AuthRole, AuthTokens, AuthUser } from "@/lib/auth";
+import { Profile, User } from "@/types/api";
 
 // ==========================================
 // Context Interface
@@ -43,11 +31,18 @@ export interface AuthContextType {
   isAuthenticated: boolean;
   isVerified: boolean;
   role: AuthRole;
-  login: (options?: { redirectPath?: string; roleHint?: AuthRole }) => Promise<void>;
-  register: (options?: { redirectPath?: string; roleHint?: AuthRole }) => Promise<void>;
+  login: (
+    emailOrOptions?: string | { redirectPath?: string; roleHint?: AuthRole },
+    password?: string
+  ) => Promise<void>;
+  register: (
+    emailOrOptions?: string | { redirectPath?: string; roleHint?: AuthRole },
+    password?: string
+  ) => Promise<void>;
   logout: (redirectPath?: string) => Promise<void>;
   getToken: () => Promise<string | null>;
-  setSession: (tokens: AuthTokens, syncedUser?: User | null) => void;
+  setSession: (tokens?: AuthTokens, syncedUser?: User | null) => void;
+  resendVerificationEmail: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -65,72 +60,111 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isVerified, setIsVerified] = useState<boolean>(false);
   const [role, setRole] = useState<AuthRole>(null);
 
-  // Initialize session from localStorage on mount
+  // Sync auth state from SuperTokens session and backend profile
+  const syncAuthState = useCallback(async (): Promise<boolean> => {
+    try {
+      initSuperTokens();
+      const sessionExists = await Session.doesSessionExist();
+      if (!sessionExists) {
+        setUser(null);
+        setToken(null);
+        setRefreshToken(null);
+        setBackendUser(null);
+        setIsVerified(false);
+        setRole(null);
+        return false;
+      }
+
+      const userId = await Session.getUserId();
+      const payload = await Session.getAccessTokenPayloadSecurely().catch(() => ({}));
+      const accessToken = (await Session.getAccessToken().catch(() => null)) ?? null;
+      setToken(accessToken);
+
+      let emailVerified = false;
+      try {
+        const isVerifiedRes = await EmailVerification.isEmailVerified();
+        emailVerified = Boolean(isVerifiedRes?.isVerified);
+      } catch (err) {
+        console.warn("Failed to check email verification status:", err);
+      }
+
+      // Fetch /api/v1/auth/me to sync and retrieve backend user profile
+      let bUser: User | null = null;
+      let bProfile: Profile | null = null;
+      try {
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+        const headers: Record<string, string> = {
+          Accept: "application/json",
+        };
+        if (accessToken) {
+          headers["Authorization"] = `Bearer ${accessToken}`;
+        }
+        const res = await fetch(`${apiBase}/auth/me`, {
+          credentials: "include",
+          headers,
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.data?.user) {
+            bUser = json.data.user;
+            setBackendUser(json.data.user);
+          }
+          if (json?.data?.profile) {
+            bProfile = json.data.profile;
+          }
+          if (json?.data?.email_verified !== undefined) {
+            emailVerified = emailVerified || Boolean(json.data.email_verified);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch /api/v1/auth/me:", err);
+      }
+
+      const email: string = bUser?.email || payload?.email || "";
+      const name: string =
+        (bProfile && (bProfile.first_name || bProfile.last_name))
+          ? `${bProfile.first_name || ""} ${bProfile.last_name || ""}`.trim()
+          : payload?.name || (email ? email.split("@")[0] : "") || "Campus Member";
+
+      const resolvedRole: AuthRole =
+        (bUser?.role as AuthRole) ||
+        (payload?.role as AuthRole) ||
+        "member";
+
+      const authUser: AuthUser = {
+        id: userId,
+        email,
+        name,
+        isVerified: emailVerified,
+        role: resolvedRole,
+        roles: resolvedRole ? [resolvedRole] : ["member"],
+      };
+
+      setUser(authUser);
+      setIsVerified(emailVerified);
+      setRole(resolvedRole);
+      return true;
+    } catch (err) {
+      console.error("Error syncing auth state:", err);
+      setUser(null);
+      setToken(null);
+      setRefreshToken(null);
+      setBackendUser(null);
+      setIsVerified(false);
+      setRole(null);
+      return false;
+    }
+  }, []);
+
+  // Initialize SuperTokens on mount and inspect session
   useEffect(() => {
     let isMounted = true;
 
     const initAuth = async () => {
       try {
-        const stored = getStoredTokens();
-        if (!stored || !stored.accessToken) {
-          if (isMounted) {
-            setIsLoading(false);
-          }
-          return;
-        }
-
-        // Check if token is expired or expires in < 30 seconds
-        const isExpiringSoon =
-          stored.expiresAt !== undefined &&
-          Date.now() >= stored.expiresAt - 30000;
-
-        let activeAccessToken = stored.accessToken;
-        let activeRefreshToken = stored.refreshToken ?? null;
-
-        if (isExpiringSoon && stored.refreshToken) {
-          try {
-            const refreshed = await refreshTokens(stored.refreshToken);
-            saveTokens(refreshed);
-            activeAccessToken = refreshed.accessToken;
-            activeRefreshToken = refreshed.refreshToken ?? stored.refreshToken;
-          } catch (refreshErr) {
-            console.warn("Stored token expired and refresh failed:", refreshErr);
-            clearTokens();
-            if (isMounted) {
-              setIsLoading(false);
-            }
-            return;
-          }
-        }
-
-        const claims = decodeJwtClaims(activeAccessToken);
-        if (claims && isMounted) {
-          let u = extractUserFromClaims(claims);
-          setToken(activeAccessToken);
-          setRefreshToken(activeRefreshToken);
-
-          // Rehydrate backend user profile from /api/v1/auth/me if accessible
-          try {
-            const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
-            const res = await fetch(`${apiBase}/auth/me`, {
-              headers: { Authorization: `Bearer ${activeAccessToken}` },
-            });
-            if (res.ok) {
-              const json = await res.json();
-              if (json?.data?.user) {
-                setBackendUser(json.data.user);
-                if (!u.role && json.data.user.role) {
-                  u = { ...u, role: json.data.user.role as AuthRole };
-                }
-              }
-            }
-          } catch {
-            // Non-fatal if API is temporarily unavailable
-          }
-
-          setUser(u);
-          setRole(u.role);
-          setIsVerified(u.isVerified);
+        initSuperTokens();
+        if (isMounted) {
+          await syncAuthState();
         }
       } catch (err) {
         console.error("Error initializing auth state:", err);
@@ -146,131 +180,179 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [syncAuthState]);
 
-  // Update session directly (e.g. from callback page after token exchange & backend sync)
-  const setSession = useCallback((tokens: AuthTokens, syncedUser?: User | null) => {
-    saveTokens(tokens);
-    setToken(tokens.accessToken);
-    setRefreshToken(tokens.refreshToken ?? null);
-    if (syncedUser !== undefined) {
-      setBackendUser(syncedUser);
-    }
-
-    const claims = decodeJwtClaims(tokens.accessToken);
-    if (claims) {
-      let u = extractUserFromClaims(claims);
-      if (!u.role && syncedUser?.role) {
-        u = { ...u, role: syncedUser.role as AuthRole };
+  // Backward-compatible session sync helper
+  const setSession = useCallback(
+    (tokens?: AuthTokens, syncedUser?: User | null) => {
+      if (syncedUser !== undefined) {
+        setBackendUser(syncedUser);
       }
-      setUser(u);
-      setRole(u.role);
-      setIsVerified(u.isVerified);
-    }
-  }, []);
+      if (tokens?.accessToken) {
+        setToken(tokens.accessToken);
+        setRefreshToken(tokens.refreshToken ?? null);
+      }
+      syncAuthState();
+    },
+    [syncAuthState]
+  );
 
-  // Retrieves valid access token, auto-refreshes if within 30s of expiry
+  // Retrieve valid access token directly from SuperTokens session
   const getToken = useCallback(async (): Promise<string | null> => {
-    const currentStored = getStoredTokens();
-    if (!currentStored || !currentStored.accessToken) {
-      return null;
-    }
-
-    let isExpiringSoon = false;
-    if (currentStored.expiresAt !== undefined) {
-      isExpiringSoon = Date.now() >= currentStored.expiresAt - 30000;
-    } else {
-      const claims = decodeJwtClaims(currentStored.accessToken);
-      if (claims?.exp) {
-        isExpiringSoon = Date.now() >= claims.exp * 1000 - 30000;
-      }
-    }
-
-    if (!isExpiringSoon) {
-      return currentStored.accessToken;
-    }
-
-    if (!currentStored.refreshToken) {
-      return null;
-    }
-
     try {
-      const refreshed = await refreshTokens(currentStored.refreshToken);
-      saveTokens(refreshed);
-      setToken(refreshed.accessToken);
-      setRefreshToken(refreshed.refreshToken ?? currentStored.refreshToken);
-
-      const claims = decodeJwtClaims(refreshed.accessToken);
-      if (claims) {
-        const u = extractUserFromClaims(claims);
-        setUser(u);
-        setRole(u.role);
-        setIsVerified(u.isVerified);
+      initSuperTokens();
+      const exists = await Session.doesSessionExist();
+      if (!exists) {
+        return null;
       }
-      return refreshed.accessToken;
+      const accessToken = await Session.getAccessToken();
+      return accessToken ?? null;
     } catch (err) {
-      console.error("Failed to auto-refresh access token:", err);
-      clearTokens();
-      setToken(null);
-      setRefreshToken(null);
-      setUser(null);
-      setRole(null);
-      setIsVerified(false);
-      setBackendUser(null);
+      console.error("Failed to retrieve SuperTokens access token:", err);
       return null;
     }
   }, []);
 
-  // Initiate PKCE authorization flow for login
+  // Sign in via SuperTokens EmailPassword recipe, or legacy redirect if no credentials provided
   const login = useCallback(
-    async (options?: { redirectPath?: string; roleHint?: AuthRole }) => {
-      if (typeof window === "undefined") return;
-      const redirectUri = `${window.location.origin}/callback`;
+    async (
+      emailOrOptions?: string | { redirectPath?: string; roleHint?: AuthRole },
+      password?: string
+    ) => {
+      initSuperTokens();
 
-      if (options?.redirectPath) {
-        saveRedirectPath(options.redirectPath);
-      }
-      if (options?.roleHint) {
-        saveRoleHint(options.roleHint);
+      if (typeof emailOrOptions === "string" && typeof password === "string") {
+        const email = emailOrOptions.trim();
+        const res = await EmailPassword.signIn({
+          formFields: [
+            { id: "email", value: email },
+            { id: "password", value: password },
+          ],
+        });
+
+        if (res.status === "WRONG_CREDENTIALS_ERROR") {
+          throw new Error("Invalid email or password");
+        }
+
+        if (res.status === "FIELD_ERROR") {
+          const message =
+            res.formFields.map((f) => f.error).join(", ") ||
+            "Validation error during sign in";
+          throw new Error(message);
+        }
+
+        if (res.status === "SIGN_IN_NOT_ALLOWED") {
+          throw new Error(res.reason || "Sign in is not allowed at this time");
+        }
+
+        if (res.status === "OK") {
+          await syncAuthState();
+          return;
+        }
+
+        throw new Error("Sign in failed");
       }
 
-      const { url, codeVerifier } = await buildLoginUrl(redirectUri, options?.roleHint);
-      saveCodeVerifier(codeVerifier);
-      window.location.href = url;
+      // Legacy / redirect call
+      if (typeof window !== "undefined") {
+        let redirectUrl = "/login";
+        if (
+          typeof emailOrOptions === "object" &&
+          emailOrOptions !== null &&
+          emailOrOptions.redirectPath
+        ) {
+          redirectUrl = `/login?redirect=${encodeURIComponent(emailOrOptions.redirectPath)}`;
+        }
+        window.location.href = redirectUrl;
+      }
     },
-    []
+    [syncAuthState]
   );
 
-  // Initiate PKCE authorization flow directly for registration
+  // Register via SuperTokens EmailPassword recipe with strict .edu validation
   const register = useCallback(
-    async (options?: { redirectPath?: string; roleHint?: AuthRole }) => {
-      if (typeof window === "undefined") return;
-      const redirectUri = `${window.location.origin}/callback`;
+    async (
+      emailOrOptions?: string | { redirectPath?: string; roleHint?: AuthRole },
+      password?: string
+    ) => {
+      initSuperTokens();
 
-      if (options?.redirectPath) {
-        saveRedirectPath(options.redirectPath);
-      }
-      if (options?.roleHint) {
-        saveRoleHint(options.roleHint);
+      if (typeof emailOrOptions === "string" && typeof password === "string") {
+        const email = emailOrOptions.trim();
+
+        if (!isEduEmail(email)) {
+          throw new Error(
+            "Registration rejected: only institutional .edu email addresses are permitted."
+          );
+        }
+
+        const res = await EmailPassword.signUp({
+          formFields: [
+            { id: "email", value: email },
+            { id: "password", value: password },
+          ],
+        });
+
+        if (res.status === "FIELD_ERROR") {
+          const message =
+            res.formFields.map((f) => f.error).join(", ") ||
+            "Validation error during registration";
+          throw new Error(message);
+        }
+
+        if (res.status === "SIGN_UP_NOT_ALLOWED") {
+          throw new Error(res.reason || "Sign up is not allowed at this time");
+        }
+
+        if (res.status === "OK") {
+          try {
+            await EmailVerification.sendVerificationEmail();
+          } catch (err) {
+            console.warn("Failed to send verification email upon sign up:", err);
+          }
+
+          await syncAuthState();
+          setIsVerified(false);
+          return;
+        }
+
+        throw new Error("Registration failed");
       }
 
-      const { url, codeVerifier } = await buildRegisterUrl(redirectUri, options?.roleHint);
-      saveCodeVerifier(codeVerifier);
-      window.location.href = url;
+      // Legacy / redirect call
+      if (typeof window !== "undefined") {
+        let redirectUrl = "/login";
+        if (
+          typeof emailOrOptions === "object" &&
+          emailOrOptions !== null &&
+          emailOrOptions.redirectPath
+        ) {
+          redirectUrl = `/login?redirect=${encodeURIComponent(emailOrOptions.redirectPath)}`;
+        }
+        window.location.href = redirectUrl;
+      }
     },
-    []
+    [syncAuthState]
   );
 
-  // Clear local session & redirect to Keycloak RP-initiated logout
-  const logout = useCallback(async (redirectPath = "/") => {
-    if (typeof window === "undefined") return;
-    const stored = getStoredTokens();
-    const idToken = stored?.idToken;
+  // Resend email verification link to current user
+  const resendVerificationEmail = useCallback(async () => {
+    initSuperTokens();
+    const res = await EmailVerification.sendVerificationEmail();
+    if (res.status === "EMAIL_ALREADY_VERIFIED_ERROR") {
+      setIsVerified(true);
+      setUser((prev) => (prev ? { ...prev, isVerified: true } : null));
+    }
+  }, []);
 
-    clearTokens();
-    clearCodeVerifier();
-    clearRoleHint();
-    clearRedirectPath();
+  // Sign out of SuperTokens session & redirect
+  const logout = useCallback(async (redirectPath = "/") => {
+    initSuperTokens();
+    try {
+      await Session.signOut();
+    } catch (err) {
+      console.warn("Error signing out of SuperTokens session:", err);
+    }
 
     setToken(null);
     setRefreshToken(null);
@@ -279,9 +361,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsVerified(false);
     setBackendUser(null);
 
-    const postLogoutRedirectUri = `${window.location.origin}${redirectPath}`;
-    const logoutUrl = buildLogoutUrl(postLogoutRedirectUri, idToken);
-    window.location.href = logoutUrl;
+    if (typeof window !== "undefined") {
+      window.location.href = redirectPath || "/login";
+    }
   }, []);
 
   const value = useMemo<AuthContextType>(
@@ -291,7 +373,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshToken,
       backendUser,
       isLoading,
-      isAuthenticated: Boolean(user && token),
+      isAuthenticated: Boolean(user),
       isVerified,
       role,
       login,
@@ -299,6 +381,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       getToken,
       setSession,
+      resendVerificationEmail,
     }),
     [
       user,
@@ -313,6 +396,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       getToken,
       setSession,
+      resendVerificationEmail,
     ]
   );
 

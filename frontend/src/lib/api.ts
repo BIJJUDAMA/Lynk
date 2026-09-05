@@ -5,15 +5,17 @@
  * - Handles standard JSON envelope unwrapping ({ success, data, error }).
  * - Injects Bearer JWT tokens via dynamic token providers or localStorage fallback.
  * - Extracts ApiClientError with standard codes (including EMAIL_NOT_VERIFIED and UNAUTHORIZED).
- * - Implements typed domain API functions for Auth, Profiles, Jobs, Applications, Contracts, and Reviews.
+ * - Implements typed domain API functions for Auth, Unified Profiles, Jobs, Applications, Contracts, and Reviews.
  */
 
 import type {
   ApiResponse,
   User,
+  Profile,
   StudentProfile,
   EmployerProfile,
   UserProfileSummary,
+  UpdateProfileRequest,
   UpdateStudentProfileRequest,
   UpdateEmployerProfileRequest,
   SyncUserRequest,
@@ -55,10 +57,6 @@ export interface ApiClientConfig {
 // ApiClientError
 // ============================================================================
 
-/**
- * ApiClientError represents an error response from the Lynk REST API or underlying transport.
- * Normalizes error codes, status codes, and provides helper getters for common flow gating.
- */
 export class ApiClientError extends Error {
   readonly code: string;
   readonly status: number;
@@ -76,20 +74,13 @@ export class ApiClientError extends Error {
     this.status = status;
     this.details = details;
 
-    // Restore prototype chain for instanceof checks
     Object.setPrototypeOf(this, ApiClientError.prototype);
   }
 
-  /**
-   * True if error is due to missing or expired authentication credentials.
-   */
   get isUnauthorized(): boolean {
     return this.code === "UNAUTHORIZED" || this.status === 401;
   }
 
-  /**
-   * True if student attempt was gated because university email is unverified.
-   */
   get isEmailNotVerified(): boolean {
     return (
       this.code === "EMAIL_NOT_VERIFIED" ||
@@ -97,16 +88,10 @@ export class ApiClientError extends Error {
     );
   }
 
-  /**
-   * True if authenticated caller lacks required role or ownership permission.
-   */
   get isForbidden(): boolean {
     return this.code === "FORBIDDEN" || this.status === 403;
   }
 
-  /**
-   * True if requested resource was not found.
-   */
   get isNotFound(): boolean {
     return (
       this.code === "NOT_FOUND" ||
@@ -116,9 +101,6 @@ export class ApiClientError extends Error {
   }
 }
 
-/**
- * Helper to determine if an error was caused by unverified institutional email.
- */
 export function isEmailNotVerifiedError(error: unknown): boolean {
   if (error instanceof ApiClientError) {
     return error.isEmailNotVerified;
@@ -129,9 +111,6 @@ export function isEmailNotVerifiedError(error: unknown): boolean {
   return false;
 }
 
-/**
- * Helper to determine if an error was caused by missing or invalid authentication.
- */
 export function isUnauthorizedError(error: unknown): boolean {
   if (error instanceof ApiClientError) {
     return error.isUnauthorized;
@@ -155,9 +134,6 @@ export interface ApiClient {
   uploadFile<T>(path: string, file: File, fieldName?: string): Promise<T>;
 }
 
-/**
- * Builds a query string safely from an arbitrary parameters object.
- */
 export function buildQueryString(params?: Record<string, unknown>): string {
   if (!params) return "";
   const searchParams = new URLSearchParams();
@@ -181,9 +157,6 @@ export function buildQueryString(params?: Record<string, unknown>): string {
   return query ? `?${query}` : "";
 }
 
-/**
- * Creates an ApiClient instance with configurable baseUrl and token provider.
- */
 export function createApiClient(
   tokenOrConfig?: TokenProvider | ApiClientConfig,
   customBaseUrl?: string
@@ -203,12 +176,8 @@ export function createApiClient(
     baseUrl = customBaseUrl;
   }
 
-  // Normalize base URL without trailing slash
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
 
-  /**
-   * Resolves authentication headers including Bearer token if present.
-   */
   async function resolveHeaders(
     customHeaders?: HeadersInit
   ): Promise<Record<string, string>> {
@@ -225,9 +194,18 @@ export function createApiClient(
       }
     }
 
-    // Fallback to client-side localStorage stored token if not supplied
     if (!token && typeof window !== "undefined") {
-      token = getStoredTokens()?.accessToken ?? null;
+      try {
+        const { Session } = await import("./supertokens");
+        if (await Session.doesSessionExist()) {
+          token = (await Session.getAccessToken()) ?? null;
+        }
+      } catch {
+        // Fallback or ignore if SuperTokens is uninitialized
+      }
+      if (!token) {
+        token = getStoredTokens()?.accessToken ?? null;
+      }
     }
 
     if (token) {
@@ -251,9 +229,6 @@ export function createApiClient(
     return headers;
   }
 
-  /**
-   * Executes HTTP request and handles JSON envelope decoding and error mapping.
-   */
   async function executeRequest<T>(
     path: string,
     options: RequestInit & { params?: Record<string, unknown> } = {}
@@ -273,7 +248,6 @@ export function createApiClient(
 
     const headers = await resolveHeaders(options.headers);
 
-    // Apply JSON content-type if body is JSON string and Content-Type not explicitly set
     if (
       options.body &&
       !(options.body instanceof FormData) &&
@@ -286,6 +260,7 @@ export function createApiClient(
     try {
       response = await fetch(fullUrl, {
         ...options,
+        credentials: options.credentials !== undefined ? options.credentials : "include",
         headers,
       });
     } catch (err: unknown) {
@@ -296,7 +271,6 @@ export function createApiClient(
       throw new ApiClientError(msg, "NETWORK_ERROR", 0, err);
     }
 
-    // 204 No Content
     if (response.status === 204) {
       return undefined as unknown as T;
     }
@@ -337,7 +311,6 @@ export function createApiClient(
       );
     }
 
-    // Check envelope failure or HTTP status failure
     const envelope = parsed as ApiResponse<T>;
     const isSuccessEnvelope =
       envelope && typeof envelope === "object" && envelope.success === true;
@@ -368,12 +341,10 @@ export function createApiClient(
       throw new ApiClientError(message, code, response.status, errorObj ?? parsed);
     }
 
-    // Unpack success envelope
     if (isSuccessEnvelope && "data" in envelope) {
       return envelope.data as T;
     }
 
-    // Fallback if returned JSON was not in envelope format
     return parsed as T;
   }
 
@@ -422,19 +393,13 @@ export function createApiClient(
   };
 }
 
-/**
- * Default singleton API client utilizing stored localStorage tokens.
- */
 export const apiClient: ApiClient = createApiClient();
 export default apiClient;
 
 // ============================================================================
-// Typed Domain Functions: Auth & User Profiles
+// Typed Domain Functions: Auth & Unified Profiles
 // ============================================================================
 
-/**
- * Synchronizes user with Go backend PostgreSQL database and creates initial profile record.
- */
 export async function syncUser(
   data?: SyncUserRequest,
   client: ApiClient = apiClient
@@ -442,9 +407,6 @@ export async function syncUser(
   return client.post<User>("/auth/sync", data);
 }
 
-/**
- * Retrieves the current authenticated user's profile summary (user info, verification, student/employer profiles).
- */
 export async function getMe(
   client: ApiClient = apiClient
 ): Promise<UserProfileSummary> {
@@ -452,45 +414,70 @@ export async function getMe(
 }
 
 /**
- * Retrieves authenticated student's profile.
+ * Retrieves the current authenticated campus member's profile.
  */
-export async function getStudentProfile(
+export async function getMyProfile(
   client: ApiClient = apiClient
-): Promise<StudentProfile> {
-  return client.get<StudentProfile>("/profile/student");
+): Promise<Profile> {
+  return client.get<Profile>("/profile/me");
 }
 
 /**
- * Updates authenticated student's profile information (bio, skills, department, graduation year, portfolio links).
+ * Updates the current authenticated campus member's profile.
  */
+export async function updateMyProfile(
+  data: UpdateProfileRequest,
+  client: ApiClient = apiClient
+): Promise<Profile> {
+  return client.put<Profile>("/profile/me", data);
+}
+
+/**
+ * Retrieves public view of a campus member's profile by ID.
+ */
+export async function getProfileById(
+  id: string,
+  client: ApiClient = apiClient
+): Promise<Profile> {
+  return client.get<Profile>(`/profile/${id}`);
+}
+
+// Backward-compatible aliases
+export async function getStudentProfile(
+  client: ApiClient = apiClient
+): Promise<StudentProfile> {
+  return getMyProfile(client);
+}
+
 export async function updateStudentProfile(
   data: UpdateStudentProfileRequest,
   client: ApiClient = apiClient
 ): Promise<StudentProfile> {
-  return client.put<StudentProfile>("/profile/student", data);
+  return updateMyProfile(data, client);
 }
 
-/**
- * Retrieves authenticated employer's profile.
- */
 export async function getEmployerProfile(
   client: ApiClient = apiClient
 ): Promise<EmployerProfile> {
-  return client.get<EmployerProfile>("/profile/employer");
+  return getMyProfile(client);
 }
 
-/**
- * Updates authenticated employer's profile information (company name, contact name, description, website).
- */
 export async function updateEmployerProfile(
   data: UpdateEmployerProfileRequest,
   client: ApiClient = apiClient
 ): Promise<EmployerProfile> {
-  return client.put<EmployerProfile>("/profile/employer", data);
+  return updateMyProfile(data, client);
+}
+
+export async function getStudentProfileById(
+  studentId: string,
+  client: ApiClient = apiClient
+): Promise<StudentProfile> {
+  return getProfileById(studentId, client);
 }
 
 /**
- * Uploads student resume PDF/DOCX to MinIO object storage.
+ * Uploads resume PDF/DOCX to MinIO object storage.
  * Enforces verified .edu email and max 5MB size limit.
  */
 export async function uploadResume(
@@ -498,50 +485,42 @@ export async function uploadResume(
   client: ApiClient = apiClient
 ): Promise<ResumeUploadResponse> {
   return client.uploadFile<ResumeUploadResponse>(
-    "/profile/student/resume",
+    "/profile/resume",
     file,
     "resume"
   );
 }
 
 /**
- * Generates a 15-minute presigned download URL for the authenticated student's resume.
+ * Generates a 15-minute presigned download URL for the authenticated member's resume.
  */
 export async function getMyResumeUrl(
   client: ApiClient = apiClient
 ): Promise<ResumeDownloadResponse> {
-  return client.get<ResumeDownloadResponse>("/profile/student/resume");
+  return client.get<ResumeDownloadResponse>("/profile/resume");
 }
 
 /**
- * Generates a 15-minute presigned download URL for a specific student's resume (employers/admins/owner).
+ * Generates a 15-minute presigned download URL for a specific member's resume.
  */
+export async function getResumeUrl(
+  memberId: string,
+  client: ApiClient = apiClient
+): Promise<ResumeDownloadResponse> {
+  return client.get<ResumeDownloadResponse>(`/profile/${memberId}/resume`);
+}
+
 export async function getStudentResumeUrl(
   studentId: string,
   client: ApiClient = apiClient
 ): Promise<ResumeDownloadResponse> {
-  return client.get<ResumeDownloadResponse>(
-    `/profile/student/${studentId}/resume`
-  );
-}
-
-/**
- * Retrieves public/employer view of a student profile by student UUID.
- */
-export async function getStudentProfileById(
-  studentId: string,
-  client: ApiClient = apiClient
-): Promise<StudentProfile> {
-  return client.get<StudentProfile>(`/profile/student/${studentId}`);
+  return getResumeUrl(studentId, client);
 }
 
 // ============================================================================
 // Typed Domain Functions: Jobs
 // ============================================================================
 
-/**
- * Lists jobs with optional filtering (search, department, skills, budget, status, pagination).
- */
 export async function listJobs(
   filters?: JobFilter,
   client: ApiClient = apiClient
@@ -569,18 +548,12 @@ export async function listJobs(
   return client.get<Job[]>("/jobs", queryParams);
 }
 
-/**
- * Retrieves all jobs posted by the authenticated employer.
- */
 export async function getMyJobs(
   client: ApiClient = apiClient
 ): Promise<Job[]> {
   return client.get<Job[]>("/jobs/mine");
 }
 
-/**
- * Retrieves public details of a specific job posting by ID.
- */
 export async function getJobById(
   id: string,
   client: ApiClient = apiClient
@@ -588,9 +561,6 @@ export async function getJobById(
   return client.get<Job>(`/jobs/${id}`);
 }
 
-/**
- * Creates a new job posting (Employer role required).
- */
 export async function createJob(
   data: CreateJobRequest,
   client: ApiClient = apiClient
@@ -598,9 +568,6 @@ export async function createJob(
   return client.post<Job>("/jobs", data);
 }
 
-/**
- * Updates an existing job posting (Employer owner required).
- */
 export async function updateJob(
   id: string,
   data: UpdateJobRequest,
@@ -609,9 +576,6 @@ export async function updateJob(
   return client.put<Job>(`/jobs/${id}`, data);
 }
 
-/**
- * Cancels or deletes a job posting (Employer owner required).
- */
 export async function deleteJob(
   id: string,
   client: ApiClient = apiClient
@@ -623,9 +587,6 @@ export async function deleteJob(
 // Typed Domain Functions: Applications
 // ============================================================================
 
-/**
- * Submits an application for an open job (Student role and verified .edu email required).
- */
 export async function applyToJob(
   jobId: string,
   data: ApplyRequest,
@@ -634,9 +595,6 @@ export async function applyToJob(
   return client.post<Application>(`/jobs/${jobId}/applications`, data);
 }
 
-/**
- * Lists all applications submitted to a specific job (Job owner employer only).
- */
 export async function listJobApplications(
   jobId: string,
   client: ApiClient = apiClient
@@ -644,18 +602,12 @@ export async function listJobApplications(
   return client.get<ApplicationWithDetails[]>(`/jobs/${jobId}/applications`);
 }
 
-/**
- * Lists all applications submitted by the authenticated student.
- */
 export async function getMyApplications(
   client: ApiClient = apiClient
 ): Promise<ApplicationWithDetails[]> {
   return client.get<ApplicationWithDetails[]>("/applications/mine");
 }
 
-/**
- * Retrieves application details by application ID (Applicant student or Job owner employer).
- */
 export async function getApplicationById(
   id: string,
   client: ApiClient = apiClient
@@ -663,10 +615,6 @@ export async function getApplicationById(
   return client.get<ApplicationWithDetails>(`/applications/${id}`);
 }
 
-/**
- * Updates an application's status to accepted or rejected (Job owner employer only).
- * Accepting an application automatically generates an Active Contract.
- */
 export async function updateApplicationStatus(
   id: string,
   status: "accepted" | "rejected" | UpdateApplicationStatusRequest,
@@ -680,18 +628,12 @@ export async function updateApplicationStatus(
 // Typed Domain Functions: Contracts
 // ============================================================================
 
-/**
- * Lists all contracts involving the authenticated student or employer.
- */
 export async function listContracts(
   client: ApiClient = apiClient
 ): Promise<ContractWithDetails[]> {
   return client.get<ContractWithDetails[]>("/contracts");
 }
 
-/**
- * Retrieves contract details by ID (Participant student or employer).
- */
 export async function getContractById(
   id: string,
   client: ApiClient = apiClient
@@ -699,9 +641,6 @@ export async function getContractById(
   return client.get<ContractWithDetails>(`/contracts/${id}`);
 }
 
-/**
- * Transitions contract state machine (draft -> active -> completed | cancelled).
- */
 export async function updateContractStatus(
   id: string,
   status: ContractStatus | UpdateContractStatusRequest,
@@ -715,9 +654,6 @@ export async function updateContractStatus(
 // Typed Domain Functions: Reviews & Ratings
 // ============================================================================
 
-/**
- * Retrieves public reviews submitted on a completed contract.
- */
 export async function getContractReviews(
   contractId: string,
   client: ApiClient = apiClient
@@ -725,9 +661,6 @@ export async function getContractReviews(
   return client.get<Review[]>(`/contracts/${contractId}/reviews`);
 }
 
-/**
- * Retrieves public review summary and list of reviews received by a user.
- */
 export async function getUserReviews(
   userId: string,
   client: ApiClient = apiClient
@@ -735,9 +668,6 @@ export async function getUserReviews(
   return client.get<UserReviewSummary>(`/users/${userId}/reviews`);
 }
 
-/**
- * Submits a 1-5 star review and comment for a completed contract (Contract participant required).
- */
 export async function createReview(
   contractId: string,
   data: CreateReviewRequest,

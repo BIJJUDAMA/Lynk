@@ -102,6 +102,31 @@ test("ApiClient injects Bearer token and JSON headers properly", async () => {
     assert.equal(headers["Content-Type"], "application/json");
     assert.equal(headers["Accept"], "application/json");
     assert.equal(capturedInit?.body, JSON.stringify({ foo: "bar" }));
+    assert.equal(capturedInit?.credentials, "include");
+  } finally {
+    restore();
+  }
+});
+
+test("ApiClient includes credentials: include by default", async () => {
+  let capturedInit: RequestInit | undefined;
+
+  const restore = mockFetch((_url, init) => {
+    capturedInit = init;
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: { ok: true },
+        error: null,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  });
+
+  try {
+    const client = createApiClient();
+    await client.get("/test-credentials");
+    assert.equal(capturedInit?.credentials, "include");
   } finally {
     restore();
   }
