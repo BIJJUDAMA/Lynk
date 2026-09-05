@@ -1,90 +1,89 @@
-# System Architecture Document — Lynk
+# System Architecture Document - Lynk
 
-> **Project:** Lynk — High-Trust Student Freelance & Campus Gig Marketplace  
+> **Project:** Lynk - High-Trust Campus Freelance & Gig Marketplace  
 > **Status:** MVP Architecture Specification  
-> **Identity & Access Management (IAM):** Keycloak (OIDC / OAuth2)  
-> **Evolution Phase:** Phase 1 (MVP — "Nothing Else Initially")
+> **Identity & Access Management (IAM):** SuperTokens Core (Session + EmailPassword + EmailVerification)  
+> **Evolution Phase:** Phase 1 (MVP - "Nothing Else Initially")
 
 ---
 
 ## 1. Executive Summary & Core Thesis
 
-**Lynk** is a university-centric freelance and campus gig platform designed to bridge the trust gap between verified university students and campus/local employers. Unlike generic freelance platforms, Lynk enforces identity integrity via institutional email verification (`.edu` / recognized university domains) and structured milestone contracts with transparent peer reviews.
+**Lynk** is a university-centric freelance and campus gig platform designed to bridge the trust gap between students, campus departments, and student founders. Unlike generic freelance platforms that segregate users into rigid "student" vs "employer" silos, Lynk enforces a **Unified Campus Member** architecture. Any verified student or faculty member can both offer services (as a contributor) and publish opportunities (as an organizer), powered by institutional `.edu` email verification, structured milestone contracts, and transparent peer reviews.
 
 ### Primary Architectural Invariants
-1. **Strict MVP Scope ("Nothing Else Initially"):** Zero message queues, zero distributed caches, zero external cloud auth SaaS vendors (Auth0/Firebase/Supabase), and zero microservices during MVP. Self-hosted **Keycloak** in Docker handles OIDC/OAuth2, user credentials, role assignments, and email verification. Synchronous HTTP + PostgreSQL + MinIO + Keycloak handles 100% of MVP requirements.
+1. **Strict MVP Scope ("Nothing Else Initially"):** Zero message queues, zero distributed caches, and zero commercial cloud auth SaaS vendors (Auth0/Firebase/Supabase) during MVP. Self-hosted **SuperTokens Core** in Docker handles session management, user credentials, and email verification. Synchronous HTTP + PostgreSQL + MinIO + SuperTokens handles 100% of MVP requirements.
 2. **Containerization Boundary:**
-   - **Backend & Core Services (`backend/`, Keycloak, Postgres, MinIO):** Dockerised and orchestrated using `docker-compose.yml`.
+   - **Backend & Core Services (`backend/`, SuperTokens, Postgres, MinIO):** Dockerised and orchestrated using `docker-compose.yml`.
    - **Frontend (`frontend/`):** Co-located in the monorepo but **NOT** dockerised. Runs directly on the host (`npm run dev`) for instant Hot Module Replacement (HMR).
-3. **Authentication & Identity Provider (Keycloak):** All user credentials, password policies, session tokens (JWT access & refresh tokens), and email verification workflows are managed centrally by Keycloak. The Go API acts as an OAuth2 Resource Server validating JWTs using Keycloak's JWKS public keys.
+3. **Authentication & Identity Provider (SuperTokens Core):** User credentials, session tokens (via `sAccessToken` and `sRefreshToken`), and email verification workflows are managed by self-hosted SuperTokens Core on port 3567. The Go API mounts SuperTokens middleware verifying sessions directly.
 4. **Storage Boundary:** Resumes are stored exclusively in **MinIO** (S3-compatible object storage). PostgreSQL stores only metadata and S3 object keys.
-5. **Institutional Email Gate:** Students cannot submit applications, accept contracts, or upload resumes until their institutional email address has been verified in Keycloak (`email_verified: true` claim in JWT).
+5. **Institutional Email Gate:** Campus members cannot post opportunities, submit applications, accept contracts, or upload resumes until their institutional `.edu` email address has been verified. Non-.edu registrations are strictly rejected at sign-up.
 
 ---
 
 ## 2. High-Level System Architecture
 
 ```text
-┌────────────────────────────────────────────────────────────────────────┐
-│                        HOST ENVIRONMENT (DEVELOPMENT)                  │
-│                                                                        │
-│   Next.js 14+ (App Router + TypeScript + Tailwind CSS)                 │
-│   Runs on host: http://localhost:3000                                  │
-│   Auth Client: OIDC / OAuth2 Authorization Code Flow with PKCE         │
-└───────────────────┬────────────────────────────────┬───────────────────┘
-                    │                                │
-                    │ 1. OIDC Login / Token Exchange │ 2. REST API Calls
-                    │    Redirect / PKCE             │    Authorization: Bearer <JWT>
-                    │    http://localhost:8081       │    http://localhost:8080
-                    ▼                                ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                     DOCKER COMPOSE NETWORK (lynk-net)                  │
-│                                                                        │
-│   ┌───────────────────────────────┐ ┌──────────────────────────────┐   │
-│   │  Keycloak IAM                 │ │  Go REST API                 │   │
-│   │  (Container: lynk-keycloak)   │ │  (Container: lynk-api)       │   │
-│   │  Port: 8081:8080              │ │  Port: 8080:8080             │   │
-│   │                               │ │                              │   │
-│   │  - Realm: "lynk"              │ │  - JWT Auth Middleware       │   │
-│   │  - Roles: student, employer   │ │  - Validates JWKS from       │   │
-│   │  - Email Verification (.edu)  │ │    Keycloak public endpoint  │   │
-│   │  - Issues RS256 JWTs          │ │  - Layered Architecture      │   │
-│   └───────────────┬───────────────┘ └───────┬──────────────┬───────┘   │
-│                   │                         │              │           │
-│                   │                         │              │ S3 API    │
-│                   │ SQL (keycloak_db)       │ SQL(lynk_db) │ Port 9000 │
-│                   ▼                         ▼              ▼           │
-│   ┌─────────────────────────────────────────┐ ┌────────────────────┐   │
-│   │  PostgreSQL 16+                         │ │  MinIO Storage     │   │
-│   │  (Container: lynk-postgres)             │ │  (lynk-minio)      │   │
-│   │  Port: 5432                             │ │  Port: 9000 / 9001 │   │
-│   │                                         │ │                    │   │
-│   │  - keycloak_db: Keycloak IAM state      │ │  Bucket: "resumes" │   │
-│   │  - lynk_db: Profiles, Jobs,             │ │  Stores: Resumes   │   │
-│   │    Applications, Contracts, Reviews     │ │                    │   │
-│   └─────────────────────────────────────────┘ └────────────────────┘   │
-└────────────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------------+
+|                        HOST ENVIRONMENT (DEVELOPMENT)                  |
+|                                                                        |
+|   Next.js 14+ (App Router + TypeScript + Tailwind CSS)                 |
+|   Runs on host: http://localhost:3000                                  |
+|   Auth Client: supertokens-web-js (Session, EmailPassword, Verify)     |
++------------------------------------------------------------------------+
+                    |                                |
+                    | 1. Sign In / Verify Email      | 2. REST API Calls
+                    |    Credentials & Session       |    Cookie / Bearer Token
+                    |    http://localhost:8080/api/v1|    http://localhost:8080
+                    v                                v
++------------------------------------------------------------------------+
+|                     DOCKER COMPOSE NETWORK (lynk-net)                  |
+|                                                                        |
+|   +-------------------------------+ +------------------------------+   |
+|   |  SuperTokens Core             | |  Go REST API                 |   |
+|   |  (Container: lynk-supertokens)| |  (Container: lynk-api)       |   |
+|   |  Port: 3567:3567              | |  Port: 8080:8080             |   |
+|   |                               | |                              |   |
+|   |  - Recipe: EmailPassword      | |  - SuperTokens Go SDK        |   |
+|   |  - Recipe: Session            | |  - Session & Role Middleware |   |
+|   |  - Recipe: EmailVerification  | |  - Strict .edu Gate          |   |
+|   |  - Port 3567 Internal Core    | |  - Layered Architecture      |   |
+|   +-------------------------------+ +------------------------------+   |
+|                   |                         |              |           |
+|                   |                         |              | S3 API    |
+|                   | SQL (supertokens_db)    | SQL(lynk_db) | Port 9000 |
+|                   v                         v              v           |
+|   +-----------------------------------------+ +--------------------+   |
+|   |  PostgreSQL 16+                         | |  MinIO Storage     |   |
+|   |  (Container: lynk-postgres)             | |  (lynk-minio)      |   |
+|   |  Port: 5432                             | |  Port: 9000 / 9001 |   |
+|   |                                         | |                    |   |
+|   |  - supertokens_db: Auth & Session state | |  Bucket: "resumes" |   |
+|   |  - lynk_db: Profiles, Jobs,             | |  Stores: Resumes   |   |
+|   |    Applications, Contracts, Reviews     | |                    |   |
+|   +-----------------------------------------+ +--------------------+   |
++------------------------------------------------------------------------+
 ```
 
 ---
 
 ## 3. Evolutionary Architecture Roadmap
 
-Lynk starts with a synchronous Go backend and Keycloak IAM. Later phases introduce distributed performance tools strictly after the MVP baseline is verified.
+Lynk starts with a synchronous Go backend and SuperTokens Core IAM. Later phases introduce distributed performance tools strictly after the MVP baseline is verified.
 
 ```mermaid
 flowchart TD
     subgraph Phase1["Phase 1: MVP (Active Baseline)"]
-        FE[Next.js App on Host] -->|OIDC PKCE| KC[Keycloak IAM in Docker]
-        FE -->|REST with Bearer JWT| API[Dockerised Go REST API]
-        API -->|Validate Token via JWKS| KC
+        FE[Next.js App on Host] -->|SuperTokens Web JS| API[Dockerised Go REST API]
+        API -->|SuperTokens Core API| ST[SuperTokens Core in Docker]
         API -->|Raw SQL Migrations| PG[(PostgreSQL 16+)]
         API -->|S3 API| S3[(MinIO: Resumes Bucket)]
     end
 
     subgraph Phase2["Phase 2: Performance & Protection"]
         REDIS[(Redis)]
-        API -.->|JWKS Caching & Rate Limiting| REDIS
+        API -.->|Session Caching & Rate Limiting| REDIS
     end
 
     subgraph Phase3["Phase 3: Async Processing & Workers"]
@@ -109,60 +108,40 @@ flowchart TD
 
 ---
 
-## 4. Keycloak IAM Integration & Auth Flow
+## 4. SuperTokens Core IAM Integration & Auth Flow
 
-### OpenID Connect (OIDC) Topology
-* **Realm:** `lynk`
-* **Clients:**
-  - `lynk-frontend`: Public client (Next.js), PKCE enabled, standard authorization code flow. Redirect URIs: `http://localhost:3000/*`.
-  - `lynk-api`: Bearer-only resource server, verifying incoming JWT claims.
-* **Realm Roles:**
-  - `student`: Assigned to student accounts.
-  - `employer`: Assigned to campus/local employer accounts.
-  - `admin`: Platform administrative oversight.
-* **Token Standard:** Signed RS256 JSON Web Tokens (JWT).
+### Architecture & Recipes
+* **Recipes:**
+  - `emailpassword`: Email & password credentials authentication. Non-.edu email signups are rejected immediately via SignUp override.
+  - `session`: Cookie and header-based session tokens with automatic refresh handling.
+  - `emailverification`: ModeRequired email verification enforcing institutional email ownership before unlocking marketplace actions.
+  - `userroles`: Role assignment (`member` by default, with `admin` for platform operators).
 
 ### End-to-End Authentication Sequence
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as Student / Employer
+    actor User as Campus Member
     participant Next as Next.js Frontend (Host)
-    participant KC as Keycloak (Docker :8081)
     participant API as Go REST API (Docker :8080)
+    participant ST as SuperTokens Core (:3567)
     participant PG as PostgreSQL (lynk_db)
 
-    User->>Next: Click Login / Register
-    Next->>KC: Redirect to Keycloak OIDC Auth Endpoint (PKCE)
-    KC->>User: Render Login / Registration UI (.edu validation)
-    User->>KC: Submit Credentials
-    KC->>KC: Verify Password / Trigger Email Verification
-    KC-->>Next: Redirect to Callback with Auth Code
-    Next->>KC: Exchange Code + Code Verifier for Tokens
-    KC-->>Next: Return Access Token (JWT), ID Token, Refresh Token
+    User->>Next: Submit Credentials (email + password)
+    Next->>API: POST /api/v1/auth/signup or /signin
+    API->>API: Validate institutional .edu domain
+    API->>ST: Create / Verify User in SuperTokens
+    ST-->>API: Return Session Tokens & Claims
+    API-->>Next: Return Session Cookie (sAccessToken)
     
-    Next->>API: HTTP Request + Authorization: Bearer <access_token>
-    API->>API: Keycloak Middleware validates JWT signature via cached JWKS
-    API->>API: Check claims (sub, email_verified, realm_access.roles)
-    API->>PG: Query / Mutate application data using sub (user UUID)
+    Next->>API: Authenticated Request (Cookie: sAccessToken or Bearer)
+    API->>API: SessionMiddleware validates session
+    API->>API: Check EmailVerification status
+    API->>PG: Query / Mutate application data using user_id
     PG-->>API: Return DB rows
     API-->>Next: JSON Response
 ```
-
-### Go API Token Verification
-The Go API does **not** make a network call to Keycloak on every incoming request. Instead:
-1. On startup (and periodically refreshed with TTL), the Go API fetches and caches Keycloak's public JSON Web Key Set (JWKS) from:
-   `http://keycloak:8080/realms/lynk/protocol/openid-connect/certs`
-2. Incoming requests with `Authorization: Bearer <token>` are verified locally in-memory:
-   - Signature verified against Keycloak RSA public key.
-   - `iss` (issuer) matches `http://localhost:8081/realms/lynk` (or internal docker alias).
-   - `exp` (expiration) has not elapsed.
-3. Injected Context Values:
-   - `user_id` (`sub` UUID)
-   - `email`
-   - `email_verified` (boolean)
-   - `roles` (`[]string`: e.g. `["student"]`)
 
 ---
 
@@ -171,85 +150,84 @@ The Go API does **not** make a network call to Keycloak on every incoming reques
 The Go backend enforces strict separation of concerns:
 
 ```text
-HTTP Request (with Bearer Token)
-     │
-     ▼
-┌───────────────────────────────────────────────────────────────┐
-│ 1. Middleware Layer                                           │
-│    - CORS Middleware (origins: http://localhost:3000)         │
-│    - Keycloak JWT Auth Middleware: validates signature,       │
-│      extracts user_id (sub), email, email_verified, roles     │
-│    - Injects claims into request context.Context              │
-└──────────────────────────────┬────────────────────────────────┘
-                               │
-                               ▼
-┌───────────────────────────────────────────────────────────────┐
-│ 2. Handler Layer (Transport / HTTP)                           │
-│    - Decodes & validates request JSON bodies / query params   │
-│    - Reads authenticated user context from context.Context    │
-│    - Maps domain errors to standard HTTP status codes         │
-└──────────────────────────────┬────────────────────────────────┘
-                               │
-                               ▼
-┌───────────────────────────────────────────────────────────────┐
-│ 3. Service Layer (Business Logic & Invariants)                │
-│    - Enforces RBAC & email verification invariants            │
-│    - Manages contract state machine transitions               │
-│    - Orchestrates database repositories and MinIO storage     │
-└──────────────────────────────┬────────────────────────────────┘
-                               │
-                               ▼
-┌───────────────────────────────────────────────────────────────┐
-│ 4. Repository & Storage Layer (Persistence)                   │
-│    - Repository: Raw SQL queries against PostgreSQL (lynk_db) │
-│    - Storage: MinIO client for resume streaming / presigning  │
-└───────────────────────────────────────────────────────────────┘
+HTTP Request (with Session Cookie / Bearer Token)
+     |
+     v
++---------------------------------------------------------------+
+| 1. Middleware Layer                                           |
+|    - CORS Middleware (origins: http://localhost:3000)         |
+|    - SuperTokens Session Middleware: verifies session,        |
+|      extracts user_id, email, email_verified, roles           |
+|    - Injects claims into request context.Context              |
++---------------------------------------------------------------+
+                                |
+                                v
++---------------------------------------------------------------+
+| 2. Handler Layer (Transport / HTTP)                           |
+|    - Decodes & validates request JSON bodies / query params   |
+|    - Reads authenticated user context from context.Context    |
+|    - Maps domain errors to standard HTTP status codes         |
++---------------------------------------------------------------+
+                                |
+                                v
++---------------------------------------------------------------+
+| 3. Service Layer (Business Logic & Invariants)                |
+|    - Enforces Campus Member invariants & email verification   |
+|    - Manages contract state machine transitions               |
+|    - Orchestrates database repositories and MinIO storage     |
++---------------------------------------------------------------+
+                                |
+                                v
++---------------------------------------------------------------+
+| 4. Repository & Storage Layer (Persistence)                   |
+|    - Repository: Raw SQL queries against PostgreSQL (lynk_db) |
+|    - Storage: MinIO client for resume streaming / presigning  |
++---------------------------------------------------------------+
 ```
 
 ### Module Breakdown (`backend/internal/`)
 
 | Package | Responsibility |
 | :--- | :--- |
-| `auth` | Keycloak JWKS client, JWT signature verification middleware, token claims extractor, user sync handler. |
-| `user` | Student and employer profile creation, updates, and portfolio links (keyed by Keycloak `user_id`). |
+| `auth` | SuperTokens Go SDK initialization, email verification overrides, and session user claims extraction. |
+| `user` | Unified campus member profile creation, updates, and portfolio links (keyed by SuperTokens `user_id`). |
 | `job` | Job posting CRUD, search, filtering by department, budget, and required skills. |
-| `application` | Application submission, cover letter, resume linking, and employer review (accept/reject). |
-| `contract` | Milestone/contract state machine (`Draft` → `Active` → `Completed` \| `Cancelled`). |
-| `review` | Rating (1–5) and written feedback submission following contract completion. |
+| `application` | Application submission, cover letter, resume linking, and member proposal review (accept/reject). |
+| `contract` | Milestone/contract state machine (`Draft` -> `Active` -> `Completed` | `Cancelled`). |
+| `review` | Rating (1-5) and written feedback submission following contract completion. |
 | `storage` | MinIO client abstraction for uploading, fetching, and generating pre-signed URLs for resumes. |
 | `database` | PostgreSQL connection pooling (`pgxpool`), health checks, and raw SQL migration runner. |
-| `middleware` | CORS, Keycloak JWT auth, request logging, and panic recovery. |
+| `middleware` | CORS, SuperTokens session auth, request logging, and panic recovery. |
 
 ---
 
 ## 6. Database Schema & Relational Model
 
 PostgreSQL 16+ is the source of truth for all application data in the `lynk_db` database.
-> **Note:** Credentials and authentication tokens are managed exclusively by Keycloak in `keycloak_db`. Application tables link to users via the Keycloak user UUID (`sub`).
+> **Note:** User identity and authentication tokens are managed by SuperTokens in `supertokens_db`. Application tables link to users via the SuperTokens user identifier (`VARCHAR(64)`).
 
 ### Entity Relationship Diagram (ERD)
 
 ```mermaid
 erDiagram
-    USERS ||--o| STUDENT_PROFILES : "has"
-    USERS ||--o| EMPLOYER_PROFILES : "has"
-    USERS ||--o{ JOBS : "posts (employer)"
-    USERS ||--o{ APPLICATIONS : "submits (student)"
+    USERS ||--o| PROFILES : "has"
+    USERS ||--o{ JOBS : "posts"
+    USERS ||--o{ APPLICATIONS : "submits"
     JOBS ||--o{ APPLICATIONS : "receives"
     APPLICATIONS ||--o| CONTRACTS : "generates upon acceptance"
     CONTRACTS ||--o{ REVIEWS : "receives"
 
     USERS {
-        uuid id PK "Matches Keycloak sub UUID"
+        varchar id PK "Matches SuperTokens user ID"
         string email UK
-        string role "student | employer | admin"
+        string role "member | admin"
         timestamptz created_at
         timestamptz updated_at
     }
 
-    STUDENT_PROFILES {
+    PROFILES {
         uuid id PK
-        uuid user_id FK,UK "Matches USERS.id"
+        varchar user_id FK,UK "Matches USERS.id"
         string first_name
         string last_name
         text bio
@@ -260,22 +238,14 @@ erDiagram
         string resume_key
         string resume_filename
         bigint resume_byte_size
-        timestamptz updated_at
-    }
-
-    EMPLOYER_PROFILES {
-        uuid id PK
-        uuid user_id FK,UK "Matches USERS.id"
-        string company_or_org
-        string contact_name
-        text description
-        string website
+        string organization
+        string organization_website
         timestamptz updated_at
     }
 
     JOBS {
         uuid id PK
-        uuid employer_id FK
+        varchar employer_id FK "Organizer member ID"
         string title
         text description
         numeric budget
@@ -291,7 +261,7 @@ erDiagram
     APPLICATIONS {
         uuid id PK
         uuid job_id FK
-        uuid student_id FK
+        varchar student_id FK "Applicant member ID"
         text cover_letter
         string resume_key
         string status "pending | accepted | rejected"
@@ -303,8 +273,8 @@ erDiagram
         uuid id PK
         uuid job_id FK,UK
         uuid application_id FK,UK
-        uuid employer_id FK
-        uuid student_id FK
+        varchar employer_id FK
+        varchar student_id FK
         numeric agreed_budget
         string status "draft | active | completed | cancelled"
         timestamptz started_at
@@ -316,8 +286,8 @@ erDiagram
     REVIEWS {
         uuid id PK
         uuid contract_id FK
-        uuid reviewer_id FK
-        uuid reviewee_id FK
+        varchar reviewer_id FK
+        varchar reviewee_id FK
         int rating "1 to 5"
         text comment
         timestamptz created_at
@@ -331,23 +301,22 @@ erDiagram
 MinIO provides local S3-compatible storage dedicated to student resumes.
 
 ### Invariants & Bucket Policy
-* **Bucket Name:** `resumes` (strictly isolated to PDF/DOCX student resumes).
+* **Bucket Name:** `resumes` (strictly isolated to PDF/DOCX resumes).
 * **Access Policy:** Private. Objects cannot be accessed anonymously.
 * **Upload Flow:**
-  1. Student sends `multipart/form-data` to Go API (`POST /api/v1/profile/student/resume`) with Keycloak Bearer JWT.
-  2. Go backend confirms `role == "student"` and `email_verified == true`.
+  1. Campus member sends `multipart/form-data` to Go API (`POST /api/v1/profile/resume`) with active session.
+  2. Go backend confirms institutional email is verified (`EmailVerified == true`).
   3. Go backend validates MIME type (`application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`) and max size (5MB).
-  4. File is streamed to MinIO: key format `resumes/{student_user_id}/{uuid}-{sanitized_filename}`.
-  5. S3 key and metadata saved to `student_profiles`.
+  4. File is streamed to MinIO: key format `resumes/{user_id}/{uuid}-{sanitized_filename}`.
+  5. S3 key and metadata saved to `profiles`.
 * **Download Flow:**
-  - Go API generates a 15-minute pre-signed download URL (`GetObjectPresigned`) returned to authorized students and prospective employers.
+  - Go API generates a 15-minute pre-signed download URL (`GetObjectPresigned`) returned to authorized members.
 
 ---
 
 ## 8. REST API Contract Specification
 
-All application endpoints are prefixed with `/api/v1`. Authentication is passed via the standard HTTP header:  
-`Authorization: Bearer <Keycloak_Access_Token>`
+All application endpoints are prefixed with `/api/v1`. Authentication is passed via session cookies or Bearer token header.
 
 ### Standard Response Envelope
 ```json
@@ -365,65 +334,60 @@ All application endpoints are prefixed with `/api/v1`. Authentication is passed 
   "data": null,
   "error": {
     "code": "EMAIL_NOT_VERIFIED",
-    "message": "University email must be verified in Keycloak before applying to jobs."
+    "message": "Campus verification pending: Please verify your institutional .edu email before accessing opportunities."
   }
 }
 ```
 
 ### Endpoint Matrix
 
-#### Identity & User State (`/api/v1/auth`)
+#### Authentication & Session State (`/api/v1/auth`)
 | Method | Path | Auth | Role | Description |
 | :--- | :--- | :---: | :---: | :--- |
-| `GET`  | `/auth/me` | Bearer | Any | Return current authenticated user profile, role, and verification status from JWT claims & DB. |
-| `POST` | `/auth/sync` | Bearer | Any | Idempotent first-login hook to ensure user record exists in `lynk_db` with selected role. |
+| `POST` | `/auth/signup` | Public | Any | Register with university .edu email and password. Non-.edu domains rejected. |
+| `POST` | `/auth/signin` | Public | Any | Authenticate with credentials and initialize session cookie. |
+| `POST` | `/auth/signout` | Session | Any | Revoke active SuperTokens session. |
+| `GET`  | `/auth/me` | Session | Any | Return current authenticated user profile, role, and verification status. |
+| `POST` | `/auth/sync` | Session | Any | Idempotent first-login hook to ensure user and profile exist in `lynk_db`. |
 
-*(Note: User registration, login, password resets, and email verification are handled directly by Keycloak at `http://localhost:8081/realms/lynk/account` or via OIDC client redirection).*
-
-#### Student Profiles (`/api/v1/profile/student`)
+#### Unified Member Profiles (`/api/v1/profile`)
 | Method | Path | Auth | Role | Description |
 | :--- | :--- | :---: | :---: | :--- |
-| `GET`  | `/profile/student` | Bearer | Student | Get own student profile details. |
-| `PUT`  | `/profile/student` | Bearer | Student | Update bio, skills, department, graduation year, portfolio links. |
-| `POST` | `/profile/student/resume` | Bearer | Verified Student | Upload resume (PDF/DOCX, max 5MB). Streams to MinIO. |
-| `GET`  | `/profile/student/resume` | Bearer | Student | Get pre-signed download URL for own resume. |
-| `GET`  | `/profile/student/{id}` | Bearer | Any | View public profile of a student (for employers reviewing applicants). |
-
-#### Employer Profiles (`/api/v1/profile/employer`)
-| Method | Path | Auth | Role | Description |
-| :--- | :--- | :---: | :---: | :--- |
-| `GET`  | `/profile/employer` | Bearer | Employer | Get own employer profile. |
-| `PUT`  | `/profile/employer` | Bearer | Employer | Update company/org name, contact info, website, bio. |
+| `GET`  | `/profile` | Session | Member | Get own unified campus member profile. |
+| `PUT`  | `/profile` | Session | Member | Update bio, skills, department, graduation year, organization, and links. |
+| `POST` | `/profile/resume` | Session | Verified Member | Upload resume (PDF/DOCX, max 5MB). Streams to MinIO. |
+| `GET`  | `/profile/resume` | Session | Member | Get pre-signed download URL for own resume. |
+| `GET`  | `/profile/{id}` | Session | Any | View public profile of a campus member. |
 
 #### Jobs (`/api/v1/jobs`)
 | Method | Path | Auth | Role | Description |
 | :--- | :--- | :---: | :---: | :--- |
 | `GET`  | `/jobs` | Public | Any | Browse and search jobs with filters (`department`, `skill`, `min_budget`, `max_budget`, `status`). |
-| `POST` | `/jobs` | Bearer | Employer | Create a new job posting. |
+| `POST` | `/jobs` | Session | Verified Member | Create a new campus job posting. |
 | `GET`  | `/jobs/{id}` | Public | Any | Retrieve detailed job view. |
-| `PUT`  | `/jobs/{id}` | Bearer | Employer | Update job posting (owner only). |
-| `DELETE` | `/jobs/{id}` | Bearer | Employer | Cancel/close job posting (owner only). |
+| `PUT`  | `/jobs/{id}` | Session | Owner | Update job posting. |
+| `DELETE` | `/jobs/{id}` | Session | Owner | Cancel/close job posting. |
 
 #### Applications (`/api/v1/applications`)
 | Method | Path | Auth | Role | Description |
 | :--- | :--- | :---: | :---: | :--- |
-| `POST` | `/jobs/{id}/applications` | Bearer | Verified Student | Submit application with cover letter and attached resume key. |
-| `GET`  | `/jobs/{id}/applications` | Bearer | Employer | List all submitted applications for an employer's job. |
-| `GET`  | `/applications/mine` | Bearer | Student | List applications submitted by current student. |
-| `PATCH`| `/applications/{id}/status` | Bearer | Employer | Accept or Reject application. Accepting automatically creates a `Contract`. |
+| `POST` | `/jobs/{id}/applications` | Session | Verified Member | Submit application with cover letter and attached resume key. |
+| `GET`  | `/jobs/{id}/applications` | Session | Owner | List all submitted applications for a job posting. |
+| `GET`  | `/applications/mine` | Session | Member | List applications submitted by current member. |
+| `PATCH`| `/applications/{id}/status` | Session | Owner | Accept or Reject application. Accepting automatically creates a `Contract`. |
 
 #### Contracts (`/api/v1/contracts`)
 | Method | Path | Auth | Role | Description |
 | :--- | :--- | :---: | :---: | :--- |
-| `GET`  | `/contracts` | Bearer | Any | List contracts involving the authenticated user (as student or employer). |
-| `GET`  | `/contracts/{id}` | Bearer | Participant | Retrieve detailed contract terms, status, and milestone history. |
-| `PATCH`| `/contracts/{id}/status` | Bearer | Participant | Update contract status: `Active` → `Completed` \| `Cancelled`. |
+| `GET`  | `/contracts` | Session | Any | List contracts involving the authenticated member. |
+| `GET`  | `/contracts/{id}` | Session | Participant | Retrieve detailed contract terms, status, and milestone history. |
+| `PATCH`| `/contracts/{id}/status` | Session | Participant | Update contract status: `Active` -> `Completed` | `Cancelled`. |
 
 #### Reviews & Ratings (`/api/v1/contracts/{id}/reviews`)
 | Method | Path | Auth | Role | Description |
 | :--- | :--- | :---: | :---: | :--- |
-| `POST` | `/contracts/{id}/reviews` | Bearer | Participant | Submit 1–5 star rating and written review (allowed ONLY when contract status is `Completed`). |
-| `GET`  | `/contracts/{id}/reviews` | Bearer | Participant | Get reviews associated with the contract. |
+| `POST` | `/contracts/{id}/reviews` | Session | Participant | Submit 1-5 star rating and written review (allowed ONLY when contract is `Completed`). |
+| `GET`  | `/contracts/{id}/reviews` | Session | Participant | Get reviews associated with the contract. |
 | `GET`  | `/users/{id}/reviews` | Public | Any | Get aggregated ratings and reviews for a user. |
 
 ---
@@ -434,37 +398,37 @@ All application endpoints are prefixed with `/api/v1`. Authentication is passed 
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Draft: Employer accepts Application
+    [*] --> Draft: Organizer accepts Application
     Draft --> Active: Both parties confirm terms / Start work
-    Active --> Completed: Deliverables verified by Employer
+    Active --> Completed: Deliverables verified by Organizer
     Active --> Cancelled: Mutual cancellation / Dispute
     Completed --> [*]: Review & Rating unlocked
     Cancelled --> [*]
 ```
 
 ### Institutional Email Verification Gate
-* Keycloak enforces email verification (`verifyEmail: true`) requiring students to confirm ownership of their `.edu` or institutional email address.
-* The Go API reads the `email_verified` boolean claim from the validated Keycloak JWT.
-* If `email_verified == false`:
+* SuperTokens enforces email verification requiring users to confirm ownership of their `.edu` email address.
+* The Go API checks `EmailVerified` boolean status on every sensitive domain action.
+* If `EmailVerified == false`:
+  - `POST /jobs` returns `403 Forbidden` (`EMAIL_NOT_VERIFIED`).
   - `POST /jobs/{id}/applications` returns `403 Forbidden` (`EMAIL_NOT_VERIFIED`).
-  - `POST /profile/student/resume` returns `403 Forbidden` (`EMAIL_NOT_VERIFIED`).
+  - `POST /profile/resume` returns `403 Forbidden` (`EMAIL_NOT_VERIFIED`).
 
 ---
 
 ## 10. Local Infrastructure Topology (`docker-compose.yml`)
 
 ```yaml
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
     container_name: lynk-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: lynk_db
       POSTGRES_USER: lynk_user
       POSTGRES_PASSWORD: lynk_password
+      POSTGRES_DB: lynk_db
+      POSTGRES_MULTIPLE_DATABASES: "lynk_db,supertokens_db"
     ports:
       - "5432:5432"
     volumes:
@@ -478,30 +442,22 @@ services:
       timeout: 5s
       retries: 5
 
-  keycloak:
-    image: quay.io/keycloak/keycloak:24.0
-    container_name: lynk-keycloak
+  supertokens:
+    image: registry.supertokens.io/supertokens/supertokens-postgresql:9.2
+    container_name: lynk-supertokens
     restart: unless-stopped
-    command: start-dev --import-realm
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
-      KC_DB_USERNAME: lynk_user
-      KC_DB_PASSWORD: lynk_password
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin_password
-      KC_HEALTH_ENABLED: "true"
-    ports:
-      - "8081:8080"
-    volumes:
-      - ./.docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm.json:ro
     depends_on:
       postgres:
         condition: service_healthy
+    environment:
+      POSTGRESQL_CONNECTION_URI: "postgresql://lynk_user:lynk_password@postgres:5432/supertokens_db"
+      API_KEYS: "lynk_supertokens_secret_api_key_2026"
+    ports:
+      - "3567:3567"
     networks:
       - lynk-net
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep '200 OK'"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/3567 && echo -e 'GET /hello HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'Hello'"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -548,28 +504,40 @@ services:
       dockerfile: Dockerfile
     container_name: lynk-api
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      keycloak:
-        condition: service_healthy
     environment:
-      PORT: 8080
+      PORT: "8080"
       DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
-      KEYCLOAK_ISSUER_URL: "http://keycloak:8080/realms/lynk"
-      KEYCLOAK_JWKS_URL: "http://keycloak:8080/realms/lynk/protocol/openid-connect/certs"
-      S3_ENDPOINT: "http://minio:9000"
-      S3_ACCESS_KEY: "minio_admin"
-      S3_SECRET_KEY: "minio_password"
-      S3_BUCKET: "resumes"
-      S3_USE_SSL: "false"
+      MIGRATIONS_DIR: "/app/migrations"
+      SUPERTOKENS_CONNECTION_URI: "http://supertokens:3567"
+      SUPERTOKENS_API_KEY: "lynk_supertokens_secret_api_key_2026"
+      API_DOMAIN: "http://localhost:8080"
+      WEBSITE_DOMAIN: "http://localhost:3000"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_PUBLIC_ENDPOINT: "http://localhost:9000"
+      MINIO_ACCESS_KEY: "minio_admin"
+      MINIO_SECRET_KEY: "minio_password"
+      MINIO_BUCKET: "resumes"
+      MINIO_USE_SSL: "false"
       CORS_ALLOWED_ORIGINS: "http://localhost:3000"
     ports:
       - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      supertokens:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     networks:
       - lynk-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 networks:
   lynk-net:
@@ -586,9 +554,10 @@ volumes:
 
 | Layer | Tooling | Scope | Command |
 | :--- | :--- | :--- | :--- |
-| **Go Unit Tests** | Go `testing` package | Keycloak JWT claims validation, mock JWKS verification, contract state transitions. | `cd backend && go test -v -race ./...` |
-| **Go Linting** | `golangci-lint` | Static analysis, idiomatic conventions, errcheck. | `cd backend && golangci-lint run` |
-| **Go Integration Tests** | Real Docker Compose Stack | Repository queries in `lynk_db`, Keycloak token validation against live Keycloak JWKS, MinIO S3 streaming. | `cd backend && go test -tags=integration ./...` |
-| **Frontend Typecheck** | TypeScript compiler | Ensure TypeScript types and OIDC session types match Go API JSON responses. | `cd frontend && tsc --noEmit` |
-| **Frontend Lint & Build**| Next.js / ESLint | App Router layout, Keycloak OIDC provider context, Tailwind UI styling. | `cd frontend && npm run build` |
-| **End-to-End Smoke** | `curl` / HTTP test scripts | Full user lifecycle: Keycloak Token Issuance → Sync Profile → Post Job → Apply → Accept → Contract → Review. | `./scripts/smoke-test.sh` |
+| **Go Unit Tests** | Go `testing` package | SuperTokens claims validation, email domain checks, contract transitions. | `cd backend && go test -v -race ./...` |
+| **Go Vet & Static Check** | Go standard tooling | Static analysis, idiomatic conventions. | `cd backend && go vet ./...` |
+| **Go Integration Tests** | Real Docker Compose Stack | Repository queries in `lynk_db`, SuperTokens session validation, MinIO S3 streaming. | `cd backend && go test -count=1 ./...` |
+| **Frontend Typecheck** | TypeScript compiler | Ensure TypeScript types and SuperTokens session types match Go API JSON responses. | `cd frontend && npm run typecheck` |
+| **Frontend Unit Tests**| Node Test Runner | Email validation, JWT decode, formatters, and API client tests. | `cd frontend && npm test` |
+| **Frontend Production Build**| Next.js / ESLint | App Router static & dynamic route compilation. | `cd frontend && npm run build` |
+| **End-to-End Smoke** | PowerShell / Bash test scripts | Full user lifecycle: .edu rejection check, SuperTokens registration, verification gate, post job, apply, contract, and review. | `pwsh scripts/smoke-test.ps1` or `bash scripts/smoke-test.sh` |
