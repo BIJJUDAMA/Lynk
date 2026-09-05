@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -64,9 +65,30 @@ func TestCORS_DefaultOrigin(t *testing.T) {
 		}
 		if headers := rr.Header().Get("Access-Control-Allow-Headers"); headers == "" {
 			t.Errorf("expected Access-Control-Allow-Headers to be set")
+		} else {
+			for _, expectedHeader := range []string{"anti-csrf", "fdi-version", "rid", "st-auth-mode"} {
+				if !strings.Contains(headers, expectedHeader) {
+					t.Errorf("expected Access-Control-Allow-Headers to contain '%s', got '%s'", expectedHeader, headers)
+				}
+			}
 		}
 		if maxAge := rr.Header().Get("Access-Control-Max-Age"); maxAge != "300" {
 			t.Errorf("expected Access-Control-Max-Age: 300, got '%s'", maxAge)
+		}
+	})
+
+	t.Run("exposed headers include supertokens tokens", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
+		req.Header.Set("Origin", "http://localhost:3000")
+		rr := httptest.NewRecorder()
+
+		handler.ServeHTTP(rr, req)
+
+		exposed := rr.Header().Get("Access-Control-Expose-Headers")
+		for _, expectedHeader := range []string{"anti-csrf", "front-token", "st-access-token", "st-refresh-token"} {
+			if !strings.Contains(exposed, expectedHeader) {
+				t.Errorf("expected Access-Control-Expose-Headers to contain '%s', got '%s'", expectedHeader, exposed)
+			}
 		}
 	})
 }

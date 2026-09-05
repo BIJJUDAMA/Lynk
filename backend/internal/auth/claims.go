@@ -9,10 +9,10 @@ type contextKey string
 
 const userContextKey = contextKey("lynk_user_claims")
 
-var ErrUnauthorized = errors.New("unauthorized: missing or invalid token")
+var ErrUnauthorized = errors.New("unauthorized: missing or invalid session")
 
 type UserClaims struct {
-	UserID        string   `json:"sub"`
+	UserID        string   `json:"user_id"`
 	Email         string   `json:"email"`
 	EmailVerified bool     `json:"email_verified"`
 	Roles         []string `json:"roles"`
