@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lynk/backend/internal/application"
 	"github.com/lynk/backend/internal/auth"
@@ -108,13 +108,14 @@ type profileReaderAdapter struct {
 	repo user.UserRepository
 }
 
-func (a *profileReaderAdapter) GetProfile(ctx context.Context, userID uuid.UUID) (*user.Profile, error) {
-	return a.repo.GetProfile(ctx, userID.String())
+func (a *profileReaderAdapter) GetProfile(ctx context.Context, userID string) (*user.Profile, error) {
+	return a.repo.GetProfile(ctx, userID)
 }
 
 // BuildRouter assembles the complete Chi HTTP router with middleware and domain routes.
 func BuildRouter(
 	cfg Config,
+	dbPool *pgxpool.Pool,
 	userHandler *user.Handler,
 	jobHandler *job.Handler,
 	appHandler *application.Handler,
@@ -133,16 +134,37 @@ func BuildRouter(
 	r.Use(chimiddleware.Timeout(30 * time.Second))
 	r.Use(middleware.CORS(cfg.CORSAllowedOrigins))
 
+	// Enforce 1MB limit for JSON request bodies to prevent OOM DoS attacks (F-09)
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/") {
+				r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB limit
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
+
 	// Mount SuperTokens HTTP middleware if initialized
 	if _, err := supertokens.GetInstanceOrThrowError(); err == nil {
 		r.Use(supertokens.Middleware)
 	}
 
-	// Health Check
+	// Health Check (deep probe: pings PostgreSQL pool)
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if dbPool != nil {
+			if err := dbPool.Ping(r.Context()); err != nil {
+				slog.Error("healthcheck db ping failed", "error", err)
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_ = json.NewEncoder(w).Encode(map[string]string{
+					"status":   "unhealthy",
+					"database": "disconnected",
+				})
+				return
+			}
+		}
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "ok",
 			"time":   time.Now().UTC().Format(time.RFC3339),
 		})
@@ -312,6 +334,11 @@ func main() {
 		log.Fatalf("Failed to initialize MinIO S3 client: %v", err)
 	}
 	log.Printf("MinIO S3 client initialized for bucket %s", cfg.MinioBucket)
+	if s3Client != nil {
+		if err := s3Client.EnsureBucket(ctx); err != nil {
+			log.Printf("[WARN] MinIO bucket %s check/creation failed: %v", cfg.MinioBucket, err)
+		}
+	}
 
 	// 4. Initialize SuperTokens Go SDK
 	stCfg := auth.SuperTokensConfig{
@@ -327,7 +354,7 @@ func main() {
 
 	// 5. Wire Repositories, Services, and Handlers
 	userRepo := user.NewRepository(pool)
-	userService := user.NewService(userRepo)
+	userService := user.NewService(userRepo, s3Client)
 	userHandler := user.NewHandler(userService, userRepo, s3Client)
 
 	jobRepo := job.NewRepository(pool)
@@ -349,6 +376,7 @@ func main() {
 	// 6. Build HTTP Router
 	router := BuildRouter(
 		cfg,
+		pool,
 		userHandler,
 		jobHandler,
 		appHandler,
@@ -360,11 +388,12 @@ func main() {
 
 	// 7. Start HTTP Server with Graceful Shutdown
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%s", cfg.Port),
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              fmt.Sprintf(":%s", cfg.Port),
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       60 * time.Second, // Allow 5MB uploads over slower networks
+		WriteTimeout:      35 * time.Second, // Exceeds chimiddleware.Timeout (30s) to prevent TCP drops
+		IdleTimeout:       60 * time.Second,
 	}
 
 	serverErrors := make(chan error, 1)

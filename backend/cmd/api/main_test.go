@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -49,7 +51,7 @@ func (m *mockJobRepo) ListJobs(ctx context.Context, filter job.JobFilter) ([]*jo
 
 func TestHealthEndpoint(t *testing.T) {
 	cfg := DefaultTestConfig()
-	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil)
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	t.Run("GET /health returns 200 and ok status", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -111,6 +113,7 @@ func TestRouteAssembly_PublicAndProtected(t *testing.T) {
 
 	router := BuildRouter(
 		cfg,
+		nil,
 		userHandler,
 		jobHandler,
 		appHandler,
@@ -252,7 +255,7 @@ func TestLoadConfig_MinioPublicEndpoint(t *testing.T) {
 
 func TestTimeoutMiddleware(t *testing.T) {
 	cfg := DefaultTestConfig()
-	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil)
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	t.Run("fast handler returns 200 within timeout window", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -284,6 +287,62 @@ func TestTimeoutMiddleware(t *testing.T) {
 		mux.ServeHTTP(rr, req)
 		if rr.Code != http.StatusGatewayTimeout {
 			t.Fatalf("expected 504 Gateway Timeout when timeout exceeded, got %d", rr.Code)
+		}
+	})
+}
+
+func TestRequestBodyLimiter(t *testing.T) {
+	cfg := DefaultTestConfig()
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	// Add a test endpoint that reads the request body
+	router.Post("/test-body", func(w http.ResponseWriter, r *http.Request) {
+		_, err := io.ReadAll(r.Body)
+		if err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				http.Error(w, "request entity too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	t.Run("body under 1MB is accepted", func(t *testing.T) {
+		smallBody := bytes.Repeat([]byte("a"), 500*1024) // 500KB
+		req := httptest.NewRequest(http.MethodPost, "/test-body", bytes.NewReader(smallBody))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for body under 1MB, got %d", rr.Code)
+		}
+	})
+
+	t.Run("non-multipart body over 1MB is rejected", func(t *testing.T) {
+		largeBody := bytes.Repeat([]byte("a"), 2*1024*1024) // 2MB
+		req := httptest.NewRequest(http.MethodPost, "/test-body", bytes.NewReader(largeBody))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("expected 413 Request Entity Too Large, got %d", rr.Code)
+		}
+	})
+
+	t.Run("multipart body over 1MB is not limited by 1MB JSON limiter", func(t *testing.T) {
+		largeBody := bytes.Repeat([]byte("a"), 2*1024*1024) // 2MB
+		req := httptest.NewRequest(http.MethodPost, "/test-body", bytes.NewReader(largeBody))
+		req.Header.Set("Content-Type", "multipart/form-data; boundary=something")
+		rr := httptest.NewRecorder()
+
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for multipart body over 1MB, got %d", rr.Code)
 		}
 	})
 }

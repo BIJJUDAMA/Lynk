@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/httputil"
 )
 
 // Handler handles HTTP requests for reviews and rating aggregates.
@@ -52,111 +53,111 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 func (h *Handler) CreateReview(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil || claims == nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	contractID, err := extractContractID(r)
 	if err != nil || contractID == uuid.Nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", "Invalid contract ID in URL")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", "Invalid contract ID in URL", err)
 		return
 	}
 
 	var req CreateReviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		if errors.Is(err, io.EOF) {
-			writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Request body cannot be empty")
+			httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Request body cannot be empty", err)
 			return
 		}
-		writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body", err)
 		return
 	}
 
 	review, err := h.service.CreateReview(r.Context(), claims, contractID, req)
 	if err != nil {
 		if errors.Is(err, ErrContractNotFound) {
-			writeJSONError(w, http.StatusNotFound, "CONTRACT_NOT_FOUND", "Contract not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "CONTRACT_NOT_FOUND", "Contract not found", nil)
 			return
 		}
 		if errors.Is(err, ErrContractNotCompleted) {
-			writeJSONError(w, http.StatusBadRequest, "CONTRACT_NOT_COMPLETED", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "CONTRACT_NOT_COMPLETED", err.Error(), nil)
 			return
 		}
 		if errors.Is(err, ErrNotParticipant) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Only contract participants may submit reviews")
+			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "Only contract participants may submit reviews", nil)
 			return
 		}
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
 			return
 		}
 		if errors.Is(err, ErrDuplicateReview) {
-			writeJSONError(w, http.StatusConflict, "DUPLICATE_REVIEW", "Review already submitted for this contract")
+			httputil.WriteError(w, r, http.StatusConflict, "DUPLICATE_REVIEW", "Review already submitted for this contract", nil)
 			return
 		}
 		if errors.Is(err, ErrInvalidRating) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_RATING", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_RATING", err.Error(), err)
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", err.Error(), err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to submit review")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to submit review", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusCreated, review)
+	httputil.WriteSuccess(w, http.StatusCreated, review)
 }
 
 // GetContractReviews handles GET /api/v1/contracts/{id}/reviews (List reviews on a contract).
 func (h *Handler) GetContractReviews(w http.ResponseWriter, r *http.Request) {
 	contractID, err := extractContractID(r)
 	if err != nil || contractID == uuid.Nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", "Invalid contract ID in URL")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", "Invalid contract ID in URL", err)
 		return
 	}
 
 	reviews, err := h.service.GetReviewsByContractID(r.Context(), contractID)
 	if err != nil {
 		if errors.Is(err, ErrContractNotFound) {
-			writeJSONError(w, http.StatusNotFound, "CONTRACT_NOT_FOUND", "Contract not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "CONTRACT_NOT_FOUND", "Contract not found", nil)
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", err.Error(), err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve contract reviews")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve contract reviews", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, reviews)
+	httputil.WriteSuccess(w, http.StatusOK, reviews)
 }
 
 // GetUserReviews handles GET /api/v1/users/{id}/reviews (Public: user review summary + received reviews).
 func (h *Handler) GetUserReviews(w http.ResponseWriter, r *http.Request) {
 	userID, err := extractUserID(r)
-	if err != nil || userID == uuid.Nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", "Invalid user ID in URL")
+	if err != nil || strings.TrimSpace(userID) == "" {
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", "Invalid user ID in URL", err)
 		return
 	}
 
 	summary, err := h.service.GetUserReviewsWithSummary(r.Context(), userID)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
-			writeJSONError(w, http.StatusNotFound, "USER_NOT_FOUND", "User not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "USER_NOT_FOUND", "User not found", nil)
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", err.Error(), err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve user review summary")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve user review summary", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, summary)
+	httputil.WriteSuccess(w, http.StatusOK, summary)
 }
 
 func extractContractID(r *http.Request) (uuid.UUID, error) {
@@ -181,47 +182,23 @@ func extractContractID(r *http.Request) (uuid.UUID, error) {
 	return uuid.Nil, errors.New("invalid contract id in url")
 }
 
-func extractUserID(r *http.Request) (uuid.UUID, error) {
-	if val := chi.URLParam(r, "id"); val != "" {
-		if id, err := uuid.Parse(val); err == nil {
-			return id, nil
-		}
+func extractUserID(r *http.Request) (string, error) {
+	if val := strings.TrimSpace(chi.URLParam(r, "id")); val != "" {
+		return val, nil
 	}
-	if val := chi.URLParam(r, "userID"); val != "" {
-		if id, err := uuid.Parse(val); err == nil {
-			return id, nil
-		}
+	if val := strings.TrimSpace(chi.URLParam(r, "userID")); val != "" {
+		return val, nil
 	}
 
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	for i, p := range parts {
 		if (p == "users" || p == "user") && i+1 < len(parts) && parts[i+1] != "reviews" {
-			return uuid.Parse(parts[i+1])
+			val := strings.TrimSpace(parts[i+1])
+			if val != "" {
+				return val, nil
+			}
 		}
 	}
 
-	return uuid.Nil, errors.New("invalid user id in url")
-}
-
-func writeJSONSuccess(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"data":    data,
-		"error":   nil,
-	})
-}
-
-func writeJSONError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": false,
-		"data":    nil,
-		"error": map[string]string{
-			"code":    code,
-			"message": message,
-		},
-	})
+	return "", errors.New("invalid user id in url")
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/httputil"
 )
 
 // Handler handles HTTP requests for job applications and institutional email verification.
@@ -92,199 +93,199 @@ func (h *Handler) ApplicationRoutes(authMiddleware func(http.Handler) http.Handl
 func (h *Handler) ApplyToJob(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	// Institutional Email Gate: Reject unverified applicants with 403 Forbidden
 	if !claims.EmailVerified {
-		writeJSONError(w, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "University email must be verified before applying to jobs")
+		httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "University email must be verified before applying to jobs", nil)
 		return
 	}
 
 	jobID, err := extractJobID(r)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_ID", "Invalid job UUID")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_ID", "Invalid job UUID", err)
 		return
 	}
 
 	var req ApplyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		if errors.Is(err, io.EOF) {
-			writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Request body cannot be empty")
+			httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Request body cannot be empty", err)
 			return
 		}
-		writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body", err)
 		return
 	}
 
 	app, err := h.service.ApplyToJob(r.Context(), claims, jobID, req)
 	if err != nil {
 		if errors.Is(err, ErrEmailNotVerified) {
-			writeJSONError(w, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "University email must be verified before applying to jobs")
+			httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "University email must be verified before applying to jobs", nil)
 			return
 		}
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
 			return
 		}
 		if errors.Is(err, ErrJobNotFound) {
-			writeJSONError(w, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found", nil)
 			return
 		}
 		if errors.Is(err, ErrJobNotOpen) {
-			writeJSONError(w, http.StatusBadRequest, "JOB_NOT_OPEN", "Job is not open for applications")
+			httputil.WriteError(w, r, http.StatusBadRequest, "JOB_NOT_OPEN", "Job is not open for applications", nil)
 			return
 		}
 		if errors.Is(err, ErrDuplicateApplication) {
-			writeJSONError(w, http.StatusConflict, "APPLICATION_ALREADY_EXISTS", "You have already applied to this job")
+			httputil.WriteError(w, r, http.StatusConflict, "APPLICATION_ALREADY_EXISTS", "You have already applied to this job", nil)
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", err.Error(), err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to submit application")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to submit application", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusCreated, app)
+	httputil.WriteSuccess(w, http.StatusCreated, app)
 }
 
 // ListJobApplications handles GET /api/v1/jobs/{id}/applications (Job Creator views applications).
 func (h *Handler) ListJobApplications(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	jobID, err := extractJobID(r)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_ID", "Invalid job UUID")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_ID", "Invalid job UUID", err)
 		return
 	}
 
 	apps, err := h.service.ListJobApplications(r.Context(), claims, jobID)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
 			return
 		}
 		if errors.Is(err, ErrJobNotFound) {
-			writeJSONError(w, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found", nil)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve job applications")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve job applications", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, apps)
+	httputil.WriteSuccess(w, http.StatusOK, apps)
 }
 
 // GetMyApplications handles GET /api/v1/applications/mine (Member views own applications).
 func (h *Handler) GetMyApplications(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	apps, err := h.service.ListMyApplications(r.Context(), claims)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve applications")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve applications", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, apps)
+	httputil.WriteSuccess(w, http.StatusOK, apps)
 }
 
 // GetApplicationByID handles GET /api/v1/applications/{id} (Applicant or Job Creator).
 func (h *Handler) GetApplicationByID(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	appID, err := extractApplicationID(r)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_ID", "Invalid application UUID")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_ID", "Invalid application UUID", err)
 		return
 	}
 
 	app, err := h.service.GetApplicationByID(r.Context(), claims, appID)
 	if err != nil {
 		if errors.Is(err, ErrApplicationNotFound) {
-			writeJSONError(w, http.StatusNotFound, "APPLICATION_NOT_FOUND", "Application not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "APPLICATION_NOT_FOUND", "Application not found", nil)
 			return
 		}
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve application")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve application", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, app)
+	httputil.WriteSuccess(w, http.StatusOK, app)
 }
 
 // UpdateApplicationStatus handles PATCH /api/v1/applications/{id}/status (Job Creator accepts/rejects).
 func (h *Handler) UpdateApplicationStatus(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	appID, err := extractApplicationID(r)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_ID", "Invalid application UUID")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_ID", "Invalid application UUID", err)
 		return
 	}
 
 	var req UpdateApplicationStatusRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		if errors.Is(err, io.EOF) {
-			writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Request body cannot be empty")
+			httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Request body cannot be empty", err)
 			return
 		}
-		writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body", err)
 		return
 	}
 
 	app, _, err := h.service.UpdateApplicationStatus(r.Context(), claims, appID, req)
 	if err != nil {
 		if errors.Is(err, ErrApplicationNotFound) {
-			writeJSONError(w, http.StatusNotFound, "APPLICATION_NOT_FOUND", "Application not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "APPLICATION_NOT_FOUND", "Application not found", nil)
 			return
 		}
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
 			return
 		}
 		if errors.Is(err, ErrApplicationNotPending) {
-			writeJSONError(w, http.StatusBadRequest, "APPLICATION_NOT_PENDING", "Application is not in pending status")
+			httputil.WriteError(w, r, http.StatusBadRequest, "APPLICATION_NOT_PENDING", "Application is not in pending status", nil)
 			return
 		}
 		if errors.Is(err, ErrJobNotOpen) {
-			writeJSONError(w, http.StatusBadRequest, "JOB_NOT_OPEN", "Job is no longer open")
+			httputil.WriteError(w, r, http.StatusBadRequest, "JOB_NOT_OPEN", "Job is no longer open", nil)
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", err.Error(), err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update application status")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update application status", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, app)
+	httputil.WriteSuccess(w, http.StatusOK, app)
 }
 
 func extractJobID(r *http.Request) (uuid.UUID, error) {
@@ -325,27 +326,4 @@ func extractApplicationID(r *http.Request) (uuid.UUID, error) {
 		}
 	}
 	return uuid.Nil, errors.New("invalid application id in url")
-}
-
-func writeJSONSuccess(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"data":    data,
-		"error":   nil,
-	})
-}
-
-func writeJSONError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": false,
-		"data":    nil,
-		"error": map[string]string{
-			"code":    code,
-			"message": message,
-		},
-	})
 }

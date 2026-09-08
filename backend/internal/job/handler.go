@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/httputil"
 )
 
 // Handler handles job-related HTTP requests.
@@ -105,18 +106,16 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if createdByStr := strings.TrimSpace(q.Get("created_by")); createdByStr != "" {
-		if val, err := uuid.Parse(createdByStr); err == nil {
-			filter.CreatedBy = &val
-		}
+		filter.CreatedBy = &createdByStr
 	}
 
 	jobs, err := h.service.ListJobs(r.Context(), filter)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve jobs")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve jobs", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, jobs)
+	httputil.WriteSuccess(w, http.StatusOK, jobs)
 }
 
 // GetJobByID handles GET /api/v1/jobs/{id}
@@ -129,100 +128,97 @@ func (h *Handler) GetJobByID(w http.ResponseWriter, r *http.Request) {
 
 	jobID, err := uuid.Parse(idStr)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_ID", "Invalid job UUID")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_ID", "Invalid job UUID", err)
 		return
 	}
 
 	job, err := h.service.GetJobByID(r.Context(), jobID)
 	if err != nil {
 		if errors.Is(err, ErrJobNotFound) {
-			writeJSONError(w, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found", nil)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve job")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve job", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, job)
+	httputil.WriteSuccess(w, http.StatusOK, job)
 }
 
 // CreateJob handles POST /api/v1/jobs (Any verified campus member)
 func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	// Verification check: campus email must be verified to post opportunities
 	if !claims.EmailVerified {
-		writeJSONError(w, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Campus verification required to post opportunities")
+		httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Campus verification required to post opportunities", nil)
 		return
 	}
 
-	userUUID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
+	if strings.TrimSpace(claims.UserID) == "" {
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_USER_ID", "User ID is required", nil)
 		return
 	}
 
 	var req CreateJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		if errors.Is(err, io.EOF) {
-			writeJSONError(w, http.StatusBadRequest, "EMPTY_BODY", "Request body cannot be empty")
+			httputil.WriteError(w, r, http.StatusBadRequest, "EMPTY_BODY", "Request body cannot be empty", err)
 			return
 		}
-		writeJSONError(w, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body", err)
 		return
 	}
 
-	job, err := h.service.CreateJob(r.Context(), userUUID, req)
+	job, err := h.service.CreateJob(r.Context(), claims.UserID, req)
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "VALIDATION_FAILED", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "VALIDATION_FAILED", err.Error(), err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create job")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create job", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusCreated, job)
+	httputil.WriteSuccess(w, http.StatusCreated, job)
 }
 
 // GetMyJobs handles GET /api/v1/jobs/mine
 func (h *Handler) GetMyJobs(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
-	userUUID, err := uuid.Parse(claims.UserID)
+	if strings.TrimSpace(claims.UserID) == "" {
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_USER_ID", "User ID is required", nil)
+		return
+	}
+
+	jobs, err := h.service.GetMyJobs(r.Context(), claims.UserID)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve your jobs", err)
 		return
 	}
 
-	jobs, err := h.service.GetMyJobs(r.Context(), userUUID)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve your jobs")
-		return
-	}
-
-	writeJSONSuccess(w, http.StatusOK, jobs)
+	httputil.WriteSuccess(w, http.StatusOK, jobs)
 }
 
 // UpdateJob handles PUT /api/v1/jobs/{id}
 func (h *Handler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
-	userUUID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
+	if strings.TrimSpace(claims.UserID) == "" {
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_USER_ID", "User ID is required", nil)
 		return
 	}
 
@@ -233,48 +229,47 @@ func (h *Handler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID, err := uuid.Parse(idStr)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_ID", "Invalid job UUID")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_ID", "Invalid job UUID", err)
 		return
 	}
 
 	var req UpdateJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body", err)
 		return
 	}
 
-	job, err := h.service.UpdateJob(r.Context(), userUUID, jobID, req)
+	job, err := h.service.UpdateJob(r.Context(), claims.UserID, jobID, req)
 	if err != nil {
 		if errors.Is(err, ErrJobNotFound) {
-			writeJSONError(w, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found", nil)
 			return
 		}
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Only the job creator can edit this opportunity")
+			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "Only the job creator can edit this opportunity", nil)
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "VALIDATION_FAILED", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "VALIDATION_FAILED", err.Error(), err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update job")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update job", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, job)
+	httputil.WriteSuccess(w, http.StatusOK, job)
 }
 
 // DeleteJob handles DELETE /api/v1/jobs/{id}
 func (h *Handler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
-	userUUID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
+	if strings.TrimSpace(claims.UserID) == "" {
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_USER_ID", "User ID is required", nil)
 		return
 	}
 
@@ -285,46 +280,23 @@ func (h *Handler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID, err := uuid.Parse(idStr)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_ID", "Invalid job UUID")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_ID", "Invalid job UUID", err)
 		return
 	}
 
-	err = h.service.DeleteJob(r.Context(), userUUID, jobID)
+	err = h.service.DeleteJob(r.Context(), claims.UserID, jobID)
 	if err != nil {
 		if errors.Is(err, ErrJobNotFound) {
-			writeJSONError(w, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found", nil)
 			return
 		}
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", "Only the job creator can delete this opportunity")
+			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "Only the job creator can delete this opportunity", nil)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete job")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete job", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func writeJSONSuccess(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"data":    data,
-		"error":   nil,
-	})
-}
-
-func writeJSONError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": false,
-		"data":    nil,
-		"error": map[string]string{
-			"code":    code,
-			"message": message,
-		},
-	})
 }

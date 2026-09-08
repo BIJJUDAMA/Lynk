@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/httputil"
 )
 
 // Handler handles HTTP requests for contracts and their state transitions.
@@ -68,118 +69,118 @@ func (h *Handler) ContractRoutes(authMiddleware func(http.Handler) http.Handler)
 func (h *Handler) ListContracts(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	contracts, err := h.service.ListContracts(r.Context(), claims)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", err.Error(), err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve contracts")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve contracts", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, contracts)
+	httputil.WriteSuccess(w, http.StatusOK, contracts)
 }
 
 // GetContractByID handles GET /api/v1/contracts/{id} (Participant student, employer, or admin).
 func (h *Handler) GetContractByID(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	contractID, err := extractContractID(r)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_ID", "Invalid contract UUID")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_ID", "Invalid contract UUID", err)
 		return
 	}
 
 	contract, err := h.service.GetContractByID(r.Context(), claims, contractID)
 	if err != nil {
 		if errors.Is(err, ErrContractNotFound) {
-			writeJSONError(w, http.StatusNotFound, "CONTRACT_NOT_FOUND", "Contract not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "CONTRACT_NOT_FOUND", "Contract not found", nil)
 			return
 		}
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", err.Error(), err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve contract")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve contract", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, contract)
+	httputil.WriteSuccess(w, http.StatusOK, contract)
 }
 
 // UpdateContractStatus handles PATCH /api/v1/contracts/{id}/status (Participant updates status).
 func (h *Handler) UpdateContractStatus(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	contractID, err := extractContractID(r)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_ID", "Invalid contract UUID")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_ID", "Invalid contract UUID", err)
 		return
 	}
 
 	var req UpdateContractStatusRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		if errors.Is(err, io.EOF) {
-			writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Request body cannot be empty")
+			httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Request body cannot be empty", err)
 			return
 		}
-		writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body")
+		httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON request body", err)
 		return
 	}
 
 	if strings.TrimSpace(req.Status) == "" {
-		writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", "Status is required")
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", "Status is required", nil)
 		return
 	}
 
 	updated, err := h.service.UpdateContractStatus(r.Context(), claims, contractID, req)
 	if err != nil {
 		if errors.Is(err, ErrContractNotFound) {
-			writeJSONError(w, http.StatusNotFound, "CONTRACT_NOT_FOUND", "Contract not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "CONTRACT_NOT_FOUND", "Contract not found", nil)
 			return
 		}
 		if errors.Is(err, ErrForbidden) {
-			writeJSONError(w, http.StatusForbidden, "FORBIDDEN", err.Error())
+			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
 			return
 		}
 		if errors.Is(err, ErrTerminalStatus) || errors.Is(err, ErrInvalidTransition) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_TRANSITION", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_TRANSITION", err.Error(), err)
 			return
 		}
 		if errors.Is(err, ErrInvalidStatus) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_STATUS", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_STATUS", err.Error(), err)
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", err.Error(), err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update contract status")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update contract status", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, updated)
+	httputil.WriteSuccess(w, http.StatusOK, updated)
 }
 
 func extractContractID(r *http.Request) (uuid.UUID, error) {
@@ -200,27 +201,4 @@ func extractContractID(r *http.Request) (uuid.UUID, error) {
 		}
 	}
 	return uuid.Nil, errors.New("invalid contract id in url")
-}
-
-func writeJSONSuccess(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"data":    data,
-		"error":   nil,
-	})
-}
-
-func writeJSONError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": false,
-		"data":    nil,
-		"error": map[string]string{
-			"code":    code,
-			"message": message,
-		},
-	})
 }

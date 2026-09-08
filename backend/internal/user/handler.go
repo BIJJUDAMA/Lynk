@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/httputil"
 	"github.com/lynk/backend/internal/storage"
 )
 
@@ -27,12 +28,18 @@ func NewHandler(service *Service, repo UserRepository, s3Client ...storage.Clien
 	if len(s3Client) > 0 {
 		s3 = s3Client[0]
 	}
+	if service != nil && service.storage == nil && s3 != nil {
+		service.storage = s3
+	}
 	return &Handler{service: service, repo: repo, s3Client: s3}
 }
 
 // WithStorage sets or overrides the storage client on the Handler.
 func (h *Handler) WithStorage(s3Client storage.Client) *Handler {
 	h.s3Client = s3Client
+	if h.service != nil {
+		h.service.storage = s3Client
+	}
 	return h
 }
 
@@ -119,14 +126,14 @@ func (h *Handler) ProfileRoutes(authMiddleware func(http.Handler) http.Handler) 
 func (h *Handler) SyncUser(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	var req SyncUserRequest
 	if r.Body != nil && r.ContentLength != 0 {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON body")
+			httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON body", err)
 			return
 		}
 	}
@@ -134,118 +141,118 @@ func (h *Handler) SyncUser(w http.ResponseWriter, r *http.Request) {
 	user, err := h.service.SyncUser(r.Context(), claims, req)
 	if err != nil {
 		if errors.Is(err, ErrInvalidRole) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_ROLE", "Role must be member or admin")
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_ROLE", "Role must be member or admin", err)
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID", err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to sync user")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to sync user", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, user)
+	httputil.WriteSuccess(w, http.StatusOK, user)
 }
 
 // GetMe handles GET /api/v1/auth/me
 func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	summary, err := h.service.GetMe(r.Context(), claims)
 	if err != nil {
 		if errors.Is(err, ErrUnauthorized) {
-			writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+			httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 			return
 		}
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID")
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user UUID", err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get user profile")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get user profile", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, summary)
+	httputil.WriteSuccess(w, http.StatusOK, summary)
 }
 
 // GetMyProfile handles GET /api/v1/profile/me
 func (h *Handler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	profile, err := h.service.GetProfile(r.Context(), claims.UserID)
 	if err != nil {
 		if errors.Is(err, ErrProfileNotFound) {
-			writeJSONError(w, http.StatusNotFound, "PROFILE_NOT_FOUND", "Profile not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "PROFILE_NOT_FOUND", "Profile not found", nil)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get profile")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get profile", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, profile)
+	httputil.WriteSuccess(w, http.StatusOK, profile)
 }
 
 // UpdateMyProfile handles PUT /api/v1/profile/me
 func (h *Handler) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	var req UpdateProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON body")
+		httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON body", err)
 		return
 	}
 
 	profile, err := h.service.UpdateProfile(r.Context(), claims.UserID, req)
 	if err != nil {
 		if errors.Is(err, ErrInvalidInput) {
-			writeJSONError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_INPUT", err.Error(), err)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update profile")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update profile", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, profile)
+	httputil.WriteSuccess(w, http.StatusOK, profile)
 }
 
 // GetProfileByID handles GET /api/v1/profile/{id}
 func (h *Handler) GetProfileByID(w http.ResponseWriter, r *http.Request) {
 	_, err := auth.GetUserContext(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials")
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 		return
 	}
 
 	idStr := chi.URLParam(r, "id")
 	if idStr == "" {
-		writeJSONError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid profile ID")
+		httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Invalid profile ID", nil)
 		return
 	}
 
 	profile, err := h.service.GetProfileByID(r.Context(), idStr)
 	if err != nil {
 		if errors.Is(err, ErrProfileNotFound) {
-			writeJSONError(w, http.StatusNotFound, "PROFILE_NOT_FOUND", "Profile not found")
+			httputil.WriteError(w, r, http.StatusNotFound, "PROFILE_NOT_FOUND", "Profile not found", nil)
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve profile")
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve profile", err)
 		return
 	}
 
-	writeJSONSuccess(w, http.StatusOK, profile)
+	httputil.WriteSuccess(w, http.StatusOK, profile)
 }
 
 // Backwards compatibility handler aliases
@@ -267,27 +274,4 @@ func (h *Handler) GetMyEmployerProfile(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) UpdateMyEmployerProfile(w http.ResponseWriter, r *http.Request) {
 	h.UpdateMyProfile(w, r)
-}
-
-func writeJSONSuccess(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"data":    data,
-		"error":   nil,
-	})
-}
-
-func writeJSONError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": false,
-		"data":    nil,
-		"error": map[string]string{
-			"code":    code,
-			"message": message,
-		},
-	})
 }
