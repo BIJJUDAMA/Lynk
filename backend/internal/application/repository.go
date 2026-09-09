@@ -358,6 +358,12 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 		&job.PayType, &job.Department, &job.Status,
 	)
 	if err == pgx.ErrNoRows {
+		// ErrNoRows here means either: (a) no application with this ID exists, or
+		// (b) the application exists but its job_id FK points to a deleted job row.
+		// Case (b) cannot occur in practice: applications.job_id has a NOT NULL FK
+		// constraint referencing jobs(id) with no CASCADE DELETE, so a job row can
+		// never be deleted while applications reference it. We surface ErrApplicationNotFound
+		// for both cases as the net effect for the caller is identical.
 		return nil, nil, ErrApplicationNotFound
 	}
 	if err != nil {
