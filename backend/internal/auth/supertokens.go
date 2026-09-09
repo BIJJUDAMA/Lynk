@@ -96,7 +96,7 @@ func InitSupertokens(cfg SuperTokensConfig) error {
 						ogSignUp := *originalImplementation.SignUp
 						(*originalImplementation.SignUp) = func(email, password string, tenantId string, userContext supertokens.UserContext) (epmodels.SignUpResponse, error) {
 							if !IsEduEmail(email) {
-								return epmodels.SignUpResponse{}, errors.New("Registration rejected: only institutional .edu email addresses are permitted.")
+								return epmodels.SignUpResponse{}, errors.New("registration rejected: only institutional .edu email addresses are permitted")
 							}
 							return ogSignUp(email, password, tenantId, userContext)
 						}

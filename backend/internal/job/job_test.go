@@ -85,7 +85,7 @@ func (m *mockJobRepository) ListJobs(ctx context.Context, filter job.JobFilter) 
 	defer m.mu.RUnlock()
 	var result []*job.Job
 	for _, j := range m.jobs {
-		if filter.Status != "" && strings.ToLower(j.Status) != strings.ToLower(filter.Status) {
+		if filter.Status != "" && !strings.EqualFold(j.Status, filter.Status) {
 			continue
 		}
 		if filter.Department != "" && !strings.EqualFold(j.Department, filter.Department) {

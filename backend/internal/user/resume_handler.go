@@ -57,7 +57,7 @@ func (h *Handler) UploadResume(s3Client ...storage.Client) http.HandlerFunc {
 			httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Form field 'resume' is required", err)
 			return
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		profile, err := h.service.UploadResume(r.Context(), claims, header.Filename, header.Size, header.Header.Get("Content-Type"), file)
 		if err != nil {

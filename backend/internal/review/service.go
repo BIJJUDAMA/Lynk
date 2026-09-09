@@ -69,11 +69,12 @@ func (s *Service) CreateReview(ctx context.Context, claims *auth.UserClaims, con
 	// Invariant: Reviewer MUST be participant (client or freelancer).
 	// Reviewee is automatically determined as the other participant.
 	var revieweeID string
-	if callerID == c.FreelancerID {
+	switch callerID {
+	case c.FreelancerID:
 		revieweeID = c.ClientID
-	} else if callerID == c.ClientID {
+	case c.ClientID:
 		revieweeID = c.FreelancerID
-	} else {
+	default:
 		return nil, ErrNotParticipant
 	}
 

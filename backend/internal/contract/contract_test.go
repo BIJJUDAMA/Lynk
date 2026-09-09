@@ -163,17 +163,6 @@ func (m *mockContractRepo) UpdateContractStatus(ctx context.Context, id uuid.UUI
 	return &cp, nil
 }
 
-type mockValidator struct {
-	claimsMap map[string]*auth.UserClaims
-}
-
-func (m *mockValidator) ValidateToken(ctx context.Context, tokenStr string) (*auth.UserClaims, error) {
-	if claims, ok := m.claimsMap[tokenStr]; ok {
-		return claims, nil
-	}
-	return nil, errors.New("invalid or expired token")
-}
-
 func withAuth(r *http.Request, claims *auth.UserClaims) *http.Request {
 	ctx := auth.WithUserContext(r.Context(), claims)
 	return r.WithContext(ctx)

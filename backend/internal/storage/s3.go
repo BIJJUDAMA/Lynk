@@ -52,15 +52,18 @@ func newAWSConfig(ctx context.Context, endpoint string, cfg Config) (aws.Config,
 		}
 		endpoint = fmt.Sprintf("%s://%s", scheme, endpoint)
 	}
-	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-		return aws.Endpoint{
+	// MinIO requires a custom path-style endpoint; the AWS SDK v2 global endpoint
+	// resolver APIs are deprecated but remain the supported way to target MinIO
+	// until BaseEndpoint / service options fully replace this path.
+	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) { //nolint:staticcheck // SA1019: MinIO custom endpoint
+		return aws.Endpoint{ //nolint:staticcheck // SA1019: MinIO custom endpoint
 			URL:               endpoint,
 			HostnameImmutable: true,
 			SigningRegion:     "us-east-1",
 		}, nil
 	})
 	return awsconfig.LoadDefaultConfig(ctx,
-		awsconfig.WithEndpointResolverWithOptions(customResolver),
+		awsconfig.WithEndpointResolverWithOptions(customResolver), //nolint:staticcheck // SA1019: MinIO custom endpoint
 		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, "")),
 		awsconfig.WithRegion("us-east-1"),
 	)
