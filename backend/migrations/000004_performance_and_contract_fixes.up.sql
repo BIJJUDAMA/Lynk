@@ -1,4 +1,4 @@
-﻿-- 1. Replace unconditional UNIQUE(job_id) with partial unique index on non-cancelled contracts
+-- 1. Replace unconditional UNIQUE(job_id) with partial unique index on non-cancelled contracts
 ALTER TABLE contracts DROP CONSTRAINT IF EXISTS contracts_job_id_key;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_contracts_active_job 

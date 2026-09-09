@@ -1,4 +1,4 @@
-﻿ALTER TABLE reviews DROP CONSTRAINT IF EXISTS chk_reviews_different_parties;
+ALTER TABLE reviews DROP CONSTRAINT IF EXISTS chk_reviews_different_parties;
 ALTER TABLE contracts DROP CONSTRAINT IF EXISTS chk_contracts_different_parties;
 
 DROP INDEX IF EXISTS idx_reviews_reviewee_created;
