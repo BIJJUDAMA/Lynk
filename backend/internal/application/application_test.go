@@ -13,8 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/httpx"
 	"github.com/lynk/backend/internal/job"
 	"github.com/lynk/backend/internal/middleware"
 	"github.com/lynk/backend/internal/user"
@@ -87,7 +89,7 @@ func (m *mockApplicationRepo) GetApplicationByID(ctx context.Context, id uuid.UU
 	return m.buildDetails(app), nil
 }
 
-func (m *mockApplicationRepo) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID) ([]*ApplicationWithDetails, error) {
+func (m *mockApplicationRepo) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID, limit, offset int) ([]*ApplicationWithDetails, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -97,10 +99,10 @@ func (m *mockApplicationRepo) ListApplicationsByJob(ctx context.Context, jobID u
 			list = append(list, m.buildDetails(app))
 		}
 	}
-	return list, nil
+	return paginateApplicationDetails(list, limit, offset), nil
 }
 
-func (m *mockApplicationRepo) ListApplicationsByApplicant(ctx context.Context, applicantID string) ([]*ApplicationWithDetails, error) {
+func (m *mockApplicationRepo) ListApplicationsByApplicant(ctx context.Context, applicantID string, limit, offset int) ([]*ApplicationWithDetails, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -110,7 +112,19 @@ func (m *mockApplicationRepo) ListApplicationsByApplicant(ctx context.Context, a
 			list = append(list, m.buildDetails(app))
 		}
 	}
-	return list, nil
+	return paginateApplicationDetails(list, limit, offset), nil
+}
+
+func paginateApplicationDetails(list []*ApplicationWithDetails, limit, offset int) []*ApplicationWithDetails {
+	limit, offset = clampPage(limit, offset)
+	if offset >= len(list) {
+		return []*ApplicationWithDetails{}
+	}
+	end := offset + limit
+	if end > len(list) {
+		end = len(list)
+	}
+	return list[offset:end]
 }
 
 func (m *mockApplicationRepo) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (*ApplicationWithDetails, *Contract, error) {
@@ -156,7 +170,7 @@ func (m *mockApplicationRepo) AcceptApplicationTx(ctx context.Context, appID uui
 		ApplicationID: app.ID,
 		ClientID:      targetJob.CreatedBy,
 		FreelancerID:  app.ApplicantID,
-		AgreedBudget:  targetJob.Budget,
+		AgreedBudgetCents: targetJob.BudgetCents,
 		Status:        ContractStatusActive,
 		StartedAt:     &now,
 		CreatedAt:     now,
@@ -223,7 +237,7 @@ func (m *mockApplicationRepo) buildDetails(app *Application) *ApplicationWithDet
 			CreatedBy:   j.CreatedBy,
 			Title:       j.Title,
 			Description: j.Description,
-			Budget:      j.Budget,
+			BudgetCents: j.BudgetCents,
 			PayType:     j.PayType,
 			Department:  j.Department,
 			Status:      j.Status,
@@ -305,9 +319,34 @@ func (m *mockJobLookup) GetJobByID(ctx context.Context, id uuid.UUID) (*job.Job,
 		ID:        id,
 		CreatedBy: "usr_employer",
 		Title:     "Dev",
-		Budget:    100.0,
+		BudgetCents:    10000,
 		Status:    job.StatusOpen,
 	}, nil
+}
+
+type stubJobReader struct {
+	job *job.Job
+}
+
+func (s *stubJobReader) GetJobByID(ctx context.Context, id uuid.UUID) (*job.Job, error) {
+	if s.job != nil && s.job.ID == id {
+		return s.job, nil
+	}
+	return nil, job.ErrJobNotFound
+}
+
+func TestService_ApplyToJob_RejectsPastDeadline(t *testing.T) {
+	past := time.Now().Add(-24 * time.Hour)
+	jobRow := &job.Job{ID: uuid.New(), Status: job.StatusOpen, Deadline: &past, CreatedBy: "p", Title: "t", Description: "d"}
+	appSvc := NewService(newMockApplicationRepo(), &stubJobReader{job: jobRow}, nil)
+	claims := &auth.UserClaims{UserID: "a", EmailVerified: true}
+	_, err := appSvc.ApplyToJob(context.Background(), claims, jobRow.ID, ApplyRequest{CoverLetter: "this is a sufficiently long cover letter"})
+	if err == nil {
+		t.Fatal("expected apply to fail after deadline")
+	}
+	if !errors.Is(err, ErrJobNotOpen) {
+		t.Fatalf("expected ErrJobNotOpen, got %v", err)
+	}
 }
 
 func TestService_ApplyToJob_RejectsAlienResumeKey(t *testing.T) {
@@ -433,7 +472,7 @@ func TestApplication_InstitutionalEmailGate(t *testing.T) {
 	repo := newMockApplicationRepo()
 	service := NewService(repo, repo, repo)
 	handler := NewHandler(service, repo)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	jobID := uuid.New()
 	creatorID := uuid.New().String()
@@ -441,7 +480,7 @@ func TestApplication_InstitutionalEmailGate(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: creatorID,
 		Title:     "Backend Engineer Needed",
-		Budget:    500.00,
+		BudgetCents:    50000,
 		Status:    job.StatusOpen,
 	}
 
@@ -520,7 +559,7 @@ func TestApplication_ResourceOwnershipEnforcement(t *testing.T) {
 	repo := newMockApplicationRepo()
 	service := NewService(repo, repo, repo)
 	handler := NewHandler(service, repo)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	creatorID := uuid.New().String()
 	jobID := uuid.New()
@@ -528,7 +567,7 @@ func TestApplication_ResourceOwnershipEnforcement(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: creatorID,
 		Title:     "Frontend Developer",
-		Budget:    300.00,
+		BudgetCents:    30000,
 		Status:    job.StatusOpen,
 	}
 
@@ -602,14 +641,14 @@ func TestApplication_ResumeAutoAttachment(t *testing.T) {
 	repo := newMockApplicationRepo()
 	service := NewService(repo, repo, repo)
 	handler := NewHandler(service, repo)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	jobID := uuid.New()
 	repo.jobs[jobID] = &job.Job{
 		ID:        jobID,
 		CreatedBy: uuid.New().String(),
 		Title:     "ML Engineer",
-		Budget:    1000.00,
+		BudgetCents:    100000,
 		Status:    job.StatusOpen,
 	}
 
@@ -658,7 +697,7 @@ func TestApplication_ResumeAutoAttachment(t *testing.T) {
 			ID:        job2ID,
 			CreatedBy: uuid.New().String(),
 			Title:     "Data Analyst",
-			Budget:    600.00,
+			BudgetCents:    60000,
 			Status:    job.StatusOpen,
 		}
 
@@ -691,14 +730,14 @@ func TestApplication_DuplicatePrevention(t *testing.T) {
 	repo := newMockApplicationRepo()
 	service := NewService(repo, repo, repo)
 	handler := NewHandler(service, repo)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	jobID := uuid.New()
 	repo.jobs[jobID] = &job.Job{
 		ID:        jobID,
 		CreatedBy: uuid.New().String(),
 		Title:     "Tutor",
-		Budget:    200.00,
+		BudgetCents:    20000,
 		Status:    job.StatusOpen,
 	}
 
@@ -741,7 +780,7 @@ func TestApplication_JobStatusChecks(t *testing.T) {
 	repo := newMockApplicationRepo()
 	service := NewService(repo, repo, repo)
 	handler := NewHandler(service, repo)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	claims := &auth.UserClaims{
 		UserID:        uuid.New().String(),
@@ -773,7 +812,7 @@ func TestApplication_JobStatusChecks(t *testing.T) {
 			ID:        inProgressJobID,
 			CreatedBy: uuid.New().String(),
 			Title:     "Active Job",
-			Budget:    400.00,
+			BudgetCents:    40000,
 			Status:    job.StatusInProgress,
 		}
 
@@ -798,7 +837,7 @@ func TestApplication_AcceptApplication_AtomicWorkflow(t *testing.T) {
 	repo := newMockApplicationRepo()
 	service := NewService(repo, repo, repo)
 	handler := NewHandler(service, repo)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	jobID := uuid.New()
 	creatorID := uuid.New().String()
@@ -807,7 +846,7 @@ func TestApplication_AcceptApplication_AtomicWorkflow(t *testing.T) {
 		CreatedBy:   creatorID,
 		Title:       "Full-Stack Web App",
 		Description: "Develop MVP frontend and backend",
-		Budget:      1200.00,
+		BudgetCents:      120000,
 		PayType:     job.PayTypeFixed,
 		Department:  "Computer Science",
 		Status:      job.StatusOpen,
@@ -931,8 +970,8 @@ func TestApplication_AcceptApplication_AtomicWorkflow(t *testing.T) {
 		if acceptedDetails.Contract.Status != ContractStatusActive {
 			t.Fatalf("expected contract status 'active', got '%s'", acceptedDetails.Contract.Status)
 		}
-		if acceptedDetails.Contract.AgreedBudget != targetJob.Budget {
-			t.Fatalf("expected agreed_budget %.2f, got %.2f", targetJob.Budget, acceptedDetails.Contract.AgreedBudget)
+		if acceptedDetails.Contract.AgreedBudgetCents != targetJob.BudgetCents {
+			t.Fatalf("expected agreed_budget_cents %d, got %d", targetJob.BudgetCents, acceptedDetails.Contract.AgreedBudgetCents)
 		}
 		if acceptedDetails.Contract.StartedAt == nil {
 			t.Fatalf("expected started_at timestamp on contract")
@@ -964,7 +1003,7 @@ func TestApplication_RejectApplication(t *testing.T) {
 	repo := newMockApplicationRepo()
 	service := NewService(repo, repo, repo)
 	handler := NewHandler(service, repo)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	jobID := uuid.New()
 	creatorID := uuid.New().String()
@@ -972,7 +1011,7 @@ func TestApplication_RejectApplication(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: creatorID,
 		Title:     "Graphic Designer",
-		Budget:    250.00,
+		BudgetCents:    25000,
 		Status:    job.StatusOpen,
 	}
 	repo.jobs[jobID] = targetJob
@@ -1027,7 +1066,7 @@ func TestApplication_ListJobApplications(t *testing.T) {
 	repo := newMockApplicationRepo()
 	service := NewService(repo, repo, repo)
 	handler := NewHandler(service, repo)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	jobID := uuid.New()
 	creatorID := uuid.New().String()
@@ -1035,7 +1074,7 @@ func TestApplication_ListJobApplications(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: creatorID,
 		Title:     "Campus Ambassador",
-		Budget:    150.00,
+		BudgetCents:    15000,
 		Status:    job.StatusOpen,
 	}
 
@@ -1111,7 +1150,7 @@ func TestApplication_GetMyApplications(t *testing.T) {
 	repo := newMockApplicationRepo()
 	service := NewService(repo, repo, repo)
 	handler := NewHandler(service, repo)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	applicantID := uuid.New().String()
 	applicantClaims := &auth.UserClaims{
@@ -1126,7 +1165,7 @@ func TestApplication_GetMyApplications(t *testing.T) {
 		ID:        job1ID,
 		CreatedBy: uuid.New().String(),
 		Title:     "Job 1",
-		Budget:    100,
+		BudgetCents:    10000,
 		Status:    job.StatusOpen,
 	}
 
@@ -1167,7 +1206,7 @@ func TestApplication_GetApplicationByID(t *testing.T) {
 	repo := newMockApplicationRepo()
 	service := NewService(repo, repo, repo)
 	handler := NewHandler(service, repo)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	jobID := uuid.New()
 	creatorID := uuid.New().String()
@@ -1178,7 +1217,7 @@ func TestApplication_GetApplicationByID(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: creatorID,
 		Title:     "Lab Assistant",
-		Budget:    350,
+		BudgetCents:    35000,
 		Status:    job.StatusOpen,
 	}
 
@@ -1253,7 +1292,7 @@ func TestApplication_WithAuthMiddleware(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: uuid.New().String(),
 		Title:     "Campus Tour Guide",
-		Budget:    80.00,
+		BudgetCents:    8000,
 		Status:    job.StatusOpen,
 	}
 
@@ -1327,4 +1366,76 @@ func TestApplication_WithAuthMiddleware(t *testing.T) {
 			t.Fatalf("expected EMAIL_NOT_VERIFIED, got %+v", env.Error)
 		}
 	})
+}
+
+func TestHandler_ListJobApplications_HonorsLimitOffset(t *testing.T) {
+	repo := newMockApplicationRepo()
+	jobID := uuid.New()
+	repo.jobs[jobID] = &job.Job{
+		ID:          jobID,
+		CreatedBy:   "poster",
+		Title:       "Test Job",
+		Description: "desc",
+		BudgetCents:      10000,
+		Status:      job.StatusOpen,
+	}
+	for i := 0; i < 5; i++ {
+		_ = repo.CreateApplication(context.Background(), &Application{
+			ID:          uuid.New(),
+			JobID:       jobID,
+			ApplicantID: fmt.Sprintf("applicant-%d", i),
+			CoverLetter: "cover letter text",
+			Status:      StatusPending,
+		})
+	}
+	h := NewHandler(NewService(repo, &stubJobReader{job: repo.jobs[jobID]}, nil), repo)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := auth.WithUserContext(req.Context(), &auth.UserClaims{UserID: "poster", EmailVerified: true})
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Get("/jobs/{id}/applications", h.ListJobApplications)
+	req := httptest.NewRequest(http.MethodGet, "/jobs/"+jobID.String()+"/applications?limit=2&offset=0", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandler_GetMyApplicationForJob_ReturnsSingle(t *testing.T) {
+	jobID := uuid.New()
+	appID := uuid.New()
+	repo := newMockApplicationRepo()
+	_ = repo.CreateApplication(context.Background(), &Application{
+		ID:          appID,
+		JobID:       jobID,
+		ApplicantID: "applicant",
+		CoverLetter: "my proposal cover letter",
+		Status:      StatusPending,
+	})
+	h := NewHandler(NewService(repo, &stubJobReader{}, nil), repo)
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := auth.WithUserContext(req.Context(), &auth.UserClaims{UserID: "applicant", EmailVerified: true})
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Get("/applied", h.GetMyApplicationForJob)
+	req := httptest.NewRequest(http.MethodGet, "/applied?job_id="+jobID.String(), nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"id"`) && !strings.Contains(body, "null") {
+		t.Fatalf("expected single application object or null, got %s", body)
+	}
+	if strings.Count(body, `"cover_letter"`) > 1 {
+		t.Fatalf("must not return a full mine list, got %s", body)
+	}
 }

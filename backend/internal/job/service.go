@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/money"
 )
 
 var (
@@ -27,10 +30,11 @@ func NewService(repo JobRepository) *Service {
 }
 
 // CreateJob validates and creates a new job posting.
-func (s *Service) CreateJob(ctx context.Context, createdBy string, req CreateJobRequest) (*Job, error) {
-	if strings.TrimSpace(createdBy) == "" {
-		return nil, fmt.Errorf("%w: valid creator ID is required", ErrInvalidInput)
+func (s *Service) CreateJob(ctx context.Context, claims *auth.UserClaims, req CreateJobRequest) (*Job, error) {
+	if err := auth.CheckEmailVerified(claims); err != nil {
+		return nil, err
 	}
+	createdBy := claims.UserID
 
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
@@ -45,8 +49,8 @@ func (s *Service) CreateJob(ctx context.Context, createdBy string, req CreateJob
 		return nil, fmt.Errorf("%w: description is required", ErrInvalidInput)
 	}
 
-	if req.Budget < 0 || req.Budget > 99999999.99 {
-		return nil, fmt.Errorf("%w: budget must be between 0 and 99,999,999.99", ErrInvalidInput)
+	if err := money.ValidateNonNegative(money.Cents(req.BudgetCents)); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
 	}
 
 	payType := strings.ToLower(strings.TrimSpace(req.PayType))
@@ -59,6 +63,10 @@ func (s *Service) CreateJob(ctx context.Context, createdBy string, req CreateJob
 		return nil, fmt.Errorf("%w: department cannot exceed 100 characters", ErrInvalidInput)
 	}
 
+	if req.Deadline != nil && req.Deadline.Time() != nil && req.Deadline.Time().Before(time.Now().UTC()) {
+		return nil, fmt.Errorf("%w: deadline must be in the future", ErrInvalidInput)
+	}
+
 	skills := cleanSkills(req.RequiredSkills)
 
 	job := &Job{
@@ -66,7 +74,7 @@ func (s *Service) CreateJob(ctx context.Context, createdBy string, req CreateJob
 		CreatedBy:      createdBy,
 		Title:          title,
 		Description:    desc,
-		Budget:         req.Budget,
+		BudgetCents:    req.BudgetCents,
 		PayType:        payType,
 		RequiredSkills: skills,
 		Department:     dept,
@@ -111,7 +119,12 @@ func (s *Service) GetMyJobs(ctx context.Context, createdBy string) ([]*Job, erro
 }
 
 // UpdateJob updates an existing job if caller owns the job.
-func (s *Service) UpdateJob(ctx context.Context, callerID string, id uuid.UUID, req UpdateJobRequest) (*Job, error) {
+func (s *Service) UpdateJob(ctx context.Context, claims *auth.UserClaims, id uuid.UUID, req UpdateJobRequest) (*Job, error) {
+	if err := auth.CheckEmailVerified(claims); err != nil {
+		return nil, err
+	}
+	callerID := claims.UserID
+
 	if id == uuid.Nil {
 		return nil, fmt.Errorf("%w: invalid job ID", ErrInvalidInput)
 	}
@@ -124,6 +137,18 @@ func (s *Service) UpdateJob(ctx context.Context, callerID string, id uuid.UUID, 
 	// Resource-based ownership check
 	if job.CreatedBy != callerID {
 		return nil, ErrForbidden
+	}
+
+	if job.Status == StatusInProgress {
+		if req.BudgetCents != nil {
+			return nil, fmt.Errorf("%w: budget cannot be changed while the job is in progress", ErrInvalidInput)
+		}
+		if req.PayType != nil {
+			return nil, fmt.Errorf("%w: pay_type cannot be changed while the job is in progress", ErrInvalidInput)
+		}
+		if req.Deadline != nil {
+			return nil, fmt.Errorf("%w: deadline cannot be changed while the job is in progress", ErrInvalidInput)
+		}
 	}
 
 	if req.Title != nil {
@@ -145,11 +170,11 @@ func (s *Service) UpdateJob(ctx context.Context, callerID string, id uuid.UUID, 
 		job.Description = d
 	}
 
-	if req.Budget != nil {
-		if *req.Budget < 0 || *req.Budget > 99999999.99 {
-			return nil, fmt.Errorf("%w: budget must be between 0 and 99,999,999.99", ErrInvalidInput)
+	if req.BudgetCents != nil {
+		if err := money.ValidateNonNegative(money.Cents(*req.BudgetCents)); err != nil {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
 		}
-		job.Budget = *req.Budget
+		job.BudgetCents = *req.BudgetCents
 	}
 
 	if req.PayType != nil {
@@ -173,6 +198,9 @@ func (s *Service) UpdateJob(ctx context.Context, callerID string, id uuid.UUID, 
 	}
 
 	if req.Deadline != nil {
+		if req.Deadline.Time() != nil && req.Deadline.Time().Before(time.Now().UTC()) {
+			return nil, fmt.Errorf("%w: deadline must be in the future", ErrInvalidInput)
+		}
 		job.Deadline = req.Deadline.Time()
 	}
 
@@ -185,9 +213,24 @@ func (s *Service) UpdateJob(ctx context.Context, callerID string, id uuid.UUID, 
 		if st == StatusInProgress {
 			return nil, fmt.Errorf("%w: jobs cannot be manually set to in-progress", ErrInvalidInput)
 		}
+		if job.Status == StatusInProgress && st != StatusInProgress {
+			return nil, fmt.Errorf("%w: job status is owned by the contract lifecycle", ErrInvalidInput)
+		}
+		if job.Status == StatusClosed && st != StatusClosed {
+			return nil, fmt.Errorf("%w: closed jobs cannot change status from the job API", ErrInvalidInput)
+		}
 		// Cannot reopen a job that is already in_progress or closed
 		if (job.Status == StatusInProgress || job.Status == StatusClosed) && st == StatusOpen {
 			return nil, fmt.Errorf("%w: active or completed jobs cannot be reopened", ErrInvalidInput)
+		}
+		if st == StatusClosed || st == StatusCancelled {
+			hasActive, err := s.repo.HasActiveContractForJob(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			if hasActive {
+				return nil, fmt.Errorf("%w: cannot cancel or close job while an active contract exists", ErrInvalidInput)
+			}
 		}
 		job.Status = st
 	}
@@ -200,7 +243,12 @@ func (s *Service) UpdateJob(ctx context.Context, callerID string, id uuid.UUID, 
 }
 
 // DeleteJob removes a job posting if caller owns the job.
-func (s *Service) DeleteJob(ctx context.Context, callerID string, id uuid.UUID) error {
+func (s *Service) DeleteJob(ctx context.Context, claims *auth.UserClaims, id uuid.UUID) error {
+	if err := auth.CheckEmailVerified(claims); err != nil {
+		return err
+	}
+	callerID := claims.UserID
+
 	if id == uuid.Nil {
 		return fmt.Errorf("%w: invalid job ID", ErrInvalidInput)
 	}

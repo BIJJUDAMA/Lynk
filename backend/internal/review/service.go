@@ -33,12 +33,8 @@ func NewService(repo ReviewRepository, contractReader ContractReader) *Service {
 
 // CreateReview validates submission constraints and persists a new peer review for a completed contract.
 func (s *Service) CreateReview(ctx context.Context, claims *auth.UserClaims, contractID uuid.UUID, req CreateReviewRequest) (*Review, error) {
-	if claims == nil {
-		return nil, ErrForbidden
-	}
-
-	if strings.TrimSpace(claims.UserID) == "" {
-		return nil, fmt.Errorf("%w: invalid user id", ErrInvalidInput)
+	if err := auth.CheckEmailVerified(claims); err != nil {
+		return nil, err
 	}
 	callerID := claims.UserID
 

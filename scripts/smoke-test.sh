@@ -634,19 +634,6 @@ if [[ "$DOWNLOAD_URL" == *"://minio:9000"* ]]; then
 fi
 log_pass "SEC-03: Presigned URL properly uses public authority: $DOWNLOAD_URL"
 
-# SEC-07 Assertion: Member resume route GET /api/v1/users/{id}/resume by another member (employer)
-log_substep "Fetching student resume via member route GET /api/v1/users/{id}/resume (SEC-07)..."
-MEMBER_RESUME_RESP=$(http_request "GET" "/api/v1/users/${VERIFIED_STUDENT_USER_ID}/resume" "$EMPLOYER_TOKEN" "" "200")
-MEMBER_DOWNLOAD_URL=$(json_extract "$MEMBER_RESUME_RESP" ".data.download_url")
-if [ -z "$MEMBER_DOWNLOAD_URL" ] || [ "$MEMBER_DOWNLOAD_URL" = "null" ]; then
-    MEMBER_DOWNLOAD_URL=$(json_extract "$MEMBER_RESUME_RESP" ".data.url")
-fi
-if [[ "$MEMBER_DOWNLOAD_URL" != http* ]]; then
-    log_fail "SEC-07: Member resume route failed to return download URL: $MEMBER_RESUME_RESP"
-    exit 1
-fi
-log_pass "SEC-07: Employer successfully retrieved student resume via /users/{id}/resume"
-
 # ------------------------------------------------------------------------------
 # STEP 7: Job Creation by Employer (POST /api/v1/jobs)
 # ------------------------------------------------------------------------------
@@ -805,6 +792,24 @@ if [ -z "$APPLICATION_ID" ] || [ "$APPLICATION_ID" = "null" ] || [ "$APPLICATION
     exit 1
 fi
 log_pass "Application submitted successfully: UUID $APPLICATION_ID (Status: $APPLICATION_STATUS)"
+
+# SEC-07 Assertion: Job poster downloads applicant resume via profile route after application
+log_substep "Fetching applicant resume via GET /api/v1/profile/{id}/resume (SEC-07)..."
+MEMBER_RESUME_RESP=$(http_request "GET" "/api/v1/profile/${VERIFIED_STUDENT_USER_ID}/resume" "$EMPLOYER_TOKEN" "" "200")
+PRESIGNED=$(json_extract "$MEMBER_RESUME_RESP" ".data.download_url")
+if [ -z "$PRESIGNED" ] || [ "$PRESIGNED" = "null" ]; then
+    PRESIGNED=$(json_extract "$MEMBER_RESUME_RESP" ".data.url")
+fi
+if [ -z "$PRESIGNED" ] || [ "$PRESIGNED" = "null" ]; then
+    log_fail "SEC-07: missing presigned download URL in JSON body: $MEMBER_RESUME_RESP"
+    exit 1
+fi
+DL_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -L --max-redirs 0 "$PRESIGNED" || true)
+if [ "$DL_STATUS" != "200" ]; then
+    log_fail "SEC-07: presigned GET expected 200, got $DL_STATUS"
+    exit 1
+fi
+log_pass "SEC-07: Job poster retrieved applicant resume via /profile/{id}/resume and GET presigned URL"
 
 # ------------------------------------------------------------------------------
 # STEP 11: Employer Applicant Review & Acceptance (Atomic Contract Generation)

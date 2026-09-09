@@ -160,7 +160,7 @@ export default function CreateJobPage() {
       department: resolvedDept,
       description: description.trim(),
       pay_type: payType,
-      budget: Number(budget),
+      budget_cents: Math.round(Number(budget) * 100),
       required_skills: skills,
       deadline: deadline ? deadline : undefined,
     };
@@ -346,7 +346,7 @@ export default function CreateJobPage() {
 
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
               <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                {budget ? formatBudget(Number(budget), payType) : "$0"}
+                {budget ? formatBudget(Math.round(Number(budget) * 100), payType) : "$0.00"}
               </span>
               <span>•</span>
               <span>Deadline: {deadline || "Flexible"}</span>

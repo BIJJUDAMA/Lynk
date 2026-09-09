@@ -34,8 +34,8 @@ function JobSearchContent() {
   const initialDept = searchParams.get("department") || "";
   const initialSkill = searchParams.get("skill") || "";
   const initialPayType = (searchParams.get("pay_type") as JobPayType) || "";
-  const initialMinBudget = searchParams.get("min_budget") || "";
-  const initialMaxBudget = searchParams.get("max_budget") || "";
+  const initialMinBudget = searchParams.get("min_budget_cents") || searchParams.get("min_budget") || "";
+  const initialMaxBudget = searchParams.get("max_budget_cents") || searchParams.get("max_budget") || "";
 
   const [filters, setFilters] = useState<JobFilterValues>({
     search: initialSearch,
@@ -62,8 +62,12 @@ function JobSearchContent() {
             department: filters.department.trim() || undefined,
             skill: filters.skill.trim() || undefined,
             pay_type: (filters.pay_type as JobPayType) || undefined,
-            min_budget: filters.min_budget ? Number(filters.min_budget) : undefined,
-            max_budget: filters.max_budget ? Number(filters.max_budget) : undefined,
+            min_budget_cents: filters.min_budget
+              ? Math.round(Number(filters.min_budget) * 100)
+              : undefined,
+            max_budget_cents: filters.max_budget
+              ? Math.round(Number(filters.max_budget) * 100)
+              : undefined,
             status: (filters.status as JobStatus) || undefined,
           },
           client

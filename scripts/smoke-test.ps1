@@ -698,17 +698,6 @@ startxref
     }
     Log-Pass "SEC-03: Presigned URL properly uses public authority: $downloadUrl"
 
-    # SEC-07 Assertion: Member resume route GET /api/v1/users/{id}/resume by another member (employer)
-    Log-Substep "Fetching student resume via member route GET /api/v1/users/{id}/resume (SEC-07)..."
-    $memberResumeResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/users/$VerifiedStudentUserId/resume" -Token $EmployerToken -ExpectedStatusCode 200
-    $memberResumeJson = $memberResumeResp | ConvertFrom-Json
-    $memberDownloadUrl = if ($memberResumeJson.data.download_url) { $memberResumeJson.data.download_url } else { $memberResumeJson.data.url }
-    if (-not $memberDownloadUrl -or -not $memberDownloadUrl.StartsWith("http")) {
-        Log-Fail "SEC-07: Member resume route failed to return download URL: $memberResumeResp"
-        exit 1
-    }
-    Log-Pass "SEC-07: Employer successfully retrieved student resume via /users/{id}/resume"
-
     # --------------------------------------------------------------------------
     # STEP 7: Job Creation by Employer (POST /api/v1/jobs)
     # --------------------------------------------------------------------------
@@ -830,6 +819,17 @@ startxref
         exit 1
     }
     Log-Pass "Application submitted successfully: UUID $ApplicationId (Status: $ApplicationStatus)"
+
+    # SEC-07 Assertion: Job poster downloads applicant resume via profile route after application
+    Log-Substep "Fetching applicant resume via GET /api/v1/profile/{id}/resume (SEC-07)..."
+    $memberResumeResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/profile/$VerifiedStudentUserId/resume" -Token $EmployerToken -ExpectedStatusCode 200
+    $memberResumeJson = $memberResumeResp | ConvertFrom-Json
+    $presigned = $memberResumeJson.data.download_url
+    if (-not $presigned) { $presigned = $memberResumeJson.data.url }
+    if (-not $presigned) { throw "SEC-07: missing presigned download URL in JSON body: $memberResumeResp" }
+    $dl = Invoke-WebRequest -Uri $presigned -Method GET -MaximumRedirection 0 -SkipHttpErrorCheck
+    if ($dl.StatusCode -ne 200) { throw "SEC-07: presigned GET expected 200, got $($dl.StatusCode)" }
+    Log-Pass "SEC-07: Job poster retrieved applicant resume via /profile/{id}/resume and GET presigned URL"
 
     # --------------------------------------------------------------------------
     # STEP 11: Employer Applicant Review & Acceptance (Atomic Contract Generation)

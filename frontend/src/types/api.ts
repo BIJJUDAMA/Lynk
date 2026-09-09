@@ -136,10 +136,9 @@ export type EmployerInfo = CreatorInfo;
 export interface Job {
   id: string;
   created_by: string; // UUID of posting member
-  employer_id?: string; // backward-compatibility alias
   title: string;
   description: string;
-  budget: number;
+  budget_cents: number;
   pay_type: JobPayType;
   required_skills: string[];
   department: string;
@@ -154,10 +153,9 @@ export interface Job {
 export interface JobSummary {
   id: string;
   created_by: string;
-  employer_id?: string; // alias
   title: string;
   description: string;
-  budget: number;
+  budget_cents: number;
   pay_type: JobPayType;
   department: string;
   status: JobStatus;
@@ -166,7 +164,7 @@ export interface JobSummary {
 export interface CreateJobRequest {
   title: string;
   description: string;
-  budget: number;
+  budget_cents: number;
   pay_type: JobPayType;
   required_skills: string[];
   department: string;
@@ -176,7 +174,7 @@ export interface CreateJobRequest {
 export interface UpdateJobRequest {
   title?: string;
   description?: string;
-  budget?: number;
+  budget_cents?: number;
   pay_type?: JobPayType;
   required_skills?: string[];
   department?: string;
@@ -189,12 +187,11 @@ export interface JobFilter {
   department?: string;
   skill?: string;
   skills?: string[];
-  min_budget?: number;
-  max_budget?: number;
+  min_budget_cents?: number;
+  max_budget_cents?: number;
   pay_type?: JobPayType;
   status?: JobStatus;
   created_by?: string;
-  employer_id?: string;
   limit?: number;
   offset?: number;
 }
@@ -221,7 +218,6 @@ export interface Application {
   id: string;
   job_id: string;
   applicant_id: string;
-  student_id: string; // alias for backward-compatibility
   cover_letter: string;
   resume_key?: string | null;
   status: ApplicationStatus;
@@ -267,9 +263,7 @@ export interface Contract {
   application_id: string;
   client_id: string;
   freelancer_id: string;
-  employer_id?: string; // alias
-  student_id?: string; // alias
-  agreed_budget: number;
+  agreed_budget_cents: number;
   status: ContractStatus;
   started_at?: string | null;
   completed_at?: string | null;

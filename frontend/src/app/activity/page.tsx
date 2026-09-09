@@ -497,7 +497,7 @@ function ActivityContent() {
                           • {job.department}
                         </span>
                         <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                          • {formatBudget(job.budget, job.pay_type)}
+                          • {formatBudget(job.budget_cents, job.pay_type)}
                         </span>
                       </div>
 
@@ -594,7 +594,7 @@ function ActivityContent() {
                         </span>
 
                         <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                          • {formatBudget(contract.agreed_budget, "fixed")}
+                          • {formatBudget(contract.agreed_budget_cents, "fixed")}
                         </span>
                       </div>
 

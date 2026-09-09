@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/httpx"
 	"github.com/lynk/backend/internal/httputil"
 )
 
@@ -34,17 +35,14 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 	r.Get("/users/{id}/reviews", h.GetUserReviews)
 	r.Get("/api/v1/users/{id}/reviews", h.GetUserReviews)
 
+	authMiddleware = httpx.DefaultAuthMiddleware(authMiddleware)
+
 	// Protected routes (contract participants)
-	if authMiddleware != nil {
-		r.Group(func(pr chi.Router) {
-			pr.Use(authMiddleware)
-			pr.Post("/contracts/{id}/reviews", h.CreateReview)
-			pr.Post("/api/v1/contracts/{id}/reviews", h.CreateReview)
-		})
-	} else {
-		r.Post("/contracts/{id}/reviews", h.CreateReview)
-		r.Post("/api/v1/contracts/{id}/reviews", h.CreateReview)
-	}
+	r.Group(func(pr chi.Router) {
+		pr.Use(authMiddleware)
+		pr.Post("/contracts/{id}/reviews", h.CreateReview)
+		pr.Post("/api/v1/contracts/{id}/reviews", h.CreateReview)
+	})
 
 	return r
 }
@@ -75,6 +73,10 @@ func (h *Handler) CreateReview(w http.ResponseWriter, r *http.Request) {
 
 	review, err := h.service.CreateReview(r.Context(), claims, contractID, req)
 	if err != nil {
+		if errors.Is(err, auth.ErrEmailNotVerified) {
+			httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg, nil)
+			return
+		}
 		if errors.Is(err, ErrContractNotFound) {
 			httputil.WriteError(w, r, http.StatusNotFound, "CONTRACT_NOT_FOUND", "Contract not found", nil)
 			return

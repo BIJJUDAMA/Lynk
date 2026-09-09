@@ -39,7 +39,7 @@ type Job struct {
 	CreatedBy      string       `json:"created_by"`
 	Title          string       `json:"title"`
 	Description    string       `json:"description"`
-	Budget         float64      `json:"budget"`
+	BudgetCents    int64        `json:"budget_cents"`
 	PayType        string       `json:"pay_type"`
 	RequiredSkills []string     `json:"required_skills"`
 	Department     string       `json:"department"`
@@ -54,7 +54,7 @@ type Job struct {
 type CreateJobRequest struct {
 	Title          string   `json:"title"`
 	Description    string   `json:"description"`
-	Budget         float64  `json:"budget"`
+	BudgetCents    int64    `json:"budget_cents"`
 	PayType        string   `json:"pay_type"`
 	RequiredSkills []string `json:"required_skills"`
 	Department     string   `json:"department"`
@@ -65,7 +65,7 @@ type CreateJobRequest struct {
 type UpdateJobRequest struct {
 	Title          *string   `json:"title,omitempty"`
 	Description    *string   `json:"description,omitempty"`
-	Budget         *float64  `json:"budget,omitempty"`
+	BudgetCents    *int64    `json:"budget_cents,omitempty"`
 	PayType        *string   `json:"pay_type,omitempty"`
 	RequiredSkills *[]string `json:"required_skills,omitempty"`
 	Department     *string   `json:"department,omitempty"`
@@ -79,8 +79,8 @@ type JobFilter struct {
 	Department string   `json:"department,omitempty"`
 	Skill      string   `json:"skill,omitempty"`
 	Skills     []string `json:"skills,omitempty"`
-	MinBudget  *float64 `json:"min_budget,omitempty"`
-	MaxBudget  *float64 `json:"max_budget,omitempty"`
+	MinBudgetCents *int64 `json:"min_budget_cents,omitempty"`
+	MaxBudgetCents *int64 `json:"max_budget_cents,omitempty"`
 	PayType    string   `json:"pay_type,omitempty"`
 	Status     string   `json:"status,omitempty"`
 	CreatedBy  *string  `json:"created_by,omitempty"`

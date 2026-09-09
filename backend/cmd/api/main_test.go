@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,19 +49,33 @@ func (m *mockJobRepo) DeleteJob(ctx context.Context, id uuid.UUID) error     { r
 func (m *mockJobRepo) ListJobs(ctx context.Context, filter job.JobFilter) ([]*job.Job, error) {
 	return []*job.Job{{ID: uuid.New(), Title: "Software Engineer"}}, nil
 }
+func (m *mockJobRepo) HasActiveContractForJob(ctx context.Context, jobID uuid.UUID) (bool, error) {
+	return false, nil
+}
+
+func TestBuildRouter_HealthNilPoolIsServiceUnavailable(t *testing.T) {
+	cfg := LoadConfig()
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when db pool is nil, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
 
 func TestHealthEndpoint(t *testing.T) {
 	cfg := DefaultTestConfig()
 	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil)
 
-	t.Run("GET /health returns 200 and ok status", func(t *testing.T) {
+	t.Run("GET /health returns 503 when db pool is nil", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
 		rr := httptest.NewRecorder()
 
 		router.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d", rr.Code)
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 Service Unavailable, got %d", rr.Code)
 		}
 
 		var resp map[string]interface{}
@@ -68,24 +83,67 @@ func TestHealthEndpoint(t *testing.T) {
 			t.Fatalf("failed to decode response: %v", err)
 		}
 
-		if resp["status"] != "ok" {
-			t.Errorf("expected status 'ok', got %v", resp["status"])
+		if resp["status"] != "unhealthy" {
+			t.Errorf("expected status 'unhealthy', got %v", resp["status"])
 		}
-		if resp["time"] == nil || resp["time"] == "" {
-			t.Errorf("expected non-empty time in response")
+		if resp["database"] != "not_configured" {
+			t.Errorf("expected database 'not_configured', got %v", resp["database"])
 		}
 	})
 
-	t.Run("GET /api/v1/health returns 200 and ok status", func(t *testing.T) {
+	t.Run("GET /api/v1/health returns 503 when db pool is nil", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 		rr := httptest.NewRecorder()
 
 		router.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK, got %d", rr.Code)
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 Service Unavailable, got %d", rr.Code)
 		}
 	})
+}
+
+func TestBuildRouter_MarketplaceWritesRequireVerifiedEmail(t *testing.T) {
+	cfg := DefaultTestConfig()
+
+	unverified := &mockValidator{
+		validToken: "test",
+		claims: &auth.UserClaims{
+			UserID:        "u1",
+			Email:         "a@stanford.edu",
+			EmailVerified: false,
+			Roles:         []string{"member"},
+		},
+	}
+
+	jobRepo := &mockJobRepo{}
+	jobService := job.NewService(jobRepo)
+	jobHandler := job.NewHandler(jobService, jobRepo)
+
+	router := BuildRouter(
+		cfg,
+		nil,
+		nil,
+		jobHandler,
+		nil,
+		nil,
+		nil,
+		middleware.AuthMiddleware(unverified),
+		nil,
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(`{"title":"x","description":"yyyyyyyyyy","budget_cents":10000,"pay_type":"fixed"}`))
+	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 EMAIL_NOT_VERIFIED on POST /jobs for unverified session, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "EMAIL_NOT_VERIFIED") {
+		t.Fatalf("expected EMAIL_NOT_VERIFIED code, got %s", rec.Body.String())
+	}
 }
 
 func TestRouteAssembly_PublicAndProtected(t *testing.T) {
@@ -192,6 +250,20 @@ func DefaultTestConfig() Config {
 	}
 }
 
+func TestWarnIfDefaultSecrets_NondDev(t *testing.T) {
+	msg := warnIfDefaultSecrets("production", "minio_admin", "minio_password", "lynk_supertokens_secret_api_key_2026")
+	if msg == "" {
+		t.Fatal("expected warning for default secrets in production")
+	}
+}
+
+func TestWarnIfDefaultSecrets_DevSilent(t *testing.T) {
+	msg := warnIfDefaultSecrets("development", "minio_admin", "minio_password", "lynk_supertokens_secret_api_key_2026")
+	if msg != "" {
+		t.Fatalf("dev should not warn, got %q", msg)
+	}
+}
+
 func TestLoadConfig_SuperTokens(t *testing.T) {
 	t.Run("default SuperTokens config when env unset", func(t *testing.T) {
 		t.Setenv("SUPERTOKENS_CONNECTION_URI", "")
@@ -257,12 +329,12 @@ func TestTimeoutMiddleware(t *testing.T) {
 	cfg := DefaultTestConfig()
 	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil)
 
-	t.Run("fast handler returns 200 within timeout window", func(t *testing.T) {
+	t.Run("fast handler returns 503 when db pool is nil", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
 		rr := httptest.NewRecorder()
 		router.ServeHTTP(rr, req)
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK for fast handler, got %d", rr.Code)
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 Service Unavailable when db pool is nil, got %d", rr.Code)
 		}
 	})
 
@@ -331,6 +403,23 @@ func TestRequestBodyLimiter(t *testing.T) {
 		router.ServeHTTP(rr, req)
 		if rr.Code != http.StatusRequestEntityTooLarge {
 			t.Fatalf("expected 413 Request Entity Too Large, got %d", rr.Code)
+		}
+	})
+
+	t.Run("unauthenticated job POST returns 401", func(t *testing.T) {
+		cfg := LoadConfig()
+		jobRepo := &mockJobRepo{}
+		jobSvc := job.NewService(jobRepo)
+		jobHandler := job.NewHandler(jobSvc, jobRepo)
+		router := BuildRouter(cfg, nil, nil, jobHandler, nil, nil, nil, nil, nil)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(`{"title":"x","description":"y","budget_cents":100,"pay_type":"fixed"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized && rec.Code != http.StatusForbidden {
+			t.Fatalf("BuildRouter must reject unauthenticated job POST, got %d body=%s", rec.Code, rec.Body.String())
 		}
 	})
 

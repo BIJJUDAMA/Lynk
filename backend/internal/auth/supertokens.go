@@ -128,6 +128,21 @@ func InitSupertokens(cfg SuperTokensConfig) error {
 			}),
 			emailverification.Init(evmodels.TypeInput{
 				Mode: evmodels.ModeRequired,
+				Override: &evmodels.OverrideStruct{
+					APIs: func(originalImplementation evmodels.APIInterface) evmodels.APIInterface {
+						ogVerifyEmailPOST := *originalImplementation.VerifyEmailPOST
+						(*originalImplementation.VerifyEmailPOST) = func(token string, sessionContainer sessmodels.SessionContainer, tenantId string, options evmodels.APIOptions, userContext supertokens.UserContext) (evmodels.VerifyEmailPOSTResponse, error) {
+							resp, err := ogVerifyEmailPOST(token, sessionContainer, tenantId, options, userContext)
+							if err == nil && sessionContainer != nil && sessionContainer.MergeIntoAccessTokenPayload != nil {
+								_ = sessionContainer.MergeIntoAccessTokenPayload(map[string]interface{}{
+									"emailVerified": true,
+								})
+							}
+							return resp, err
+						}
+						return originalImplementation
+					},
+				},
 			}),
 			session.Init(&sessmodels.TypeInput{
 				ExposeAccessTokenToFrontendInCookieBasedAuth: true,
@@ -144,6 +159,21 @@ func InitSupertokens(cfg SuperTokensConfig) error {
 								if user, err := emailpassword.GetUserByID(userID, userContext); err == nil && user != nil {
 									accessTokenPayload["email"] = user.Email
 								}
+							}
+							if _, exists := accessTokenPayload["emailVerified"]; !exists {
+								verified, vErr := emailverification.IsEmailVerified(userID, nil)
+								if vErr != nil {
+									verified = false
+								}
+								accessTokenPayload["emailVerified"] = verified
+							}
+							if _, exists := accessTokenPayload["roles"]; !exists {
+								rolesRes, rErr := userroles.GetRolesForUser("public", userID)
+								roles := []string{"member"}
+								if rErr == nil && rolesRes.OK != nil && len(rolesRes.OK.Roles) > 0 {
+									roles = rolesRes.OK.Roles
+								}
+								accessTokenPayload["roles"] = roles
 							}
 							return ogCreateNewSession(userID, accessTokenPayload, sessionDataInDatabase, disableAntiCsrf, tenantId, userContext)
 						}

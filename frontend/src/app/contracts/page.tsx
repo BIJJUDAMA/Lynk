@@ -393,7 +393,7 @@ export default function ContractsPage() {
           {filteredContracts.map((contract) => {
             const badge = getContractStatusBadgeClasses(contract.status);
             const currentUserId = backendUser?.id || user?.id;
-            const freelancerId = contract.freelancer_id || contract.student_id;
+            const freelancerId = contract.freelancer_id;
 
 
             const isFreelancer =
@@ -474,7 +474,7 @@ export default function ContractsPage() {
                         <DollarSign className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                         <span>
                           {formatBudget(
-                            contract.agreed_budget,
+                            contract.agreed_budget_cents,
                             contract.job?.pay_type || "fixed"
                           )}
                         </span>

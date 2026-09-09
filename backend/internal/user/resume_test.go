@@ -1,6 +1,7 @@
 package user_test
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"errors"
@@ -18,6 +19,29 @@ import (
 	"github.com/lynk/backend/internal/storage"
 	"github.com/lynk/backend/internal/user"
 )
+
+func zipWith(files map[string]string) []byte {
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for name, body := range files {
+		f, err := w.Create(name)
+		if err != nil {
+			panic(err)
+		}
+		if _, err := f.Write([]byte(body)); err != nil {
+			panic(err)
+		}
+	}
+	_ = w.Close()
+	return buf.Bytes()
+}
+
+func validDOCXFixture() []byte {
+	return zipWith(map[string]string{
+		"[Content_Types].xml": `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
+		"word/document.xml":   `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>`,
+	})
+}
 
 // mockStorageClient implements storage.Client for isolated unit testing.
 type mockStorageClient struct {
@@ -432,6 +456,46 @@ func TestService_GetResumeDownloadResult(t *testing.T) {
 	}
 }
 
+type stubResumeAccess struct {
+	allow bool
+}
+
+func (s *stubResumeAccess) JobOwnerMayDownloadApplicantResume(ctx context.Context, ownerID, applicantUserID string) (bool, error) {
+	return s.allow, nil
+}
+
+func TestGetResumeDownloadResult_JobOwnerCanDownloadApplicantResume(t *testing.T) {
+	repo := newMockUserRepository()
+	checker := &stubResumeAccess{allow: true}
+	svc := user.NewService(repo, newMockStorageClient()).WithResumeAccessChecker(checker)
+
+	owner := &auth.UserClaims{UserID: "poster", EmailVerified: true, Roles: []string{"member"}}
+	applicantID := "applicant"
+	key := "resumes/applicant/cv.pdf"
+	_ = repo.UpdateResume(context.Background(), applicantID, key, "cv.pdf", 100)
+
+	res, err := svc.GetResumeDownloadResult(context.Background(), owner, applicantID)
+	if err != nil {
+		t.Fatalf("expected job owner access, got %v", err)
+	}
+	if res == nil || res.DownloadURL == "" {
+		t.Fatal("expected presigned URL")
+	}
+}
+
+func TestGetResumeDownloadResult_UnrelatedMemberForbidden(t *testing.T) {
+	repo := newMockUserRepository()
+	checker := &stubResumeAccess{allow: false}
+	svc := user.NewService(repo, newMockStorageClient()).WithResumeAccessChecker(checker)
+	_ = repo.UpdateResume(context.Background(), "applicant", "resumes/applicant/cv.pdf", "cv.pdf", 100)
+
+	stranger := &auth.UserClaims{UserID: "stranger", EmailVerified: true, Roles: []string{"member"}}
+	_, err := svc.GetResumeDownloadResult(context.Background(), stranger, "applicant")
+	if !errors.Is(err, user.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+}
+
 func TestService_GetResumeDownloadURL_AuthorizedAdmin(t *testing.T) {
 	repo := newMockUserRepository()
 	s3Client := newMockStorageClient()
@@ -482,8 +546,8 @@ func TestService_UploadResume_MagicBytesValidation(t *testing.T) {
 		t.Fatalf("expected profile with resume key")
 	}
 
-	// 2. Valid DOCX with PK\x03\x04 magic bytes
-	docxContent := append([]byte{0x50, 0x4B, 0x03, 0x04}, []byte("mock docx zip contents")...)
+	// 2. Valid DOCX with OOXML Content_Types
+	docxContent := validDOCXFixture()
 	docxBody := bytes.NewReader(docxContent)
 	profile, err = svc.UploadResume(context.Background(), claims, "resume.docx", int64(docxBody.Len()), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", docxBody)
 	if err != nil {
@@ -505,6 +569,14 @@ func TestService_UploadResume_MagicBytesValidation(t *testing.T) {
 	_, err = svc.UploadResume(context.Background(), claims, "fake.docx", int64(fakeDOCXBody.Len()), "application/octet-stream", fakeDOCXBody)
 	if !errors.Is(err, user.ErrInvalidFileType) {
 		t.Fatalf("expected ErrInvalidFileType for fake DOCX, got %v", err)
+	}
+
+	// 4b. Invalid: DOCX extension but generic ZIP without OOXML markers
+	plainZip := zipWith(map[string]string{"readme.txt": "hello"})
+	plainZipBody := bytes.NewReader(plainZip)
+	_, err = svc.UploadResume(context.Background(), claims, "fake.docx", int64(plainZipBody.Len()), "application/octet-stream", plainZipBody)
+	if !errors.Is(err, user.ErrInvalidFileType) {
+		t.Fatalf("expected ErrInvalidFileType for plain ZIP as DOCX, got %v", err)
 	}
 
 	// 5. Invalid: Unsupported extension (.exe)
@@ -530,8 +602,118 @@ func TestService_UploadResume_MagicBytesValidation(t *testing.T) {
 	}
 	pdfBody = bytes.NewReader([]byte("%PDF-1.7 valid pdf"))
 	_, err = svc.UploadResume(context.Background(), unverifiedClaims, "resume.pdf", int64(pdfBody.Len()), "application/pdf", pdfBody)
-	if !errors.Is(err, user.ErrForbidden) {
-		t.Fatalf("expected ErrForbidden for unverified email, got %v", err)
+	if !errors.Is(err, auth.ErrEmailNotVerified) {
+		t.Fatalf("expected ErrEmailNotVerified for unverified email, got %v", err)
+	}
+}
+
+// deleteSpy wraps a storage.Client and records whether DeleteResume was called with a canceled context.
+type deleteSpy struct {
+	storage.Client
+	deletedWithCancel bool
+	lastDeadline      time.Time
+	mu                sync.Mutex
+}
+
+func (d *deleteSpy) DeleteResume(ctx context.Context, key string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if dl, ok := ctx.Deadline(); ok {
+		d.lastDeadline = dl
+	}
+	if err := ctx.Err(); err != nil {
+		d.deletedWithCancel = true
+		return err
+	}
+	return d.Client.DeleteResume(ctx, key)
+}
+
+func TestCompensatingDelete_UsesWithoutCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	derived := context.WithoutCancel(ctx)
+	if derived.Err() != nil {
+		t.Fatal("WithoutCancel context must not be canceled")
+	}
+}
+
+func TestService_UploadResume_CompensatingDeleteIgnoresCanceledParent(t *testing.T) {
+	repo := newMockUserRepository()
+	repo.errUpdateResume = errors.New("database disk full")
+	base := newMockStorageClient()
+	spy := &deleteSpy{Client: base}
+	svc := user.NewService(repo, spy)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	claims := &auth.UserClaims{
+		UserID:        uuid.New().String(),
+		Email:         "student@berkeley.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	pdfContent := []byte("%PDF-1.4 compensating delete test")
+	pdfBody := bytes.NewReader(pdfContent)
+	_, err := svc.UploadResume(ctx, claims, "cv.pdf", int64(len(pdfContent)), "application/pdf", pdfBody)
+	if err == nil {
+		t.Fatal("expected metadata update error")
+	}
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if spy.deletedWithCancel {
+		t.Fatal("compensating delete used canceled parent context")
+	}
+	if len(base.deletedKeys) == 0 {
+		t.Fatal("expected compensating delete to run with uncanceled context")
+	}
+}
+
+func TestService_UploadResume_OldResumeDeleteIgnoresCanceledParent(t *testing.T) {
+	repo := newMockUserRepository()
+	base := newMockStorageClient()
+	spy := &deleteSpy{Client: base}
+	svc := user.NewService(repo, spy)
+
+	userUUID := uuid.New().String()
+	oldKey := "resumes/" + userUUID + "/old_resume.pdf"
+	base.uploads[oldKey] = []byte("%PDF-1.4 old resume content")
+	if err := repo.UpdateResume(context.Background(), userUUID, oldKey, "old_resume.pdf", 100); err != nil {
+		t.Fatalf("failed to seed initial resume: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	claims := &auth.UserClaims{
+		UserID:        userUUID,
+		Email:         "student@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	newPDF := bytes.NewReader([]byte("%PDF-1.7 updated resume content"))
+	_, err := svc.UploadResume(ctx, claims, "new_resume.pdf", int64(newPDF.Len()), "application/pdf", newPDF)
+	if err != nil {
+		t.Fatalf("unexpected error uploading new resume: %v", err)
+	}
+
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if spy.deletedWithCancel {
+		t.Fatal("old resume cleanup used canceled parent context")
+	}
+	foundOldDeleted := false
+	for _, k := range base.deletedKeys {
+		if k == oldKey {
+			foundOldDeleted = true
+			break
+		}
+	}
+	if !foundOldDeleted {
+		t.Errorf("expected old resume key %q to be deleted, deleted keys: %v", oldKey, base.deletedKeys)
 	}
 }
 

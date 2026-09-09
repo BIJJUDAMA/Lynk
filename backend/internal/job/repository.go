@@ -17,6 +17,7 @@ type JobRepository interface {
 	UpdateJob(ctx context.Context, job *Job) error
 	DeleteJob(ctx context.Context, id uuid.UUID) error
 	ListJobs(ctx context.Context, filter JobFilter) ([]*Job, error)
+	HasActiveContractForJob(ctx context.Context, jobID uuid.UUID) (bool, error)
 }
 
 // Repository implements JobRepository backed by PostgreSQL with pgxpool.Pool.
@@ -31,6 +32,14 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 var _ JobRepository = (*Repository)(nil)
 
+func skillFilterSQL(argIdx int) string {
+	return fmt.Sprintf("j.required_skills @> ARRAY[$%d]::text[]", argIdx)
+}
+
+func searchFilterSQL(argIdx int) string {
+	return fmt.Sprintf("(j.title ILIKE $%d OR j.description ILIKE $%d)", argIdx, argIdx)
+}
+
 // CreateJob inserts a new job record and populates generated ID and timestamps.
 func (r *Repository) CreateJob(ctx context.Context, job *Job) error {
 	if job.ID == uuid.Nil {
@@ -44,11 +53,11 @@ func (r *Repository) CreateJob(ctx context.Context, job *Job) error {
 	}
 	query := `
 		INSERT INTO jobs (id, created_by, title, description, budget, pay_type, required_skills, department, deadline, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+		VALUES ($1, $2, $3, $4, $5::numeric / 100, $6, $7, $8, $9, $10, NOW(), NOW())
 		RETURNING created_at, updated_at;
 	`
 	return r.db.QueryRow(ctx, query,
-		job.ID, job.CreatedBy, job.Title, job.Description, job.Budget, job.PayType,
+		job.ID, job.CreatedBy, job.Title, job.Description, job.BudgetCents, job.PayType,
 		job.RequiredSkills, job.Department, job.Deadline, job.Status,
 	).Scan(&job.CreatedAt, &job.UpdatedAt)
 }
@@ -57,7 +66,7 @@ func (r *Repository) CreateJob(ctx context.Context, job *Job) error {
 func (r *Repository) GetJobByID(ctx context.Context, id uuid.UUID) (*Job, error) {
 	query := `
 		SELECT 
-			j.id, j.created_by, j.title, j.description, j.budget, j.pay_type, 
+			j.id, j.created_by, j.title, j.description, ROUND(j.budget * 100)::bigint, j.pay_type, 
 			j.required_skills, j.department, j.deadline, j.status, j.created_at, j.updated_at,
 			u.id, COALESCE(u.email, ''), 
 			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.department, ''),
@@ -79,7 +88,7 @@ func (r *Repository) GetJobByID(ctx context.Context, id uuid.UUID) (*Job, error)
 	)
 
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&j.ID, &j.CreatedBy, &j.Title, &j.Description, &j.Budget, &j.PayType,
+		&j.ID, &j.CreatedBy, &j.Title, &j.Description, &j.BudgetCents, &j.PayType,
 		&j.RequiredSkills, &j.Department, &j.Deadline, &j.Status, &j.CreatedAt, &j.UpdatedAt,
 		&creatorID, &creatorEmail, &firstName, &lastName, &dept, &org, &orgWebsite,
 	)
@@ -116,13 +125,13 @@ func (r *Repository) UpdateJob(ctx context.Context, job *Job) error {
 	}
 	query := `
 		UPDATE jobs
-		SET title = $1, description = $2, budget = $3, pay_type = $4,
+		SET title = $1, description = $2, budget = $3::numeric / 100, pay_type = $4,
 		    required_skills = $5, department = $6, deadline = $7, status = $8, updated_at = NOW()
 		WHERE id = $9
 		RETURNING updated_at;
 	`
 	return r.db.QueryRow(ctx, query,
-		job.Title, job.Description, job.Budget, job.PayType,
+		job.Title, job.Description, job.BudgetCents, job.PayType,
 		job.RequiredSkills, job.Department, job.Deadline, job.Status, job.ID,
 	).Scan(&job.UpdatedAt)
 }
@@ -155,6 +164,11 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 		argIdx++
 	}
 
+	// Hide open jobs whose application deadline has passed from public listings only.
+	if cond := publicListingDeadlineCondition(filter); cond != "" {
+		conditions = append(conditions, cond)
+	}
+
 	// Department filter
 	if filter.Department != "" {
 		conditions = append(conditions, fmt.Sprintf("LOWER(j.department) = LOWER($%d)", argIdx))
@@ -162,9 +176,9 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 		argIdx++
 	}
 
-	// Single skill filter
+	// Single skill filter (GIN-friendly @> on required_skills)
 	if filter.Skill != "" {
-		conditions = append(conditions, fmt.Sprintf("$%d = ANY(j.required_skills)", argIdx))
+		conditions = append(conditions, skillFilterSQL(argIdx))
 		args = append(args, filter.Skill)
 		argIdx++
 	}
@@ -176,17 +190,17 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 		argIdx++
 	}
 
-	// Min budget
-	if filter.MinBudget != nil {
-		conditions = append(conditions, fmt.Sprintf("j.budget >= $%d", argIdx))
-		args = append(args, *filter.MinBudget)
+	// Min budget (cents)
+	if filter.MinBudgetCents != nil {
+		conditions = append(conditions, fmt.Sprintf("j.budget >= $%d::numeric / 100", argIdx))
+		args = append(args, *filter.MinBudgetCents)
 		argIdx++
 	}
 
-	// Max budget
-	if filter.MaxBudget != nil {
-		conditions = append(conditions, fmt.Sprintf("j.budget <= $%d", argIdx))
-		args = append(args, *filter.MaxBudget)
+	// Max budget (cents)
+	if filter.MaxBudgetCents != nil {
+		conditions = append(conditions, fmt.Sprintf("j.budget <= $%d::numeric / 100", argIdx))
+		args = append(args, *filter.MaxBudgetCents)
 		argIdx++
 	}
 
@@ -204,9 +218,9 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 		argIdx++
 	}
 
-	// Search keyword matching title or description (case-insensitive)
+	// Search keyword matching title or description (case-insensitive, trigram-indexable ILIKE)
 	if filter.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("(j.title ILIKE $%d OR j.description ILIKE $%d)", argIdx, argIdx))
+		conditions = append(conditions, searchFilterSQL(argIdx))
 		args = append(args, "%"+filter.Search+"%")
 		argIdx++
 	}
@@ -228,7 +242,7 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 
 	query := fmt.Sprintf(`
 		SELECT 
-			j.id, j.created_by, j.title, j.description, j.budget, j.pay_type, 
+			j.id, j.created_by, j.title, j.description, ROUND(j.budget * 100)::bigint, j.pay_type, 
 			j.required_skills, j.department, j.deadline, j.status, j.created_at, j.updated_at,
 			u.id, COALESCE(u.email, ''), 
 			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.department, ''),
@@ -262,7 +276,7 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 			orgWebsite   string
 		)
 		err := rows.Scan(
-			&j.ID, &j.CreatedBy, &j.Title, &j.Description, &j.Budget, &j.PayType,
+			&j.ID, &j.CreatedBy, &j.Title, &j.Description, &j.BudgetCents, &j.PayType,
 			&j.RequiredSkills, &j.Department, &j.Deadline, &j.Status, &j.CreatedAt, &j.UpdatedAt,
 			&creatorID, &creatorEmail, &firstName, &lastName, &dept, &org, &orgWebsite,
 		)
@@ -295,4 +309,31 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 	}
 
 	return jobs, nil
+}
+
+// publicListingDeadlineCondition returns the SQL predicate hiding expired open jobs from public browse.
+// Owner listings (CreatedBy set) skip this filter so /jobs/mine shows all owned jobs.
+func publicListingDeadlineCondition(filter JobFilter) string {
+	if filter.CreatedBy != nil {
+		return ""
+	}
+	if filter.Status == "" || filter.Status == StatusOpen {
+		return "(j.deadline IS NULL OR j.deadline >= CURRENT_DATE)"
+	}
+	return ""
+}
+
+// HasActiveContractForJob reports whether the job has a non-terminal contract (draft or active).
+func (r *Repository) HasActiveContractForJob(ctx context.Context, jobID uuid.UUID) (bool, error) {
+	query := `
+		SELECT EXISTS(
+			SELECT 1 FROM contracts
+			WHERE job_id = $1 AND status IN ('draft', 'active')
+		);
+	`
+	var exists bool
+	if err := r.db.QueryRow(ctx, query, jobID).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
 }

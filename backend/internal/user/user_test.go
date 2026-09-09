@@ -246,18 +246,73 @@ func TestGetMe_Success(t *testing.T) {
 	}
 }
 
+func TestService_UpdateProfile_OmitsGraduationYearPreservesExisting(t *testing.T) {
+	repo := newMockUserRepository()
+	svc := user.NewService(repo)
+
+	userID := "st_member_1"
+	_ = repo.UpsertUser(context.Background(), &user.User{ID: userID, Email: "a@stanford.edu", Role: user.RoleMember})
+	_ = repo.UpsertProfile(context.Background(), &user.Profile{
+		UserID:         userID,
+		FirstName:      "Ada",
+		LastName:       "Lovelace",
+		GraduationYear: 2026,
+		Skills:         []string{},
+		PortfolioLinks: []string{},
+	})
+
+	updated, err := svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{
+		FirstName:      "Ada",
+		LastName:       "Lovelace",
+		Bio:            "Updated bio",
+		GraduationYear: nil,
+		Skills:         []string{"go"},
+		PortfolioLinks: []string{},
+	})
+	if err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+	if updated.GraduationYear != 2026 {
+		t.Fatalf("expected graduation_year 2026 preserved, got %d", updated.GraduationYear)
+	}
+}
+
+func TestService_UpdateProfile_ExplicitGraduationYearUpdates(t *testing.T) {
+	repo := newMockUserRepository()
+	svc := user.NewService(repo)
+	userID := "st_member_2"
+	_ = repo.UpsertUser(context.Background(), &user.User{ID: userID, Email: "b@stanford.edu", Role: user.RoleMember})
+	_ = repo.UpsertProfile(context.Background(), &user.Profile{UserID: userID, GraduationYear: 2025, Skills: []string{}, PortfolioLinks: []string{}})
+
+	year := 2028
+	updated, err := svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{
+		FirstName:      "X",
+		LastName:       "Y",
+		GraduationYear: &year,
+		Skills:         []string{},
+		PortfolioLinks: []string{},
+	})
+	if err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+	if updated.GraduationYear != 2028 {
+		t.Fatalf("expected 2028, got %d", updated.GraduationYear)
+	}
+}
+
 func TestUpdateProfile_Validation(t *testing.T) {
 	repo := newMockUserRepository()
 	svc := user.NewService(repo)
 	userID := "test-user-" + uuid.New().String()
 
 	// 1. Valid update
+	year2025 := 2025
 	req := user.UpdateProfileRequest{
 		FirstName:           "Alex",
 		LastName:            "Rivera",
 		Bio:                 "CS Senior at Stanford interested in distributed systems",
 		Department:          "Computer Science",
-		GraduationYear:      2025,
+		GraduationYear:      &year2025,
 		Skills:              []string{"Go", "React", "Docker"},
 		PortfolioLinks:      []string{"https://github.com/alexr"},
 		Organization:        "Stanford ACM",
@@ -281,7 +336,8 @@ func TestUpdateProfile_Validation(t *testing.T) {
 	}
 
 	// 3. Invalid graduation year
-	_, err = svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{GraduationYear: 1800})
+	invalidYear := 1800
+	_, err = svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{GraduationYear: &invalidYear})
 	if !errors.Is(err, user.ErrInvalidInput) {
 		t.Errorf("expected ErrInvalidInput, got %v", err)
 	}

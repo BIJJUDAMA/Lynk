@@ -100,8 +100,8 @@ export default function ContractDetailPage() {
 
   // Determine user participant status (unified: client_id/freelancer_id with fallback to legacy aliases)
   const currentUserId = backendUser?.id || user?.id;
-  const freelancerId = contract?.freelancer_id || contract?.student_id;
-  const clientId = contract?.client_id || contract?.employer_id;
+  const freelancerId = contract?.freelancer_id;
+  const clientId = contract?.client_id;
 
   const isFreelancer =
     Boolean(currentUserId && freelancerId === currentUserId) ||
@@ -324,7 +324,7 @@ export default function ContractDetailPage() {
                 Agreed Budget
               </span>
               <p className="mt-1 text-2xl font-bold text-emerald-800 dark:text-emerald-300">
-                {formatBudget(contract.agreed_budget, contract.job?.pay_type || "fixed")}
+                {formatBudget(contract.agreed_budget_cents, contract.job?.pay_type || "fixed")}
               </p>
               <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80">
                 Binding agreement

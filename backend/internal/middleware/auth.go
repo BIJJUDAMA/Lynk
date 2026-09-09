@@ -14,13 +14,79 @@ import (
 	"github.com/supertokens/supertokens-golang/recipe/userroles"
 )
 
+type statusTrackingWriter struct {
+	http.ResponseWriter
+	wrote bool
+	code  int
+}
+
+func newStatusTrackingWriter(w http.ResponseWriter) *statusTrackingWriter {
+	return &statusTrackingWriter{ResponseWriter: w}
+}
+
+func (w *statusTrackingWriter) Wrote() bool { return w.wrote }
+
+func (w *statusTrackingWriter) WriteHeader(code int) {
+	if w.wrote {
+		return
+	}
+	w.wrote = true
+	w.code = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusTrackingWriter) Write(b []byte) (int, error) {
+	if !w.wrote {
+		w.wrote = true
+		w.code = http.StatusOK
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *statusTrackingWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// ParseSessionPayload extracts email, verification status, and roles from an access-token payload.
+// Returns complete=true only when all three fields are present and valid.
+func ParseSessionPayload(payload map[string]interface{}) (email string, verified bool, roles []string, complete bool) {
+	if payload == nil {
+		return "", false, nil, false
+	}
+	if e, ok := payload["email"].(string); ok {
+		email = strings.TrimSpace(e)
+	}
+	switch v := payload["emailVerified"].(type) {
+	case bool:
+		verified = v
+	default:
+		return email, false, nil, false
+	}
+	switch raw := payload["roles"].(type) {
+	case []string:
+		roles = raw
+	case []interface{}:
+		for _, item := range raw {
+			if s, ok := item.(string); ok {
+				roles = append(roles, s)
+			}
+		}
+	default:
+		return email, verified, nil, false
+	}
+	complete = email != "" && roles != nil
+	return email, verified, roles, complete
+}
+
 // SessionMiddleware verifies the SuperTokens session and injects UserClaims into the request context.
 func SessionMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			sessionContainer, err := session.GetSession(r, w, &sessmodels.VerifySessionOptions{})
+			tw := newStatusTrackingWriter(w)
+			sessionContainer, err := session.GetSession(r, tw, &sessmodels.VerifySessionOptions{})
 			if err != nil || sessionContainer == nil {
-				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing or invalid session credentials")
+				if tw.Wrote() {
+					return
+				}
+				writeError(tw, http.StatusUnauthorized, "UNAUTHORIZED", "Missing or invalid session credentials")
 				return
 			}
 
@@ -29,11 +95,27 @@ func SessionMiddleware() func(http.Handler) http.Handler {
 				userID = sessionContainer.GetUserID()
 			}
 			if userID == "" {
-				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing or invalid session credentials")
+				writeError(tw, http.StatusUnauthorized, "UNAUTHORIZED", "Missing or invalid session credentials")
 				return
 			}
 
-			// 1. Extract email from payload, with fallback to emailpassword.GetUserByID
+			if sessionContainer.GetAccessTokenPayload != nil {
+				payload := sessionContainer.GetAccessTokenPayload()
+				email, isVerified, roles, complete := ParseSessionPayload(payload)
+				if complete {
+					claims := &auth.UserClaims{
+						UserID:        userID,
+						Email:         email,
+						EmailVerified: isVerified,
+						Roles:         roles,
+					}
+					ctx := auth.WithUserContext(r.Context(), claims)
+					next.ServeHTTP(tw, r.WithContext(ctx))
+					return
+				}
+			}
+
+			// Fallback: resolve email, verification, and roles via SuperTokens Core RPCs
 			var email string
 			if sessionContainer.GetAccessTokenPayload != nil {
 				payload := sessionContainer.GetAccessTokenPayload()
@@ -42,27 +124,29 @@ func SessionMiddleware() func(http.Handler) http.Handler {
 				}
 			}
 			if email == "" {
-				if stUser, err := emailpassword.GetUserByID(userID); err == nil && stUser != nil {
+				stUser, getErr := emailpassword.GetUserByID(userID)
+				if getErr != nil {
+					writeError(tw, http.StatusBadGateway, "AUTH_SERVICE_UNAVAILABLE", "Authentication identity provider unreachable")
+					return
+				}
+				if stUser != nil {
 					email = strings.TrimSpace(stUser.Email)
 				}
 			}
 			if email == "" {
-				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "User email could not be resolved from session")
+				writeError(tw, http.StatusUnauthorized, "UNAUTHORIZED", "User email could not be resolved from session")
 				return
 			}
 
-			// 2. Check email verification status with error handling
 			isVerified, err := emailverification.IsEmailVerified(userID, nil)
 			if err != nil {
-				// If SuperTokens Core is down/unreachable, do not silently misinterpret as unverified
-				writeError(w, http.StatusBadGateway, "AUTH_SERVICE_UNAVAILABLE", "Authentication identity provider unreachable")
+				writeError(tw, http.StatusBadGateway, "AUTH_SERVICE_UNAVAILABLE", "Authentication identity provider unreachable")
 				return
 			}
 
-			// 3. Get roles with error handling
 			rolesRes, err := userroles.GetRolesForUser("public", userID)
 			if err != nil {
-				writeError(w, http.StatusBadGateway, "AUTH_SERVICE_UNAVAILABLE", "Failed to retrieve user authorizations")
+				writeError(tw, http.StatusBadGateway, "AUTH_SERVICE_UNAVAILABLE", "Failed to retrieve user authorizations")
 				return
 			}
 			var roles []string
@@ -78,7 +162,7 @@ func SessionMiddleware() func(http.Handler) http.Handler {
 			}
 
 			ctx := auth.WithUserContext(r.Context(), claims)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			next.ServeHTTP(tw, r.WithContext(ctx))
 		})
 	}
 }
@@ -103,7 +187,7 @@ func RequireVerifiedEmail() func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, err := auth.GetUserContext(r.Context())
 			if err != nil || !claims.EmailVerified {
-				writeError(w, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Campus verification pending: Please verify your institutional .edu email before accessing opportunities.")
+				writeError(w, http.StatusForbidden, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg)
 				return
 			}
 			next.ServeHTTP(w, r)

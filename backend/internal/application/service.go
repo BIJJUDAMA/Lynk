@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
@@ -39,6 +40,19 @@ type Service struct {
 	repo          ApplicationRepository
 	jobReader     JobReader
 	profileReader ProfileReader
+}
+
+func clampPage(limit, offset int) (int, int) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
 }
 
 // NewService creates a new application service instance.
@@ -93,6 +107,9 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 		if targetJob.Status != job.StatusOpen {
 			return nil, ErrJobNotOpen
 		}
+		if targetJob.Deadline != nil && time.Now().UTC().After(targetJob.Deadline.UTC()) {
+			return nil, fmt.Errorf("%w: job deadline has passed", ErrJobNotOpen)
+		}
 		if targetJob.CreatedBy == applicantID {
 			return nil, fmt.Errorf("%w: cannot apply to your own job", ErrForbidden)
 		}
@@ -144,7 +161,8 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 }
 
 // ListJobApplications retrieves applications for a given job, enforcing owner-only authorization.
-func (s *Service) ListJobApplications(ctx context.Context, claims *auth.UserClaims, jobID uuid.UUID) ([]*ApplicationWithDetails, error) {
+func (s *Service) ListJobApplications(ctx context.Context, claims *auth.UserClaims, jobID uuid.UUID, limit, offset int) ([]*ApplicationWithDetails, error) {
+	limit, offset = clampPage(limit, offset)
 	if claims == nil {
 		return nil, ErrForbidden
 	}
@@ -174,7 +192,7 @@ func (s *Service) ListJobApplications(ctx context.Context, claims *auth.UserClai
 		}
 	}
 
-	apps, err := s.repo.ListApplicationsByJob(ctx, jobID)
+	apps, err := s.repo.ListApplicationsByJob(ctx, jobID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -184,8 +202,9 @@ func (s *Service) ListJobApplications(ctx context.Context, claims *auth.UserClai
 	return apps, nil
 }
 
-// ListMyApplications retrieves all applications submitted by the calling campus member.
-func (s *Service) ListMyApplications(ctx context.Context, claims *auth.UserClaims) ([]*ApplicationWithDetails, error) {
+// ListMyApplications retrieves applications submitted by the calling campus member.
+func (s *Service) ListMyApplications(ctx context.Context, claims *auth.UserClaims, limit, offset int) ([]*ApplicationWithDetails, error) {
+	limit, offset = clampPage(limit, offset)
 	if claims == nil {
 		return nil, ErrForbidden
 	}
@@ -195,7 +214,7 @@ func (s *Service) ListMyApplications(ctx context.Context, claims *auth.UserClaim
 	}
 	applicantID := claims.UserID
 
-	apps, err := s.repo.ListApplicationsByApplicant(ctx, applicantID)
+	apps, err := s.repo.ListApplicationsByApplicant(ctx, applicantID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -203,6 +222,30 @@ func (s *Service) ListMyApplications(ctx context.Context, claims *auth.UserClaim
 		apps = make([]*ApplicationWithDetails, 0)
 	}
 	return apps, nil
+}
+
+// GetMyApplicationForJob returns the caller's application for a specific job, or nil if none exists.
+func (s *Service) GetMyApplicationForJob(ctx context.Context, applicantID string, jobID uuid.UUID) (*ApplicationWithDetails, error) {
+	if strings.TrimSpace(applicantID) == "" {
+		return nil, fmt.Errorf("%w: invalid user id", ErrInvalidInput)
+	}
+	if jobID == uuid.Nil {
+		return nil, fmt.Errorf("%w: valid job id is required", ErrInvalidInput)
+	}
+
+	app, err := s.repo.GetApplicationByJobAndApplicant(ctx, jobID, applicantID)
+	if err != nil {
+		return nil, err
+	}
+	if app == nil {
+		return nil, nil
+	}
+
+	details, err := s.repo.GetApplicationByID(ctx, app.ID)
+	if err != nil {
+		return nil, err
+	}
+	return details, nil
 }
 
 // GetApplicationByID retrieves single application details, allowing only the applicant or job creator.

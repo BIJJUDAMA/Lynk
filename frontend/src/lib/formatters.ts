@@ -1,15 +1,21 @@
 import type { ApplicationStatus, ContractStatus, JobPayType, JobStatus } from "@/types/api";
 
 /**
- * Formats a currency number with pay type badge (e.g. "$500 Fixed" or "$25/hr").
+ * Formats integer cents as USD currency string.
  */
-export function formatBudget(budget: number, payType: JobPayType): string {
-  const formatted = new Intl.NumberFormat("en-US", {
+export function formatUsdFromCents(cents: number): string {
+  const n = Number.isFinite(cents) ? cents : 0;
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(budget);
+  }).format(n / 100);
+}
 
+/**
+ * Formats budget cents with pay type badge (e.g. "$500.00 Fixed" or "$25.00/hr").
+ */
+export function formatBudget(budgetCents: number, payType: JobPayType): string {
+  const formatted = formatUsdFromCents(budgetCents);
   return payType === "hourly" ? `${formatted}/hr` : `${formatted} Fixed`;
 }
 

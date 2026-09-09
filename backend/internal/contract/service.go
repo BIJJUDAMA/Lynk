@@ -14,13 +14,27 @@ type Service struct {
 	repo ContractRepository
 }
 
+func clampPage(limit, offset int) (int, int) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
+}
+
 // NewService creates a new contract service.
 func NewService(repo ContractRepository) *Service {
 	return &Service{repo: repo}
 }
 
-// ListContracts retrieves all contracts where the authenticated caller is the client or freelancer.
-func (s *Service) ListContracts(ctx context.Context, claims *auth.UserClaims) ([]*ContractWithDetails, error) {
+// ListContracts retrieves contracts where the authenticated caller is the client or freelancer.
+func (s *Service) ListContracts(ctx context.Context, claims *auth.UserClaims, limit, offset int) ([]*ContractWithDetails, error) {
+	limit, offset = clampPage(limit, offset)
 	if claims == nil {
 		return nil, ErrForbidden
 	}
@@ -30,7 +44,7 @@ func (s *Service) ListContracts(ctx context.Context, claims *auth.UserClaims) ([
 	}
 	callerID := claims.UserID
 
-	contracts, err := s.repo.ListContractsByUserID(ctx, callerID)
+	contracts, err := s.repo.ListContractsByUserID(ctx, callerID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -78,12 +92,8 @@ func (s *Service) UpdateContractStatus(
 	contractID uuid.UUID,
 	req UpdateContractStatusRequest,
 ) (*ContractWithDetails, error) {
-	if claims == nil {
-		return nil, ErrForbidden
-	}
-
-	if strings.TrimSpace(claims.UserID) == "" {
-		return nil, fmt.Errorf("%w: invalid user id", ErrInvalidInput)
+	if err := auth.CheckEmailVerified(claims); err != nil {
+		return nil, err
 	}
 	callerID := claims.UserID
 

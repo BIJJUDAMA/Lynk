@@ -11,7 +11,6 @@ export const API_CONFIG = {
 
 export const STORAGE_KEYS = {
   tokens: "lynk_auth_tokens",
-  codeVerifier: "lynk_pkce_verifier",
   roleHint: "lynk_auth_role_hint",
   redirectPath: "lynk_auth_redirect_path",
 } as const;
@@ -61,82 +60,12 @@ export interface AuthUser {
 }
 
 // ==========================================
-// PKCE Cryptographic Helpers
-// ==========================================
-
-/**
- * Generates a high-entropy cryptographically random string for PKCE code_verifier.
- */
-export function generateRandomString(length = 64): string {
-  const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
-  let result = "";
-
-  if (typeof window !== "undefined" && window.crypto && window.crypto.getRandomValues) {
-    const values = new Uint8Array(length);
-    window.crypto.getRandomValues(values);
-    for (let i = 0; i < length; i++) {
-      result += charset[values[i] % charset.length];
-    }
-  } else {
-    // Fallback for SSR or non-browser test environments
-    for (let i = 0; i < length; i++) {
-      result += charset[Math.floor(Math.random() * charset.length)];
-    }
-  }
-
-  return result;
-}
-
-/**
- * Computes SHA-256 hash of a plain text string.
- */
-export async function sha256(plain: string): Promise<ArrayBuffer> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(plain);
-
-  if (typeof window !== "undefined" && window.crypto && window.crypto.subtle) {
-    return await window.crypto.subtle.digest("SHA-256", data);
-  }
-
-  // Fallback for Node.js / SSR execution
-  const nodeCrypto = await import("crypto");
-  return nodeCrypto.createHash("sha256").update(data).digest().buffer;
-}
-
-/**
- * Encodes an ArrayBuffer or Uint8Array into URL-safe base64 string without padding.
- */
-export function base64UrlEncode(buffer: ArrayBuffer | Uint8Array): string {
-  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  let binary = "";
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-
-  let base64 = "";
-  if (typeof btoa !== "undefined") {
-    base64 = btoa(binary);
-  } else {
-    base64 = Buffer.from(binary, "binary").toString("base64");
-  }
-
-  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-/**
- * Generates an S256 PKCE code challenge from a code verifier.
- */
-export async function generateCodeChallenge(verifier: string): Promise<string> {
-  const hashed = await sha256(verifier);
-  return base64UrlEncode(hashed);
-}
-
-// ==========================================
 // JWT Decoding & User Extraction
 // ==========================================
 
 /**
- * Decodes the payload of a JWT token without verifying cryptographic signature (signature validated by backend via JWKS).
+ * Decodes the payload of a SuperTokens access token without verifying the signature.
+ * Verification is performed by SuperTokens Core / Go session middleware — not JWKS/Keycloak.
  */
 export function decodeJwtClaims(token: string): JwtClaims | null {
   try {
@@ -225,21 +154,6 @@ export function clearTokens(): void {
   }
 }
 
-export function saveCodeVerifier(verifier: string): void {
-  if (typeof window === "undefined") return;
-  sessionStorage.setItem(STORAGE_KEYS.codeVerifier, verifier);
-}
-
-export function getStoredCodeVerifier(): string | null {
-  if (typeof window === "undefined") return null;
-  return sessionStorage.getItem(STORAGE_KEYS.codeVerifier);
-}
-
-export function clearCodeVerifier(): void {
-  if (typeof window === "undefined") return;
-  sessionStorage.removeItem(STORAGE_KEYS.codeVerifier);
-}
-
 export function saveRoleHint(role: string): void {
   if (typeof window === "undefined") return;
   sessionStorage.setItem(STORAGE_KEYS.roleHint, role);
@@ -283,13 +197,15 @@ export async function syncUserWithBackend(
   profileData?: SyncUserRequest
 ): Promise<ApiResponse<User>> {
   const syncUrl = `${API_CONFIG.baseUrl}/auth/sync`;
-  const body = profileData ? JSON.stringify(profileData) : undefined;
+  const body = profileData ? JSON.stringify(profileData) : JSON.stringify({});
 
   const response = await fetch(syncUrl, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
     body,
   });

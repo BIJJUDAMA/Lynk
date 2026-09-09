@@ -11,6 +11,7 @@ import (
 
 // Allowed contract statuses
 const (
+	// StatusDraft is deprecated: legacy rows only; new contracts must be created as active.
 	StatusDraft     = "draft"
 	StatusActive    = "active"
 	StatusCompleted = "completed"
@@ -33,7 +34,7 @@ type Contract struct {
 	ApplicationID uuid.UUID  `json:"application_id"`
 	ClientID      string     `json:"client_id"`
 	FreelancerID  string     `json:"freelancer_id"`
-	AgreedBudget  float64    `json:"agreed_budget"`
+	AgreedBudgetCents int64  `json:"agreed_budget_cents"`
 	Status        string     `json:"status"` // draft, active, completed, cancelled
 	StartedAt     *time.Time `json:"started_at,omitempty"`
 	CompletedAt   *time.Time `json:"completed_at,omitempty"`
@@ -47,7 +48,7 @@ type JobSummary struct {
 	CreatedBy   string    `json:"created_by"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
-	Budget      float64   `json:"budget"`
+	BudgetCents int64     `json:"budget_cents"`
 	PayType     string    `json:"pay_type"`
 	Department  string    `json:"department"`
 	Status      string    `json:"status"`
