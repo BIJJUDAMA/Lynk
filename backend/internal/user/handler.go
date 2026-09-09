@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/httpx"
 	"github.com/lynk/backend/internal/httputil"
 	"github.com/lynk/backend/internal/storage"
 )
@@ -46,9 +47,7 @@ func (h *Handler) WithStorage(s3Client storage.Client) *Handler {
 // Routes constructs a chi.Router mounting all auth, profile, and resume routes protected by authMiddleware.
 func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Router {
 	r := chi.NewRouter()
-	if authMiddleware != nil {
-		r.Use(authMiddleware)
-	}
+	r.Use(httpx.DefaultAuthMiddleware(authMiddleware))
 
 	// Auth sync & me
 	r.Post("/auth/sync", h.SyncUser)
@@ -83,9 +82,7 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 // AuthRoutes provides subrouter for mounting at /auth prefix.
 func (h *Handler) AuthRoutes(authMiddleware func(http.Handler) http.Handler) chi.Router {
 	r := chi.NewRouter()
-	if authMiddleware != nil {
-		r.Use(authMiddleware)
-	}
+	r.Use(httpx.DefaultAuthMiddleware(authMiddleware))
 	r.Post("/sync", h.SyncUser)
 	r.Get("/me", h.GetMe)
 	return r
@@ -94,9 +91,7 @@ func (h *Handler) AuthRoutes(authMiddleware func(http.Handler) http.Handler) chi
 // ProfileRoutes provides subrouter for mounting at /profile prefix.
 func (h *Handler) ProfileRoutes(authMiddleware func(http.Handler) http.Handler) chi.Router {
 	r := chi.NewRouter()
-	if authMiddleware != nil {
-		r.Use(authMiddleware)
-	}
+	r.Use(httpx.DefaultAuthMiddleware(authMiddleware))
 	r.Get("/me", h.GetMyProfile)
 	r.Put("/me", h.UpdateMyProfile)
 	r.Get("/{id}", h.GetProfileByID)

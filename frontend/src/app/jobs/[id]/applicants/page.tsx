@@ -130,21 +130,19 @@ export default function JobApplicantsPage() {
     job &&
     (job.created_by === backendUser?.id ||
       job.created_by === user?.id ||
-      job.employer_id === backendUser?.id ||
-      job.employer_id === user?.id ||
       (job.creator && (job.creator.id === backendUser?.id || job.creator.id === user?.id)) ||
       (job.employer && (job.employer.id === backendUser?.id || job.employer.id === user?.id)));
 
   // Handle Resume Presigned Download
   const handleDownloadResume = async (app: ApplicationWithDetails) => {
-    const studentId = app.applicant?.id || app.applicant_id || app.student?.id || app.student_id;
-    if (!studentId) return;
+    const applicantId = app.applicant?.id || app.applicant_id;
+    if (!applicantId) return;
 
     setDownloadingResumeId(app.id);
     setResumeError(null);
 
     try {
-      const res = await getStudentResumeUrl(studentId);
+      const res = await getStudentResumeUrl(applicantId);
       const urlToOpen = res.download_url || res.url;
       if (urlToOpen) {
         window.open(urlToOpen, "_blank", "noopener,noreferrer");
@@ -442,7 +440,7 @@ export default function JobApplicantsPage() {
             <div className="mt-3 flex flex-wrap items-center gap-y-2 gap-x-6 text-xs text-slate-600 dark:text-slate-400">
               <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-white">
                 <DollarSign className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <span>{formatBudget(job.budget, job.pay_type)}</span>
+                <span>{formatBudget(job.budget_cents, job.pay_type)}</span>
               </div>
 
               {job.deadline && (
@@ -644,7 +642,7 @@ export default function JobApplicantsPage() {
           !applicantsError &&
           filteredApplications.map((app) => {
             const student = app.applicant || app.student;
-            const applicantIdentifier = app.applicant_id || app.student_id || app.id || "";
+            const applicantIdentifier = app.applicant_id || app.id || "";
             const studentFullName = student
               ? `${student.first_name} ${student.last_name}`.trim() || student.email
               : applicantIdentifier
@@ -886,7 +884,7 @@ export default function JobApplicantsPage() {
               <ul className="mt-2 space-y-1.5 pl-5 list-disc text-[11px] leading-relaxed">
                 <li>
                   An <strong>Active Contract</strong> will be generated immediately for{" "}
-                  <strong>{formatBudget(job.budget, job.pay_type)}</strong>.
+                  <strong>{formatBudget(job.budget_cents, job.pay_type)}</strong>.
                 </li>
                 <li>
                   This job will transition to <strong>In Progress</strong> and close to new applicants.

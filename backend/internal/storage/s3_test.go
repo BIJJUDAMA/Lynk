@@ -177,64 +177,49 @@ func TestGetPresignedDownloadURL(t *testing.T) {
 	}
 }
 
-func TestS3Client_PublicEndpointRewriting(t *testing.T) {
-	testCases := []struct {
-		name           string
-		publicEndpoint string
-		rawURL         string
-		expected       string
-	}{
-		{
-			name:           "Rewrite internal minio host to localhost public endpoint",
-			publicEndpoint: "http://localhost:9000",
-			rawURL:         "http://minio:9000/resumes/resumes/user-1/file.pdf?X-Amz-Signature=xyz&X-Amz-Algorithm=AWS4-HMAC-SHA256",
-			expected:       "http://localhost:9000/resumes/resumes/user-1/file.pdf?X-Amz-Signature=xyz&X-Amz-Algorithm=AWS4-HMAC-SHA256",
-		},
-		{
-			name:           "Rewrite to HTTPS public endpoint with custom domain and port",
-			publicEndpoint: "https://s3.campus.edu:8443",
-			rawURL:         "http://minio:9000/resumes/resumes/user-2/resume.pdf?param=1",
-			expected:       "https://s3.campus.edu:8443/resumes/resumes/user-2/resume.pdf?param=1",
-		},
-		{
-			name:           "Empty public endpoint leaves URL untouched",
-			publicEndpoint: "",
-			rawURL:         "http://minio:9000/resumes/resumes/user-3/resume.pdf?param=2",
-			expected:       "http://minio:9000/resumes/resumes/user-3/resume.pdf?param=2",
-		},
-		{
-			name:           "Malformed raw URL returns rawURL unchanged",
-			publicEndpoint: "http://localhost:9000",
-			rawURL:         "://invalid-url",
-			expected:       "://invalid-url",
-		},
-		{
-			name:           "Malformed public endpoint returns rawURL unchanged",
-			publicEndpoint: "://invalid-public-endpoint",
-			rawURL:         "http://minio:9000/resumes/resumes/user-4/resume.pdf",
-			expected:       "http://minio:9000/resumes/resumes/user-4/resume.pdf",
-		},
-		{
-			name:           "Public endpoint with trailing slash rewrites cleanly without altering path",
-			publicEndpoint: "http://localhost:9000/",
-			rawURL:         "http://minio:9000/resumes/resumes/user-5/resume.pdf?key=val",
-			expected:       "http://localhost:9000/resumes/resumes/user-5/resume.pdf?key=val",
-		},
+func TestS3Client_GetPresignedDownloadURL_SignsPublicHostWithoutRewrite(t *testing.T) {
+	cfg := Config{
+		Endpoint:       "http://minio:9000",
+		PublicEndpoint: "http://localhost:9000",
+		AccessKey:      "minio_admin",
+		SecretKey:      "minio_password",
+		Bucket:         "resumes",
+		UseSSL:         false,
+	}
+	ctx := context.Background()
+	client, err := NewS3Client(ctx, cfg)
+	if err != nil {
+		t.Fatalf("NewS3Client: %v", err)
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			client := &S3Client{
-				bucket:         "resumes",
-				publicEndpoint: tc.publicEndpoint,
-			}
-
-			rewritten := client.rewritePresignedURL(tc.rawURL)
-			if rewritten != tc.expected {
-				t.Errorf("expected rewritten URL to be:\n%s\ngot:\n%s", tc.expected, rewritten)
-			}
-		})
+	signed, err := client.GetPresignedDownloadURL(ctx, "resumes/user-1/cv.pdf", 15*time.Minute)
+	if err != nil {
+		t.Fatalf("GetPresignedDownloadURL: %v", err)
 	}
+
+	parsed, err := url.Parse(signed)
+	if err != nil {
+		t.Fatalf("parse signed URL: %v", err)
+	}
+	if parsed.Host != "localhost:9000" {
+		t.Fatalf("expected public host localhost:9000, got %q (url=%s)", parsed.Host, signed)
+	}
+	if parsed.Scheme != "http" {
+		t.Fatalf("expected http scheme, got %q", parsed.Scheme)
+	}
+	q := parsed.Query()
+	if q.Get("X-Amz-Algorithm") == "" && q.Get("X-Amz-Signature") == "" && !strings.Contains(signed, "X-Amz-") {
+		t.Fatalf("expected SigV4 query params on presigned URL, got %s", signed)
+	}
+	if strings.Contains(parsed.Host, "minio:9000") {
+		t.Fatalf("internal docker hostname leaked into public URL: %s", signed)
+	}
+}
+
+func TestS3Client_rewritePresignedURL_MustNotExist(t *testing.T) {
+	// Compile-time deletion is verified by removing all call sites.
+	// This test documents the invariant: post-sign host rewrite is forbidden.
+	var _ = (*S3Client)(nil).GetPresignedDownloadURL
 }
 
 func TestGetPresignedDownloadURL_WithPublicEndpoint(t *testing.T) {

@@ -487,6 +487,73 @@ func newMockSessionContainer(userID string, payload map[string]interface{}) sess
 	}
 }
 
+func TestClaimsFromAccessTokenPayload_PrefersTokenOverRPC(t *testing.T) {
+	payload := map[string]interface{}{
+		"email":         "a@stanford.edu",
+		"emailVerified": true,
+		"roles":         []interface{}{"member"},
+	}
+	email, verified, roles, ok := middleware.ParseSessionPayload(payload)
+	if !ok || email != "a@stanford.edu" || !verified || len(roles) != 1 || roles[0] != "member" {
+		t.Fatalf("ParseSessionPayload failed: %q %v %v ok=%v", email, verified, roles, ok)
+	}
+}
+
+func TestSessionMiddleware_PrefersTokenClaimsOverRPC(t *testing.T) {
+	rpcCalled := false
+	err := initSuperTokensForMiddlewareTest(
+		func() (sessmodels.SessionContainer, error) {
+			return newMockSessionContainer("user_claims", map[string]interface{}{
+				"email":         "a@stanford.edu",
+				"emailVerified": true,
+				"roles":         []interface{}{"member"},
+			}), nil
+		},
+		func(userID string) (*epmodels.User, error) {
+			rpcCalled = true
+			return nil, errors.New("should not be called")
+		},
+		func(userID, email string) (bool, error) {
+			rpcCalled = true
+			return false, errors.New("should not be called")
+		},
+		func(userID string) ([]string, error) {
+			rpcCalled = true
+			return nil, errors.New("should not be called")
+		},
+	)
+	if err != nil {
+		t.Fatalf("failed to init supertokens: %v", err)
+	}
+
+	var capturedClaims *auth.UserClaims
+	handler := middleware.SessionMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, err := auth.GetUserContext(r.Context())
+		if err != nil {
+			t.Fatalf("failed to get user context: %v", err)
+		}
+		capturedClaims = claims
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/api/v1/profile/me", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if rpcCalled {
+		t.Fatal("expected SuperTokens Core RPCs to be skipped when access-token claims are complete")
+	}
+	if capturedClaims == nil {
+		t.Fatal("expected captured claims, got nil")
+	}
+	if capturedClaims.Email != "a@stanford.edu" || !capturedClaims.EmailVerified || len(capturedClaims.Roles) != 1 || capturedClaims.Roles[0] != "member" {
+		t.Fatalf("unexpected claims: %+v", capturedClaims)
+	}
+}
+
 func TestSessionMiddleware_HandlesMissingEmailInPayloadWithFallback(t *testing.T) {
 	stUser := &epmodels.User{
 		ID:    "st_user_fallback",
@@ -615,13 +682,57 @@ func TestSessionMiddleware_SuperTokensError_UserRoles(t *testing.T) {
 	}
 }
 
+func TestSessionMiddleware_GetUserByIDError_Returns502(t *testing.T) {
+	err := initSuperTokensForMiddlewareTest(
+		func() (sessmodels.SessionContainer, error) {
+			return newMockSessionContainer("st_user_no_email", map[string]interface{}{}), nil
+		},
+		func(userID string) (*epmodels.User, error) {
+			return nil, errors.New("connection refused to supertokens core")
+		},
+		func(userID, email string) (bool, error) {
+			return true, nil
+		},
+		func(userID string) ([]string, error) {
+			return []string{"member"}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("failed to init supertokens: %v", err)
+	}
+
+	handler := middleware.SessionMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/api/v1/profile/me", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 Bad Gateway, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp errorResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Error.Code != "AUTH_SERVICE_UNAVAILABLE" {
+		t.Errorf("expected code AUTH_SERVICE_UNAVAILABLE, got %s", resp.Error.Code)
+	}
+	expectedMsg := "Authentication identity provider unreachable"
+	if resp.Error.Message != expectedMsg {
+		t.Errorf("expected message %q, got %q", expectedMsg, resp.Error.Message)
+	}
+}
+
 func TestSessionMiddleware_RejectsSessionWhenEmailCannotBeResolved(t *testing.T) {
 	err := initSuperTokensForMiddlewareTest(
 		func() (sessmodels.SessionContainer, error) {
 			return newMockSessionContainer("st_user_no_email", map[string]interface{}{}), nil
 		},
 		func(userID string) (*epmodels.User, error) {
-			return nil, errors.New("user deleted or not found")
+			return &epmodels.User{ID: userID, Email: ""}, nil
 		},
 		func(userID, email string) (bool, error) {
 			return true, nil

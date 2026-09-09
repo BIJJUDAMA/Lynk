@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -32,10 +31,9 @@ type Client interface {
 }
 
 type S3Client struct {
-	client         *s3.Client
-	presignClient  *s3.PresignClient
-	bucket         string
-	publicEndpoint string
+	client        *s3.Client
+	presignClient *s3.PresignClient
+	bucket        string
 }
 
 var _ Client = (*S3Client)(nil)
@@ -46,8 +44,7 @@ func GenerateResumeKey(userID string, originalFilename string) string {
 	return fmt.Sprintf("resumes/%s/%s-%s", userID, uuid.NewString(), sanitized)
 }
 
-func NewS3Client(ctx context.Context, cfg Config) (*S3Client, error) {
-	endpoint := cfg.Endpoint
+func newAWSConfig(ctx context.Context, endpoint string, cfg Config) (aws.Config, error) {
 	if endpoint != "" && !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
 		scheme := "http"
 		if cfg.UseSSL {
@@ -55,7 +52,6 @@ func NewS3Client(ctx context.Context, cfg Config) (*S3Client, error) {
 		}
 		endpoint = fmt.Sprintf("%s://%s", scheme, endpoint)
 	}
-
 	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
 		return aws.Endpoint{
 			URL:               endpoint,
@@ -63,45 +59,39 @@ func NewS3Client(ctx context.Context, cfg Config) (*S3Client, error) {
 			SigningRegion:     "us-east-1",
 		}, nil
 	})
-
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx,
+	return awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithEndpointResolverWithOptions(customResolver),
 		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, "")),
 		awsconfig.WithRegion("us-east-1"),
 	)
+}
+
+func NewS3Client(ctx context.Context, cfg Config) (*S3Client, error) {
+	internalCfg, err := newAWSConfig(ctx, cfg.Endpoint, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("load aws config: %w", err)
 	}
-
-	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+	internalClient := s3.NewFromConfig(internalCfg, func(o *s3.Options) {
 		o.UsePathStyle = true
 	})
 
-	presignClient := s3.NewPresignClient(client)
+	presignEndpoint := cfg.PublicEndpoint
+	if strings.TrimSpace(presignEndpoint) == "" {
+		presignEndpoint = cfg.Endpoint
+	}
+	presignAWS, err := newAWSConfig(ctx, presignEndpoint, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("load public aws config: %w", err)
+	}
+	publicClient := s3.NewFromConfig(presignAWS, func(o *s3.Options) {
+		o.UsePathStyle = true
+	})
 
 	return &S3Client{
-		client:         client,
-		presignClient:  presignClient,
-		bucket:         cfg.Bucket,
-		publicEndpoint: cfg.PublicEndpoint,
+		client:        internalClient,
+		presignClient: s3.NewPresignClient(publicClient),
+		bucket:        cfg.Bucket,
 	}, nil
-}
-
-func (s *S3Client) rewritePresignedURL(rawURL string) string {
-	if s.publicEndpoint == "" {
-		return rawURL
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
-	}
-	pub, err := url.Parse(s.publicEndpoint)
-	if err != nil || pub.Host == "" || pub.Scheme == "" {
-		return rawURL
-	}
-	parsed.Scheme = pub.Scheme
-	parsed.Host = pub.Host
-	return parsed.String()
 }
 
 func (s *S3Client) UploadResume(ctx context.Context, key string, contentType string, body io.Reader) error {
@@ -125,7 +115,7 @@ func (s *S3Client) GetPresignedDownloadURL(ctx context.Context, key string, expi
 	if err != nil {
 		return "", fmt.Errorf("presign get object: %w", err)
 	}
-	return s.rewritePresignedURL(req.URL), nil
+	return req.URL, nil
 }
 
 func (s *S3Client) DeleteResume(ctx context.Context, key string) error {
@@ -159,4 +149,3 @@ func (s *S3Client) EnsureBucket(ctx context.Context) error {
 	}
 	return nil
 }
-

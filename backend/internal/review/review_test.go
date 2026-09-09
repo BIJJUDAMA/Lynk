@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
 	"github.com/lynk/backend/internal/contract"
+	"github.com/lynk/backend/internal/httpx"
 )
 
 type mockReviewRepo struct {
@@ -249,13 +250,14 @@ func TestReview_CompletedContractCheck(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/contracts/"+contractID.String()+"/reviews", bytes.NewReader(body))
 			req = withAuth(req, &auth.UserClaims{
-				UserID: freelancerID,
-				Email:  "student@university.edu",
-				Roles:  []string{"member"},
+				UserID:        freelancerID,
+				Email:         "student@university.edu",
+				EmailVerified: true,
+				Roles:         []string{"member"},
 			})
 
 			w := httptest.NewRecorder()
-			handler.Routes(nil).ServeHTTP(w, req)
+			handler.Routes(httpx.RequireAuthFromContext()).ServeHTTP(w, req)
 
 			if w.Code != cs.expectCode {
 				t.Fatalf("status %s: expected HTTP %d, got %d. Body: %s", cs.status, cs.expectCode, w.Code, w.Body.String())
@@ -288,12 +290,13 @@ func TestReview_ParticipantAuthorization(t *testing.T) {
 		body, _ := json.Marshal(CreateReviewRequest{Rating: 5, Comment: "Great client!"})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/contracts/"+contractID.String()+"/reviews", bytes.NewReader(body))
 		req = withAuth(req, &auth.UserClaims{
-			UserID: freelancerID,
-			Email:  "student@university.edu",
-			Roles:  []string{"member"},
+			UserID:        freelancerID,
+			Email:         "student@university.edu",
+			EmailVerified: true,
+			Roles:         []string{"member"},
 		})
 		w := httptest.NewRecorder()
-		handler.Routes(nil).ServeHTTP(w, req)
+		handler.Routes(httpx.RequireAuthFromContext()).ServeHTTP(w, req)
 
 		if w.Code != http.StatusCreated {
 			t.Fatalf("expected 201 Created, got %d: %s", w.Code, w.Body.String())
@@ -319,12 +322,13 @@ func TestReview_ParticipantAuthorization(t *testing.T) {
 		body, _ := json.Marshal(CreateReviewRequest{Rating: 4, Comment: "Strong freelancer performance!"})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/contracts/"+contractID.String()+"/reviews", bytes.NewReader(body))
 		req = withAuth(req, &auth.UserClaims{
-			UserID: clientID,
-			Email:  "client@company.com",
-			Roles:  []string{"member"},
+			UserID:        clientID,
+			Email:         "client@company.com",
+			EmailVerified: true,
+			Roles:         []string{"member"},
 		})
 		w := httptest.NewRecorder()
-		handler.Routes(nil).ServeHTTP(w, req)
+		handler.Routes(httpx.RequireAuthFromContext()).ServeHTTP(w, req)
 
 		if w.Code != http.StatusCreated {
 			t.Fatalf("expected 201 Created, got %d: %s", w.Code, w.Body.String())
@@ -355,7 +359,7 @@ func TestReview_ParticipantAuthorization(t *testing.T) {
 			Roles:  []string{"member"},
 		})
 		w := httptest.NewRecorder()
-		handler.Routes(nil).ServeHTTP(w, req)
+		handler.Routes(httpx.RequireAuthFromContext()).ServeHTTP(w, req)
 
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("expected 403 Forbidden, got %d: %s", w.Code, w.Body.String())
@@ -385,12 +389,13 @@ func TestReview_DuplicateSubmission(t *testing.T) {
 	body1, _ := json.Marshal(CreateReviewRequest{Rating: 5, Comment: "First review from freelancer"})
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/contracts/"+contractID.String()+"/reviews", bytes.NewReader(body1))
 	req1 = withAuth(req1, &auth.UserClaims{
-		UserID: freelancerID,
-		Email:  "student@university.edu",
-		Roles:  []string{"member"},
+		UserID:        freelancerID,
+		Email:         "student@university.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
 	})
 	w1 := httptest.NewRecorder()
-	handler.Routes(nil).ServeHTTP(w1, req1)
+	handler.Routes(httpx.RequireAuthFromContext()).ServeHTTP(w1, req1)
 
 	if w1.Code != http.StatusCreated {
 		t.Fatalf("first review expected 201 Created, got %d", w1.Code)
@@ -400,12 +405,13 @@ func TestReview_DuplicateSubmission(t *testing.T) {
 	body2, _ := json.Marshal(CreateReviewRequest{Rating: 4, Comment: "Second attempt"})
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/contracts/"+contractID.String()+"/reviews", bytes.NewReader(body2))
 	req2 = withAuth(req2, &auth.UserClaims{
-		UserID: freelancerID,
-		Email:  "student@university.edu",
-		Roles:  []string{"member"},
+		UserID:        freelancerID,
+		Email:         "student@university.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
 	})
 	w2 := httptest.NewRecorder()
-	handler.Routes(nil).ServeHTTP(w2, req2)
+	handler.Routes(httpx.RequireAuthFromContext()).ServeHTTP(w2, req2)
 
 	if w2.Code != http.StatusConflict {
 		t.Fatalf("expected 409 Conflict for duplicate review, got %d", w2.Code)
@@ -440,7 +446,7 @@ func TestReview_GetUserReviewsWithSummary(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+targetUserID+"/reviews", nil)
 	w := httptest.NewRecorder()
-	handler.Routes(nil).ServeHTTP(w, req)
+	handler.Routes(httpx.RequireAuthFromContext()).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d", w.Code)

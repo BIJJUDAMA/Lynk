@@ -539,10 +539,10 @@ export async function listJobs(
     }
     if (filters.pay_type) queryParams.pay_type = filters.pay_type;
     if (filters.status) queryParams.status = filters.status;
-    if (filters.min_budget !== undefined)
-      queryParams.min_budget = filters.min_budget;
-    if (filters.max_budget !== undefined)
-      queryParams.max_budget = filters.max_budget;
+    if (filters.min_budget_cents !== undefined)
+      queryParams.min_budget_cents = filters.min_budget_cents;
+    if (filters.max_budget_cents !== undefined)
+      queryParams.max_budget_cents = filters.max_budget_cents;
     if (filters.limit !== undefined) queryParams.limit = filters.limit;
     if (filters.offset !== undefined) queryParams.offset = filters.offset;
   }
@@ -608,6 +608,16 @@ export async function getMyApplications(
   client: ApiClient = apiClient
 ): Promise<ApplicationWithDetails[]> {
   return client.get<ApplicationWithDetails[]>("/applications/mine");
+}
+
+export async function getMyApplicationForJob(
+  jobId: string,
+  client: ApiClient = apiClient
+): Promise<ApplicationWithDetails | null> {
+  const data = await client.get<ApplicationWithDetails | null>(
+    `/applications/applied?job_id=${encodeURIComponent(jobId)}`
+  );
+  return data ?? null;
 }
 
 export async function getApplicationById(

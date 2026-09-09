@@ -44,7 +44,7 @@ test("buildQueryString encodes primitives, arrays, and skips null/undefined", ()
     department: "Computer Science",
     skill: "Go",
     skills: ["React", "PostgreSQL"],
-    min_budget: 500,
+    min_budget_cents: 50000,
     active: true,
     empty: "",
     unassigned: undefined,
@@ -58,7 +58,7 @@ test("buildQueryString encodes primitives, arrays, and skips null/undefined", ()
   assert.match(qs, /skill=Go/);
   assert.match(qs, /skills=React/);
   assert.match(qs, /skills=PostgreSQL/);
-  assert.match(qs, /min_budget=500/);
+  assert.match(qs, /min_budget_cents=50000/);
   assert.match(qs, /active=true/);
   assert.ok(!qs.includes("empty="));
   assert.ok(!qs.includes("unassigned="));
@@ -332,11 +332,11 @@ test("Domain functions call expected endpoints with expected payloads and parame
 
     // 2. listJobs with filters
     await listJobs(
-      { search: "frontend", min_budget: 300, limit: 10 },
+      { search: "frontend", min_budget_cents: 30000, limit: 10 },
       client
     );
     assert.match(calls[1].url, /jobs\?search=frontend/);
-    assert.match(calls[1].url, /min_budget=300/);
+    assert.match(calls[1].url, /min_budget_cents=30000/);
     assert.match(calls[1].url, /limit=10/);
     assert.equal(calls[1].method, "GET");
 
@@ -345,7 +345,7 @@ test("Domain functions call expected endpoints with expected payloads and parame
       {
         title: "Web App Design",
         description: "Need modern UI",
-        budget: 1500,
+        budget_cents: 150000,
         pay_type: "fixed",
         required_skills: ["Figma", "Tailwind"],
         department: "Design",

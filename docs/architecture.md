@@ -245,7 +245,7 @@ erDiagram
 
     JOBS {
         uuid id PK
-        varchar employer_id FK "Organizer member ID"
+        varchar created_by FK "Organizer member ID"
         string title
         text description
         numeric budget
@@ -261,7 +261,7 @@ erDiagram
     APPLICATIONS {
         uuid id PK
         uuid job_id FK
-        varchar student_id FK "Applicant member ID"
+        varchar applicant_id FK "Applicant member ID"
         text cover_letter
         string resume_key
         string status "pending | accepted | rejected"
@@ -271,12 +271,12 @@ erDiagram
 
     CONTRACTS {
         uuid id PK
-        uuid job_id FK,UK
-        uuid application_id FK,UK
-        varchar employer_id FK
-        varchar student_id FK
+        uuid job_id FK
+        uuid application_id FK
+        varchar client_id FK
+        varchar freelancer_id FK
         numeric agreed_budget
-        string status "draft | active | completed | cancelled"
+        string status "active | completed | cancelled"
         timestamptz started_at
         timestamptz completed_at
         timestamptz created_at
@@ -293,6 +293,10 @@ erDiagram
         timestamptz created_at
     }
 ```
+
+### Partial Unique Indexes (Contracts)
+* `uq_contracts_active_job` — at most one non-cancelled contract per `job_id`.
+* `uq_contracts_active_application` — at most one non-cancelled contract per `application_id`.
 
 ---
 
@@ -353,8 +357,8 @@ All application endpoints are prefixed with `/api/v1`. Authentication is passed 
 #### Unified Member Profiles (`/api/v1/profile`)
 | Method | Path | Auth | Role | Description |
 | :--- | :--- | :---: | :---: | :--- |
-| `GET`  | `/profile` | Session | Member | Get own unified campus member profile. |
-| `PUT`  | `/profile` | Session | Member | Update bio, skills, department, graduation year, organization, and links. |
+| `GET`  | `/profile/me` | Session | Member | Get own unified campus member profile. |
+| `PUT`  | `/profile/me` | Session | Member | Update bio, skills, department, graduation year, organization, and links. |
 | `POST` | `/profile/resume` | Session | Verified Member | Upload resume (PDF/DOCX, max 5MB). Streams to MinIO. |
 | `GET`  | `/profile/resume` | Session | Member | Get pre-signed download URL for own resume. |
 | `GET`  | `/profile/{id}` | Session | Any | View public profile of a campus member. |

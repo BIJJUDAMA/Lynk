@@ -104,6 +104,18 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+func warnIfDefaultSecrets(appEnv, accessKey, secretKey, stAPIKey string) string {
+	env := strings.ToLower(strings.TrimSpace(appEnv))
+	isDev := env == "" || env == "development" || env == "dev" || env == "local"
+	if isDev {
+		return ""
+	}
+	if accessKey == "minio_admin" || secretKey == "minio_password" || stAPIKey == "lynk_supertokens_secret_api_key_2026" {
+		return "default MinIO or SuperTokens credentials detected; set unique MINIO_ACCESS_KEY/MINIO_SECRET_KEY and SUPERTOKENS_API_KEY"
+	}
+	return ""
+}
+
 type profileReaderAdapter struct {
 	repo user.UserRepository
 }
@@ -149,18 +161,28 @@ func BuildRouter(
 		r.Use(supertokens.Middleware)
 	}
 
-	// Health Check (deep probe: pings PostgreSQL pool)
+	// Health Check (deep probe: PostgreSQL pool + MinIO bucket readiness)
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if dbPool != nil {
-			if err := dbPool.Ping(r.Context()); err != nil {
-				slog.Error("healthcheck db ping failed", "error", err)
-				w.WriteHeader(http.StatusServiceUnavailable)
-				_ = json.NewEncoder(w).Encode(map[string]string{
-					"status":   "unhealthy",
-					"database": "disconnected",
-				})
-				return
+		if dbPool == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "database": "not_configured"})
+			return
+		}
+		if err := dbPool.Ping(r.Context()); err != nil {
+			slog.Error("healthcheck db ping failed", "error", err)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "database": "disconnected"})
+			return
+		}
+		if s3Client != nil {
+			if ensurer, ok := s3Client.(interface{ EnsureBucket(context.Context) error }); ok {
+				if err := ensurer.EnsureBucket(r.Context()); err != nil {
+					slog.Error("healthcheck minio bucket failed", "error", err)
+					w.WriteHeader(http.StatusServiceUnavailable)
+					_ = json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "storage": "unavailable"})
+					return
+				}
 			}
 		}
 		w.WriteHeader(http.StatusOK)
@@ -189,20 +211,27 @@ func BuildRouter(
 			// Profile endpoints
 			r.Route("/profile", func(r chi.Router) {
 				r.Use(authMiddleware)
-				// Unified profile routes
+				// Unified profile routes (session-only: unverified users can complete profile)
 				r.Get("/me", userHandler.GetMyProfile)
 				r.Put("/me", userHandler.UpdateMyProfile)
 				if s3Client != nil {
-					r.Post("/resume", userHandler.UploadResume(s3Client))
 					r.Get("/resume", userHandler.GetMyResumeURL(s3Client))
 					r.Get("/{id}/resume", userHandler.GetMemberResumeURL(s3Client))
 				}
 
-				// Backward-compatible aliases
+				// Resume uploads require verified campus email
+				r.Group(func(vr chi.Router) {
+					vr.Use(middleware.RequireVerifiedEmail())
+					if s3Client != nil {
+						vr.Post("/resume", userHandler.UploadResume(s3Client))
+						vr.Post("/student/resume", userHandler.UploadResume(s3Client))
+					}
+				})
+
+				// Backward-compatible aliases (PUT profile remains session-only)
 				r.Get("/student", userHandler.GetMyStudentProfile)
 				r.Put("/student", userHandler.UpdateMyStudentProfile)
 				if s3Client != nil {
-					r.Post("/student/resume", userHandler.UploadResume(s3Client))
 					r.Get("/student/resume", userHandler.GetMyResumeURL(s3Client))
 					r.Get("/student/{id}/resume", userHandler.GetStudentResumeURL(s3Client))
 				}
@@ -221,9 +250,10 @@ func BuildRouter(
 				// Public job listings
 				r.Get("/", jobHandler.ListJobs)
 
-				// Protected employer & applicant actions
+				// Protected employer & applicant actions (verified campus email required)
 				r.Group(func(pr chi.Router) {
 					pr.Use(authMiddleware)
+					pr.Use(middleware.RequireVerifiedEmail())
 					// Literal /mine before /{id}
 					pr.Get("/mine", jobHandler.GetMyJobs)
 					pr.Post("/", jobHandler.CreateJob)
@@ -246,8 +276,10 @@ func BuildRouter(
 		if appHandler != nil {
 			r.Route("/applications", func(r chi.Router) {
 				r.Use(authMiddleware)
-				// Literal /mine before /{id}
+				r.Use(middleware.RequireVerifiedEmail())
+				// Literal /mine and /applied before /{id}
 				r.Get("/mine", appHandler.GetMyApplications)
+				r.Get("/applied", appHandler.GetMyApplicationForJob)
 				r.Get("/{id}", appHandler.GetApplicationByID)
 				r.Patch("/{id}/status", appHandler.UpdateApplicationStatus)
 			})
@@ -261,9 +293,10 @@ func BuildRouter(
 					r.Get("/{id}/reviews", reviewHandler.GetContractReviews)
 				}
 
-				// Protected contract operations
+				// Protected contract operations (verified campus email required)
 				r.Group(func(pr chi.Router) {
 					pr.Use(authMiddleware)
+					pr.Use(middleware.RequireVerifiedEmail())
 					if contractHandler != nil {
 						pr.Get("/", contractHandler.ListContracts)
 						pr.Get("/{id}", contractHandler.GetContractByID)
@@ -287,6 +320,9 @@ func BuildRouter(
 
 func main() {
 	cfg := LoadConfig()
+	if msg := warnIfDefaultSecrets(getEnv("APP_ENV", ""), cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.SuperTokensAPIKey); msg != "" {
+		log.Printf("[WARN] %s", msg)
+	}
 	log.Printf("Starting Lynk API server on port %s...", cfg.Port)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -334,10 +370,21 @@ func main() {
 		log.Fatalf("Failed to initialize MinIO S3 client: %v", err)
 	}
 	log.Printf("MinIO S3 client initialized for bucket %s", cfg.MinioBucket)
-	if s3Client != nil {
-		if err := s3Client.EnsureBucket(ctx); err != nil {
-			log.Printf("[WARN] MinIO bucket %s check/creation failed: %v", cfg.MinioBucket, err)
+	var lastErr error
+	for attempts := 1; attempts <= 10; attempts++ {
+		lastErr = s3Client.EnsureBucket(ctx)
+		if lastErr == nil {
+			break
 		}
+		log.Printf("Waiting for MinIO bucket %s, attempt %d/10: %v", cfg.MinioBucket, attempts, lastErr)
+		select {
+		case <-ctx.Done():
+			log.Fatal("Startup cancelled while waiting for MinIO")
+		case <-time.After(2 * time.Second):
+		}
+	}
+	if lastErr != nil {
+		log.Fatalf("Failed to ensure MinIO bucket %s: %v", cfg.MinioBucket, lastErr)
 	}
 
 	// 4. Initialize SuperTokens Go SDK
@@ -354,7 +401,8 @@ func main() {
 
 	// 5. Wire Repositories, Services, and Handlers
 	userRepo := user.NewRepository(pool)
-	userService := user.NewService(userRepo, s3Client)
+	userService := user.NewService(userRepo, s3Client).
+		WithResumeAccessChecker(user.NewPGResumeAccessChecker(pool))
 	userHandler := user.NewHandler(userService, userRepo, s3Client)
 
 	jobRepo := job.NewRepository(pool)

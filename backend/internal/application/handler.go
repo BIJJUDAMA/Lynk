@@ -5,11 +5,13 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/httpx"
 	"github.com/lynk/backend/internal/httputil"
 )
 
@@ -41,8 +43,11 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 
 		// Member submitted applications (MUST precede /{id})
 		rt.Get("/mine", h.GetMyApplications)
+		rt.Get("/applied", h.GetMyApplicationForJob)
 		rt.Get("/applications/mine", h.GetMyApplications)
+		rt.Get("/applications/applied", h.GetMyApplicationForJob)
 		rt.Get("/api/v1/applications/mine", h.GetMyApplications)
+		rt.Get("/api/v1/applications/applied", h.GetMyApplicationForJob)
 
 		// Application detail and status mutation
 		rt.Get("/{id}", h.GetApplicationByID)
@@ -54,14 +59,11 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 		rt.Patch("/api/v1/applications/{id}/status", h.UpdateApplicationStatus)
 	}
 
-	if authMiddleware != nil {
-		r.Group(func(pr chi.Router) {
-			pr.Use(authMiddleware)
-			routeSetup(pr)
-		})
-	} else {
-		routeSetup(r)
-	}
+	authMiddleware = httpx.DefaultAuthMiddleware(authMiddleware)
+	r.Group(func(pr chi.Router) {
+		pr.Use(authMiddleware)
+		routeSetup(pr)
+	})
 
 	return r
 }
@@ -69,9 +71,7 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 // JobApplicationRoutes provides a subrouter for mounting under /api/v1/jobs/{id}/applications.
 func (h *Handler) JobApplicationRoutes(authMiddleware func(http.Handler) http.Handler) chi.Router {
 	r := chi.NewRouter()
-	if authMiddleware != nil {
-		r.Use(authMiddleware)
-	}
+	r.Use(httpx.DefaultAuthMiddleware(authMiddleware))
 	r.Post("/", h.ApplyToJob)
 	r.Get("/", h.ListJobApplications)
 	return r
@@ -80,10 +80,9 @@ func (h *Handler) JobApplicationRoutes(authMiddleware func(http.Handler) http.Ha
 // ApplicationRoutes provides a subrouter for mounting under /api/v1/applications.
 func (h *Handler) ApplicationRoutes(authMiddleware func(http.Handler) http.Handler) chi.Router {
 	r := chi.NewRouter()
-	if authMiddleware != nil {
-		r.Use(authMiddleware)
-	}
+	r.Use(httpx.DefaultAuthMiddleware(authMiddleware))
 	r.Get("/mine", h.GetMyApplications)
+	r.Get("/applied", h.GetMyApplicationForJob)
 	r.Get("/{id}", h.GetApplicationByID)
 	r.Patch("/{id}/status", h.UpdateApplicationStatus)
 	return r
@@ -99,7 +98,7 @@ func (h *Handler) ApplyToJob(w http.ResponseWriter, r *http.Request) {
 
 	// Institutional Email Gate: Reject unverified applicants with 403 Forbidden
 	if !claims.EmailVerified {
-		httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "University email must be verified before applying to jobs", nil)
+		httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg, nil)
 		return
 	}
 
@@ -122,7 +121,7 @@ func (h *Handler) ApplyToJob(w http.ResponseWriter, r *http.Request) {
 	app, err := h.service.ApplyToJob(r.Context(), claims, jobID, req)
 	if err != nil {
 		if errors.Is(err, ErrEmailNotVerified) {
-			httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "University email must be verified before applying to jobs", nil)
+			httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg, nil)
 			return
 		}
 		if errors.Is(err, ErrForbidden) {
@@ -166,7 +165,10 @@ func (h *Handler) ListJobApplications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apps, err := h.service.ListJobApplications(r.Context(), claims, jobID)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
+	apps, err := h.service.ListJobApplications(r.Context(), claims, jobID, limit, offset)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
 			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
@@ -191,7 +193,10 @@ func (h *Handler) GetMyApplications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apps, err := h.service.ListMyApplications(r.Context(), claims)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
+	apps, err := h.service.ListMyApplications(r.Context(), claims, limit, offset)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
 			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
@@ -202,6 +207,29 @@ func (h *Handler) GetMyApplications(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httputil.WriteSuccess(w, http.StatusOK, apps)
+}
+
+// GetMyApplicationForJob handles GET /api/v1/applications/applied?job_id=<uuid>.
+func (h *Handler) GetMyApplicationForJob(w http.ResponseWriter, r *http.Request) {
+	claims, err := auth.GetUserContext(r.Context())
+	if err != nil {
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing session", err)
+		return
+	}
+
+	jobID, err := uuid.Parse(strings.TrimSpace(r.URL.Query().Get("job_id")))
+	if err != nil {
+		httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "job_id query param must be a UUID", err)
+		return
+	}
+
+	app, err := h.service.GetMyApplicationForJob(r.Context(), claims.UserID, jobID)
+	if err != nil {
+		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to lookup application", err)
+		return
+	}
+
+	httputil.WriteSuccess(w, http.StatusOK, app)
 }
 
 // GetApplicationByID handles GET /api/v1/applications/{id} (Applicant or Job Creator).

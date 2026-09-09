@@ -235,4 +235,67 @@ func TestSessionInit_InjectsEmailIntoAccessTokenPayload_WhenEmptyString(t *testi
 	}
 }
 
+func TestSessionInit_InjectsEmailVerifiedAndRolesIntoAccessTokenPayload(t *testing.T) {
+	supertokens.ResetForTest()
+
+	cfg := auth.SuperTokensConfig{
+		ConnectionURI: "http://localhost:3567",
+		APIKey:        "some-api-key",
+		APIDomain:     "http://localhost:8080",
+		WebsiteDomain: "http://localhost:3000",
+	}
+
+	err := auth.InitSupertokens(cfg)
+	if err != nil {
+		t.Fatalf("InitSupertokens failed: %v", err)
+	}
+
+	sessRecipe, err := session.GetRecipeInstanceOrThrowError()
+	if err != nil {
+		t.Fatalf("failed to get session recipe instance: %v", err)
+	}
+
+	epRecipe, err := emailpassword.GetRecipeInstanceOrThrowError()
+	if err != nil {
+		t.Fatalf("failed to get emailpassword recipe instance: %v", err)
+	}
+	mockUser := &epmodels.User{
+		ID:    "user_123",
+		Email: "student@stanford.edu",
+	}
+	getUserByIDFn := func(userID string, userContext supertokens.UserContext) (*epmodels.User, error) {
+		if userID == "user_123" {
+			return mockUser, nil
+		}
+		return nil, nil
+	}
+	epRecipe.RecipeImpl.GetUserByID = &getUserByIDFn
+
+	payload := map[string]interface{}{}
+	userCtx := &map[string]interface{}{}
+
+	_, _ = (*sessRecipe.RecipeImpl.CreateNewSession)("user_123", payload, nil, nil, "public", userCtx)
+
+	captured := payload
+	if _, ok := captured["email"].(string); !ok {
+		t.Fatal("expected email in access token payload")
+	}
+	if _, ok := captured["emailVerified"].(bool); !ok {
+		t.Fatal("expected emailVerified bool in access token payload")
+	}
+	roles, ok := captured["roles"].([]string)
+	if !ok {
+		if raw, ok2 := captured["roles"].([]interface{}); ok2 {
+			roles = make([]string, len(raw))
+			for i, v := range raw {
+				roles[i], _ = v.(string)
+			}
+		} else {
+			t.Fatalf("expected roles slice in payload, got %#v", captured["roles"])
+		}
+	}
+	if len(roles) == 0 {
+		t.Fatal("expected at least one role in access token payload")
+	}
+}
 

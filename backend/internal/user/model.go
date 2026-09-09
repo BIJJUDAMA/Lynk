@@ -46,7 +46,7 @@ type UpdateProfileRequest struct {
 	LastName            string   `json:"last_name"`
 	Bio                 string   `json:"bio"`
 	Department          string   `json:"department"`
-	GraduationYear      int      `json:"graduation_year"`
+	GraduationYear      *int     `json:"graduation_year,omitempty"`
 	Skills              []string `json:"skills"`
 	PortfolioLinks      []string `json:"portfolio_links"`
 	Organization        string   `json:"organization,omitempty"`

@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/httpx"
 )
 
 type mockContractRepo struct {
@@ -31,12 +32,7 @@ func (m *mockContractRepo) CreateContract(ctx context.Context, contract *Contrac
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if contract.ID == uuid.Nil {
-		contract.ID = uuid.New()
-	}
-	if contract.Status == "" {
-		contract.Status = StatusDraft
-	}
+	applyCreateDefaults(contract)
 	now := time.Now().UTC()
 	if contract.Status == StatusActive && contract.StartedAt == nil {
 		contract.StartedAt = &now
@@ -54,7 +50,7 @@ func (m *mockContractRepo) CreateContract(ctx context.Context, contract *Contrac
 			CreatedBy:   contract.ClientID,
 			Title:       "Sample Job",
 			Description: "Job description",
-			Budget:      contract.AgreedBudget,
+			BudgetCents: contract.AgreedBudgetCents,
 			PayType:     "fixed",
 			Department:  "Computer Science",
 			Status:      "in_progress",
@@ -91,7 +87,7 @@ func (m *mockContractRepo) GetContractByID(ctx context.Context, id uuid.UUID) (*
 	return &cp, nil
 }
 
-func (m *mockContractRepo) ListContractsByUserID(ctx context.Context, userID string) ([]*ContractWithDetails, error) {
+func (m *mockContractRepo) ListContractsByUserID(ctx context.Context, userID string, limit, offset int) ([]*ContractWithDetails, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -102,7 +98,23 @@ func (m *mockContractRepo) ListContractsByUserID(ctx context.Context, userID str
 			list = append(list, &cp)
 		}
 	}
-	return list, nil
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(list) {
+		return []*ContractWithDetails{}, nil
+	}
+	end := offset + limit
+	if end > len(list) {
+		end = len(list)
+	}
+	return list[offset:end], nil
 }
 
 func (m *mockContractRepo) UpdateContractStatus(ctx context.Context, id uuid.UUID, targetStatus string) (*ContractWithDetails, error) {
@@ -185,6 +197,23 @@ func parseEnvelope(t *testing.T, body []byte) jsonEnvelope {
 	return res
 }
 
+func TestCreateContract_DefaultsToActiveNotDraft(t *testing.T) {
+	c := &Contract{
+		JobID:             uuid.New(),
+		ApplicationID:     uuid.New(),
+		ClientID:          "c",
+		FreelancerID:      "f",
+		AgreedBudgetCents: 100,
+	}
+	if c.Status != "" {
+		t.Fatal("fixture status must be empty to test default")
+	}
+	applyCreateDefaults(c)
+	if c.Status != StatusActive {
+		t.Fatalf("expected default active, got %s", c.Status)
+	}
+}
+
 func TestContract_ValidateTransition(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -243,7 +272,7 @@ func TestContract_ParticipantAuthorization(t *testing.T) {
 	repo := newMockContractRepo()
 	service := NewService(repo)
 	handler := NewHandler(service)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	freelancerID := uuid.New().String()
 	clientID := uuid.New().String()
@@ -256,7 +285,7 @@ func TestContract_ParticipantAuthorization(t *testing.T) {
 		ApplicationID: uuid.New(),
 		ClientID:      clientID,
 		FreelancerID:  freelancerID,
-		AgreedBudget:  500.0,
+		AgreedBudgetCents:  50000,
 		Status:        StatusActive,
 	}
 	_ = repo.CreateContract(context.Background(), testContract)
@@ -361,7 +390,7 @@ func TestContract_ListContracts(t *testing.T) {
 	repo := newMockContractRepo()
 	service := NewService(repo)
 	handler := NewHandler(service)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	freelancerID := uuid.New().String()
 	clientID := uuid.New().String()
@@ -372,7 +401,7 @@ func TestContract_ListContracts(t *testing.T) {
 		ApplicationID: uuid.New(),
 		ClientID:      clientID,
 		FreelancerID:  freelancerID,
-		AgreedBudget:  300.0,
+		AgreedBudgetCents:  30000,
 		Status:        StatusActive,
 	}
 	c2 := &Contract{
@@ -381,7 +410,7 @@ func TestContract_ListContracts(t *testing.T) {
 		ApplicationID: uuid.New(),
 		ClientID:      clientID,
 		FreelancerID:  freelancerID,
-		AgreedBudget:  750.0,
+		AgreedBudgetCents:  75000,
 		Status:        StatusCompleted,
 	}
 	cOther := &Contract{
@@ -390,7 +419,7 @@ func TestContract_ListContracts(t *testing.T) {
 		ApplicationID: uuid.New(),
 		ClientID:      uuid.New().String(),
 		FreelancerID:  uuid.New().String(),
-		AgreedBudget:  1000.0,
+		AgreedBudgetCents:  100000,
 		Status:        StatusActive,
 	}
 
@@ -440,7 +469,7 @@ func TestContract_StateTransitions(t *testing.T) {
 	repo := newMockContractRepo()
 	service := NewService(repo)
 	handler := NewHandler(service)
-	router := handler.Routes(nil)
+	router := handler.Routes(httpx.RequireAuthFromContext())
 
 	freelancerID := uuid.New().String()
 	clientID := uuid.New().String()
@@ -461,16 +490,22 @@ func TestContract_StateTransitions(t *testing.T) {
 
 	t.Run("draft to active transition succeeds and sets started_at", func(t *testing.T) {
 		cID := uuid.New()
-		c := &Contract{
-			ID:            cID,
-			JobID:         uuid.New(),
-			ApplicationID: uuid.New(),
-			ClientID:      clientID,
-			FreelancerID:  freelancerID,
-			AgreedBudget:  400.0,
-			Status:        StatusDraft,
+		jobID := uuid.New()
+		now := time.Now().UTC()
+		repo.contracts[cID] = &ContractWithDetails{
+			Contract: Contract{
+				ID:                cID,
+				JobID:             jobID,
+				ApplicationID:     uuid.New(),
+				ClientID:          clientID,
+				FreelancerID:      freelancerID,
+				AgreedBudgetCents: 40000,
+				Status:            StatusDraft,
+				CreatedAt:         now,
+				UpdatedAt:         now,
+			},
+			Job: &JobSummary{ID: jobID, CreatedBy: clientID, Status: "in_progress"},
 		}
-		_ = repo.CreateContract(context.Background(), c)
 
 		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusActive})
 		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
@@ -500,7 +535,7 @@ func TestContract_StateTransitions(t *testing.T) {
 			ApplicationID: uuid.New(),
 			ClientID:      clientID,
 			FreelancerID:  freelancerID,
-			AgreedBudget:  800.0,
+			AgreedBudgetCents:  80000,
 			Status:        StatusActive,
 			StartedAt:     &started,
 		}
@@ -537,7 +572,7 @@ func TestContract_StateTransitions(t *testing.T) {
 			ApplicationID: uuid.New(),
 			ClientID:      clientID,
 			FreelancerID:  freelancerID,
-			AgreedBudget:  800.0,
+			AgreedBudgetCents:  80000,
 			Status:        StatusActive,
 			StartedAt:     &started,
 		}
@@ -570,7 +605,7 @@ func TestContract_StateTransitions(t *testing.T) {
 			ApplicationID: uuid.New(),
 			ClientID:      clientID,
 			FreelancerID:  freelancerID,
-			AgreedBudget:  650.0,
+			AgreedBudgetCents:  65000,
 			Status:        StatusActive,
 		}
 		_ = repo.CreateContract(context.Background(), c)
@@ -605,7 +640,7 @@ func TestContract_StateTransitions(t *testing.T) {
 			ApplicationID: uuid.New(),
 			ClientID:      clientID,
 			FreelancerID:  freelancerID,
-			AgreedBudget:  650.0,
+			AgreedBudgetCents:  65000,
 			Status:        StatusActive,
 		}
 		_ = repo.CreateContract(context.Background(), c)
@@ -640,7 +675,7 @@ func TestContract_StateTransitions(t *testing.T) {
 			ApplicationID: uuid.New(),
 			ClientID:      clientID,
 			FreelancerID:  freelancerID,
-			AgreedBudget:  650.0,
+			AgreedBudgetCents:  65000,
 			Status:        StatusActive,
 		}
 		_ = repo.CreateContract(context.Background(), c)
@@ -689,7 +724,7 @@ func TestService_FreelancerCannotMarkContractCompleted(t *testing.T) {
 	svc := NewService(mockRepo)
 
 	// Freelancer attempts to mark as completed -> MUST return ErrForbidden
-	freelancerClaims := &auth.UserClaims{UserID: freelancerID, Roles: []string{"member"}}
+	freelancerClaims := &auth.UserClaims{UserID: freelancerID, EmailVerified: true, Roles: []string{"member"}}
 	_, err := svc.UpdateContractStatus(context.Background(), freelancerClaims, contractID, UpdateContractStatusRequest{Status: StatusCompleted})
 	if err == nil {
 		t.Fatalf("expected error when freelancer marks contract completed, got nil")
@@ -699,7 +734,7 @@ func TestService_FreelancerCannotMarkContractCompleted(t *testing.T) {
 	}
 
 	// Client marks as completed -> succeeds
-	clientClaims := &auth.UserClaims{UserID: clientID, Roles: []string{"member"}}
+	clientClaims := &auth.UserClaims{UserID: clientID, EmailVerified: true, Roles: []string{"member"}}
 	updated, err := svc.UpdateContractStatus(context.Background(), clientClaims, contractID, UpdateContractStatusRequest{Status: StatusCompleted})
 	if err != nil {
 		t.Fatalf("expected client to successfully mark completed, got: %v", err)
@@ -722,7 +757,7 @@ func TestService_FreelancerCannotMarkContractCompleted(t *testing.T) {
 		},
 	}
 	adminID := uuid.New().String()
-	adminClaims := &auth.UserClaims{UserID: adminID, Roles: []string{"admin"}}
+	adminClaims := &auth.UserClaims{UserID: adminID, EmailVerified: true, Roles: []string{"admin"}}
 	adminUpdated, err := svc.UpdateContractStatus(context.Background(), adminClaims, contract2ID, UpdateContractStatusRequest{Status: StatusCompleted})
 	if err != nil {
 		t.Fatalf("expected admin to successfully mark completed, got: %v", err)
@@ -750,7 +785,7 @@ func TestContract_CompleteContractClosesJob(t *testing.T) {
 		ApplicationID: uuid.New(),
 		ClientID:      clientID,
 		FreelancerID:  freelancerID,
-		AgreedBudget:  500.0,
+		AgreedBudgetCents:  50000,
 		Status:        StatusActive,
 	}
 	if err := repo.CreateContract(context.Background(), c); err != nil {
@@ -822,7 +857,7 @@ func TestContract_CancelContractReopensJob(t *testing.T) {
 			ApplicationID: uuid.New(),
 			ClientID:      clientID,
 			FreelancerID:  freelancerID,
-			AgreedBudget:  500.0,
+			AgreedBudgetCents:  50000,
 			Status:        StatusActive,
 		}
 		if err := repo.CreateContract(context.Background(), c); err != nil {
@@ -850,7 +885,7 @@ func TestContract_CancelContractReopensJob(t *testing.T) {
 			ApplicationID: uuid.New(),
 			ClientID:      clientID,
 			FreelancerID:  freelancerID,
-			AgreedBudget:  750.0,
+			AgreedBudgetCents:  75000,
 			Status:        StatusActive,
 		}
 		if err := repo.CreateContract(context.Background(), c); err != nil {
@@ -869,20 +904,23 @@ func TestContract_CancelContractReopensJob(t *testing.T) {
 		}
 	})
 
-	t.Run("client cancels draft contract and reopens job", func(t *testing.T) {
+	t.Run("client cancels legacy draft contract and reopens job", func(t *testing.T) {
 		contractID := uuid.New()
 		jobID := uuid.New()
-		c := &Contract{
-			ID:            contractID,
-			JobID:         jobID,
-			ApplicationID: uuid.New(),
-			ClientID:      clientID,
-			FreelancerID:  freelancerID,
-			AgreedBudget:  300.0,
-			Status:        StatusDraft,
-		}
-		if err := repo.CreateContract(context.Background(), c); err != nil {
-			t.Fatalf("failed to create contract: %v", err)
+		now := time.Now().UTC()
+		repo.contracts[contractID] = &ContractWithDetails{
+			Contract: Contract{
+				ID:                contractID,
+				JobID:             jobID,
+				ApplicationID:     uuid.New(),
+				ClientID:          clientID,
+				FreelancerID:      freelancerID,
+				AgreedBudgetCents: 30000,
+				Status:            StatusDraft,
+				CreatedAt:         now,
+				UpdatedAt:         now,
+			},
+			Job: &JobSummary{ID: jobID, CreatedBy: clientID, Status: "in_progress"},
 		}
 
 		updated, err := service.UpdateContractStatus(context.Background(), clientClaims, contractID, UpdateContractStatusRequest{Status: StatusCancelled})
@@ -905,7 +943,7 @@ func TestContract_CancelContractReopensJob(t *testing.T) {
 			ApplicationID: uuid.New(),
 			ClientID:      clientID,
 			FreelancerID:  freelancerID,
-			AgreedBudget:  500.0,
+			AgreedBudgetCents:  50000,
 			Status:        StatusActive,
 		}
 		if err := repo.CreateContract(context.Background(), c); err != nil {
@@ -929,7 +967,7 @@ func TestContract_CancelContractReopensJob(t *testing.T) {
 			ApplicationID: uuid.New(),
 			ClientID:      clientID,
 			FreelancerID:  freelancerID,
-			AgreedBudget:  500.0,
+			AgreedBudgetCents:  50000,
 			Status:        StatusCompleted,
 		}
 		if err := repo.CreateContract(context.Background(), c); err != nil {
@@ -953,7 +991,7 @@ func TestContract_CancelContractReopensJob(t *testing.T) {
 			ApplicationID: uuid.New(),
 			ClientID:      clientID,
 			FreelancerID:  freelancerID,
-			AgreedBudget:  500.0,
+			AgreedBudgetCents:  50000,
 			Status:        StatusCancelled,
 		}
 		if err := repo.CreateContract(context.Background(), c); err != nil {

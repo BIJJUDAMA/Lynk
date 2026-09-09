@@ -101,6 +101,10 @@ func (m *mockJobRepository) ListJobs(ctx context.Context, filter job.JobFilter) 
 	return result, nil
 }
 
+func (m *mockJobRepository) HasActiveContractForJob(ctx context.Context, jobID uuid.UUID) (bool, error) {
+	return false, nil
+}
+
 func TestJob_CreateJob_VerifiedMemberSuccess(t *testing.T) {
 	repo := newMockJobRepository()
 	svc := job.NewService(repo)
@@ -124,7 +128,7 @@ func TestJob_CreateJob_VerifiedMemberSuccess(t *testing.T) {
 	body, _ := json.Marshal(job.CreateJobRequest{
 		Title:          "Campus Mobile App Developer",
 		Description:    "Need skilled student to build campus dining UI in React Native",
-		Budget:         1200,
+		BudgetCents:    120000,
 		PayType:        "fixed",
 		RequiredSkills: []string{"React Native", "TypeScript"},
 		Department:     "Computer Science",
@@ -152,6 +156,48 @@ func TestJob_CreateJob_VerifiedMemberSuccess(t *testing.T) {
 	}
 }
 
+func TestCreateJob_RejectsFloatBudgetField(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+	h := job.NewHandler(svc, repo)
+
+	userUUID := uuid.New()
+	claims := &auth.UserClaims{
+		UserID:        userUUID.String(),
+		Email:         "creator@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	r := h.Routes(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := auth.WithUserContext(req.Context(), claims)
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+
+	body := `{"title":"Campus Gig","description":"Need help with project","budget":10.25,"pay_type":"fixed"}`
+	req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "budget_cents") {
+		t.Fatalf("expected error mentioning budget_cents, got %s", rec.Body.String())
+	}
+
+	bodyOK := `{"title":"Campus Gig","description":"Need help with project","budget_cents":1025,"pay_type":"fixed"}`
+	reqOK := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(bodyOK))
+	recOK := httptest.NewRecorder()
+	r.ServeHTTP(recOK, reqOK)
+
+	if recOK.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created with budget_cents, got %d: %s", recOK.Code, recOK.Body.String())
+	}
+}
+
 func TestJob_CreateJob_UnverifiedEmailBlocked(t *testing.T) {
 	repo := newMockJobRepository()
 	svc := job.NewService(repo)
@@ -175,7 +221,7 @@ func TestJob_CreateJob_UnverifiedEmailBlocked(t *testing.T) {
 	body, _ := json.Marshal(job.CreateJobRequest{
 		Title:       "Research Assistant",
 		Description: "Data labeling for ML lab",
-		Budget:      25,
+		BudgetCents: 2500,
 		PayType:     "hourly",
 	})
 
@@ -188,6 +234,15 @@ func TestJob_CreateJob_UnverifiedEmailBlocked(t *testing.T) {
 	}
 }
 
+func verifiedJobClaims(userID string) *auth.UserClaims {
+	return &auth.UserClaims{
+		UserID:        userID,
+		Email:         userID + "@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+}
+
 func TestJob_OwnershipPermissions(t *testing.T) {
 	repo := newMockJobRepository()
 	svc := job.NewService(repo)
@@ -196,10 +251,10 @@ func TestJob_OwnershipPermissions(t *testing.T) {
 	ownerUUID := uuid.New()
 	nonOwnerUUID := uuid.New()
 
-	createdJob, err := svc.CreateJob(context.Background(), ownerUUID.String(), job.CreateJobRequest{
+	createdJob, err := svc.CreateJob(context.Background(), verifiedJobClaims(ownerUUID.String()), job.CreateJobRequest{
 		Title:       "Original Title",
 		Description: "Original Description",
-		Budget:      500,
+		BudgetCents: 50000,
 		PayType:     "fixed",
 	})
 	if err != nil {
@@ -271,22 +326,22 @@ func TestService_CreateJob_NumericBounds(t *testing.T) {
 	repo := newMockJobRepository()
 	svc := job.NewService(repo)
 
-	// Exceeds 99,999,999.99
-	_, err := svc.CreateJob(context.Background(), "usr_test", job.CreateJobRequest{
+	// Exceeds $99,999,999.99
+	_, err := svc.CreateJob(context.Background(), verifiedJobClaims("usr_test"), job.CreateJobRequest{
 		Title:       "Big Budget Job",
 		Description: "High compensation role",
-		Budget:      100000000.00,
+		BudgetCents: 10000000000,
 		PayType:     "fixed",
 	})
 	if !errors.Is(err, job.ErrInvalidInput) {
-		t.Fatalf("expected ErrInvalidInput for budget > 99999999.99, got %v", err)
+		t.Fatalf("expected ErrInvalidInput for budget_cents exceed maximum, got %v", err)
 	}
 
 	// Negative budget
-	_, err = svc.CreateJob(context.Background(), "usr_test", job.CreateJobRequest{
+	_, err = svc.CreateJob(context.Background(), verifiedJobClaims("usr_test"), job.CreateJobRequest{
 		Title:       "Negative Budget Job",
 		Description: "Invalid budget",
-		Budget:      -1.0,
+		BudgetCents: -100,
 		PayType:     "fixed",
 	})
 	if !errors.Is(err, job.ErrInvalidInput) {
@@ -294,46 +349,46 @@ func TestService_CreateJob_NumericBounds(t *testing.T) {
 	}
 
 	// Maximum valid budget
-	validJob, err := svc.CreateJob(context.Background(), "usr_test", job.CreateJobRequest{
+	validJob, err := svc.CreateJob(context.Background(), verifiedJobClaims("usr_test"), job.CreateJobRequest{
 		Title:       "Max Budget Job",
 		Description: "Max valid budget",
-		Budget:      99999999.99,
+		BudgetCents: 9999999999,
 		PayType:     "fixed",
 	})
 	if err != nil {
-		t.Fatalf("expected valid job for max budget 99999999.99, got error: %v", err)
+		t.Fatalf("expected valid job for max budget_cents 9999999999, got error: %v", err)
 	}
-	if validJob.Budget != 99999999.99 {
-		t.Errorf("expected budget 99999999.99, got %f", validJob.Budget)
+	if validJob.BudgetCents != 9999999999 {
+		t.Errorf("expected budget_cents 9999999999, got %d", validJob.BudgetCents)
 	}
 }
 
 func TestService_UpdateJob_NumericBounds(t *testing.T) {
 	repo := newMockJobRepository()
 	svc := job.NewService(repo)
-	callerID := "usr_owner"
+	callerClaims := verifiedJobClaims("usr_owner")
 
-	j, err := svc.CreateJob(context.Background(), callerID, job.CreateJobRequest{
+	j, err := svc.CreateJob(context.Background(), callerClaims, job.CreateJobRequest{
 		Title:       "Valid Job",
 		Description: "Valid Description",
-		Budget:      1000,
+		BudgetCents: 100000,
 		PayType:     "fixed",
 	})
 	if err != nil {
 		t.Fatalf("failed to create job: %v", err)
 	}
 
-	overflowBudget := 100000000.00
-	_, err = svc.UpdateJob(context.Background(), callerID, j.ID, job.UpdateJobRequest{
-		Budget: &overflowBudget,
+	overflowBudget := int64(10000000000)
+	_, err = svc.UpdateJob(context.Background(), callerClaims, j.ID, job.UpdateJobRequest{
+		BudgetCents: &overflowBudget,
 	})
 	if !errors.Is(err, job.ErrInvalidInput) {
-		t.Fatalf("expected ErrInvalidInput for budget > 99999999.99, got %v", err)
+		t.Fatalf("expected ErrInvalidInput for budget_cents exceed maximum, got %v", err)
 	}
 
-	negativeBudget := -0.01
-	_, err = svc.UpdateJob(context.Background(), callerID, j.ID, job.UpdateJobRequest{
-		Budget: &negativeBudget,
+	negativeBudget := int64(-1)
+	_, err = svc.UpdateJob(context.Background(), callerClaims, j.ID, job.UpdateJobRequest{
+		BudgetCents: &negativeBudget,
 	})
 	if !errors.Is(err, job.ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput for negative budget, got %v", err)
@@ -343,12 +398,12 @@ func TestService_UpdateJob_NumericBounds(t *testing.T) {
 func TestService_UpdateJob_StateTransitions(t *testing.T) {
 	repo := newMockJobRepository()
 	svc := job.NewService(repo)
-	callerID := "usr_owner"
+	callerClaims := verifiedJobClaims("usr_owner")
 
-	j, err := svc.CreateJob(context.Background(), callerID, job.CreateJobRequest{
+	j, err := svc.CreateJob(context.Background(), callerClaims, job.CreateJobRequest{
 		Title:       "State Transition Test Job",
 		Description: "Testing job state transitions",
-		Budget:      500,
+		BudgetCents: 50000,
 		PayType:     "fixed",
 	})
 	if err != nil {
@@ -357,7 +412,7 @@ func TestService_UpdateJob_StateTransitions(t *testing.T) {
 
 	// 1. Cannot manually set job to in_progress
 	inProg := job.StatusInProgress
-	_, err = svc.UpdateJob(context.Background(), callerID, j.ID, job.UpdateJobRequest{
+	_, err = svc.UpdateJob(context.Background(), callerClaims, j.ID, job.UpdateJobRequest{
 		Status: &inProg,
 	})
 	if !errors.Is(err, job.ErrInvalidInput) {
@@ -372,7 +427,7 @@ func TestService_UpdateJob_StateTransitions(t *testing.T) {
 
 	// Cannot reopen in_progress job
 	openStatus := job.StatusOpen
-	_, err = svc.UpdateJob(context.Background(), callerID, j.ID, job.UpdateJobRequest{
+	_, err = svc.UpdateJob(context.Background(), callerClaims, j.ID, job.UpdateJobRequest{
 		Status: &openStatus,
 	})
 	if !errors.Is(err, job.ErrInvalidInput) {
@@ -386,11 +441,56 @@ func TestService_UpdateJob_StateTransitions(t *testing.T) {
 	}
 
 	// Cannot reopen closed job
-	_, err = svc.UpdateJob(context.Background(), callerID, j.ID, job.UpdateJobRequest{
+	_, err = svc.UpdateJob(context.Background(), callerClaims, j.ID, job.UpdateJobRequest{
 		Status: &openStatus,
 	})
 	if !errors.Is(err, job.ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput when reopening closed job, got %v", err)
+	}
+}
+
+func TestService_UpdateJob_FreezesBudgetWhenInProgress(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+	id := uuid.New()
+	inProg := &job.Job{
+		ID: id, CreatedBy: "poster", Title: "T", Description: "desc",
+		BudgetCents: 10000, Status: job.StatusInProgress, PayType: job.PayTypeFixed,
+	}
+	repo.jobs[id] = inProg
+	newBudget := int64(99900)
+	_, err := svc.UpdateJob(context.Background(), verifiedJobClaims("poster"), id, job.UpdateJobRequest{BudgetCents: &newBudget})
+	if err == nil {
+		t.Fatal("expected error when editing budget of in_progress job")
+	}
+	if !errors.Is(err, job.ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestJobHandlerRoutes_NilAuthDoesNotExposeWrites(t *testing.T) {
+	h := job.NewHandler(job.NewService(newMockJobRepository()), nil)
+	router := h.Routes(nil)
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized && rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 401/403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestService_UpdateJob_CannotManuallyCloseWhileInProgress(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+	id := uuid.New()
+	repo.jobs[id] = &job.Job{ID: id, CreatedBy: "poster", Status: job.StatusInProgress, Title: "T", Description: "d", PayType: job.PayTypeFixed}
+	closed := job.StatusClosed
+	_, err := svc.UpdateJob(context.Background(), verifiedJobClaims("poster"), id, job.UpdateJobRequest{Status: &closed})
+	if err == nil {
+		t.Fatal("expected rejection of manual close while in_progress (contracts own that transition)")
+	}
+	if !errors.Is(err, job.ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
 	}
 }
 

@@ -27,7 +27,7 @@ import {
   getJobById,
   applyToJob,
   getMyProfile,
-  getMyApplications,
+  getMyApplicationForJob,
   isEmailNotVerifiedError,
   ApiClientError,
 } from "@/lib/api";
@@ -79,25 +79,21 @@ export default function JobDetailPage() {
     }
   );
 
-  // Fetch member's existing applications to check if already applied
-  const { data: myApplications } = useQuery<ApplicationWithDetails[]>(
-    useCallback((client) => getMyApplications(client), []),
+  // Fetch member's application for this job only (not full mine list)
+  const { data: existingApplication } = useQuery<ApplicationWithDetails | null>(
+    useCallback((client) => getMyApplicationForJob(jobId, client), [jobId]),
     {
-      enabled: Boolean(isAuthenticated),
+      enabled: Boolean(isAuthenticated && jobId),
     }
   );
 
-  const existingApplication = myApplications?.find((app) => app.job_id === jobId);
   const alreadyApplied = Boolean(existingApplication || hasAppliedSuccess);
 
   // Determine if current viewer is the creator of this job
   const isCreator = Boolean(
     isAuthenticated &&
     job &&
-    (job.created_by === user?.id ||
-      job.created_by === backendUser?.id ||
-      job.employer_id === user?.id ||
-      job.employer_id === backendUser?.id)
+    (job.created_by === user?.id || job.created_by === backendUser?.id)
   );
 
   // Handle application submission
@@ -329,7 +325,7 @@ export default function JobDetailPage() {
               Compensation
             </h3>
             <div className="mt-2 text-2xl font-bold text-foreground">
-              {formatBudget(job.budget, job.pay_type)}
+              {formatBudget(job.budget_cents, job.pay_type)}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {job.pay_type === "hourly"

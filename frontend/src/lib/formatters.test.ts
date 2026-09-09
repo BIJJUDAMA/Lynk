@@ -12,10 +12,10 @@ import {
   isValidUrl,
 } from "./formatters.ts";
 
-test("formatBudget correctly formats fixed and hourly rates", () => {
-  assert.equal(formatBudget(500, "fixed"), "$500 Fixed");
-  assert.equal(formatBudget(25, "hourly"), "$25/hr");
-  assert.equal(formatBudget(1250, "fixed"), "$1,250 Fixed");
+test("formatBudget correctly formats fixed and hourly rates from cents", () => {
+  assert.equal(formatBudget(50000, "fixed"), "$500.00 Fixed");
+  assert.equal(formatBudget(2500, "hourly"), "$25.00/hr");
+  assert.equal(formatBudget(125000, "fixed"), "$1,250.00 Fixed");
 });
 
 test("formatJobDate formats ISO date strings and handles null/undefined", () => {

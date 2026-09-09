@@ -1,34 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  generateRandomString,
-  sha256,
-  base64UrlEncode,
-  generateCodeChallenge,
   decodeJwtClaims,
   extractUserFromClaims,
   syncUserWithBackend,
 } from "./auth.ts";
 import type { JwtClaims } from "./auth.ts";
-
-test("generateRandomString produces expected length and valid characters", () => {
-  const str = generateRandomString(64);
-  assert.equal(str.length, 64);
-  assert.match(str, /^[A-Za-z0-9\-._~]+$/);
-
-  const customStr = generateRandomString(128);
-  assert.equal(customStr.length, 128);
-  assert.match(customStr, /^[A-Za-z0-9\-._~]+$/);
-});
-
-test("RFC 7636 PKCE S256 test vector validation", async () => {
-  // Appendix B of RFC 7636
-  const rfcVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
-  const expectedChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
-
-  const challenge = await generateCodeChallenge(rfcVerifier);
-  assert.equal(challenge, expectedChallenge);
-});
 
 test("decodeJwtClaims decodes valid JWT payload and handles malformed strings", () => {
   // Sample JWT payload: {"sub":"user-123","email":"member@university.edu","email_verified":true,"roles":["member"]}
@@ -101,6 +78,36 @@ test("extractUserFromClaims resolves member and admin roles and email verificati
   assert.equal(adminUser.isVerified, true);
 });
 
+test("syncUserWithBackend includes credentials and authorization", async () => {
+  const calls: RequestInit[] = [];
+  const orig = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    calls.push(init ?? {});
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: { id: "u1", email: "a@stanford.edu", role: "member" },
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  };
+  try {
+    await syncUserWithBackend("fake-token", { first_name: "Ada" });
+    if (calls[0]?.credentials !== "include") {
+      throw new Error(`expected credentials include, got ${calls[0]?.credentials}`);
+    }
+    const headers = new Headers(calls[0]?.headers);
+    if (headers.get("Authorization") !== "Bearer fake-token") {
+      throw new Error("expected Bearer token");
+    }
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
 test("syncUserWithBackend posts profile payload without role field", async () => {
   const originalFetch = global.fetch;
   let capturedUrl = "";
@@ -145,5 +152,3 @@ test("syncUserWithBackend posts profile payload without role field", async () =>
     global.fetch = originalFetch;
   }
 });
-
-

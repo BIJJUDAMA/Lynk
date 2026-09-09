@@ -28,6 +28,19 @@ func TestRepository_CloseJobQueryStructure(t *testing.T) {
 	}
 }
 
+func TestUpdateContractStatus_CancelRestoresApplicationsToPending(t *testing.T) {
+	sql := getRestoreApplicationsOnContractCancellationQuery()
+	if !strings.Contains(sql, "UPDATE applications") {
+		t.Fatalf("expected cancel path to UPDATE applications, got:\n%s", sql)
+	}
+	if !strings.Contains(sql, "status = 'pending'") && !strings.Contains(sql, `status = $`) {
+		t.Fatalf("expected restore to pending, got:\n%s", sql)
+	}
+	if !strings.Contains(sql, "FOR UPDATE") && !strings.Contains(getLockJobOnContractCancellationQuery(), "FOR UPDATE") {
+		t.Fatalf("expected job row lock before reopen")
+	}
+}
+
 func TestRepository_ReopenJobQueryStructure(t *testing.T) {
 	query := getReopenJobOnContractCancellationQuery()
 
@@ -42,6 +55,9 @@ func TestRepository_ReopenJobQueryStructure(t *testing.T) {
 	}
 	if !strings.Contains(query, "WHERE id = (SELECT job_id FROM contracts WHERE id = $1)") {
 		t.Fatalf("expected reopen job query to target parent job id via contracts subquery, got:\n%s", query)
+	}
+	if !strings.Contains(query, "status = 'in_progress'") {
+		t.Fatalf("expected reopen job query to only reopen in_progress jobs, got:\n%s", query)
 	}
 }
 

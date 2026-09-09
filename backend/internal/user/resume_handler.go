@@ -65,8 +65,8 @@ func (h *Handler) UploadResume(s3Client ...storage.Client) http.HandlerFunc {
 				httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
 				return
 			}
-			if errors.Is(err, ErrForbidden) {
-				httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "University email must be verified before performing this action", nil)
+			if errors.Is(err, ErrForbidden) || errors.Is(err, auth.ErrEmailNotVerified) {
+				httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg, nil)
 				return
 			}
 			if errors.Is(err, ErrFileTooLarge) {

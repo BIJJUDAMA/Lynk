@@ -9,6 +9,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/lynk/backend/internal/auth"
 	"github.com/lynk/backend/internal/storage"
@@ -28,8 +29,9 @@ var (
 )
 
 type Service struct {
-	repo    UserRepository
-	storage storage.Client
+	repo         UserRepository
+	storage      storage.Client
+	resumeAccess ResumeAccessChecker
 }
 
 func NewService(repo UserRepository, storageClient ...storage.Client) *Service {
@@ -43,6 +45,12 @@ func NewService(repo UserRepository, storageClient ...storage.Client) *Service {
 // WithStorage sets or overrides the storage client on the Service.
 func (s *Service) WithStorage(storageClient storage.Client) *Service {
 	s.storage = storageClient
+	return s
+}
+
+// WithResumeAccessChecker sets the optional job-owner resume access checker.
+func (s *Service) WithResumeAccessChecker(c ResumeAccessChecker) *Service {
+	s.resumeAccess = c
 	return s
 }
 
@@ -160,8 +168,21 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 		return nil, fmt.Errorf("%w: department must not exceed 100 characters", ErrInvalidInput)
 	}
 
-	if req.GraduationYear != 0 && (req.GraduationYear < 1900 || req.GraduationYear > 2100) {
-		return nil, fmt.Errorf("%w: graduation year must be between 1900 and 2100", ErrInvalidInput)
+	existing, err := s.repo.GetProfile(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		existing = &Profile{UserID: userID, Skills: []string{}, PortfolioLinks: []string{}}
+	}
+
+	graduationYear := existing.GraduationYear
+	if req.GraduationYear != nil {
+		y := *req.GraduationYear
+		if y != 0 && (y < 1900 || y > 2100) {
+			return nil, fmt.Errorf("%w: graduation year must be between 1900 and 2100", ErrInvalidInput)
+		}
+		graduationYear = y
 	}
 
 	skills := req.Skills
@@ -200,7 +221,7 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 		LastName:            lastName,
 		Bio:                 bio,
 		Department:          department,
-		GraduationYear:      req.GraduationYear,
+		GraduationYear:      graduationYear,
 		Skills:              skills,
 		PortfolioLinks:      links,
 		Organization:        org,
@@ -226,7 +247,7 @@ func (s *Service) GetStudentProfileByID(ctx context.Context, id string) (*Profil
 // UploadResume orchestrates secure resume upload:
 // 1. Enforces authentication and institutional email verification gate.
 // 2. Enforces size constraint (max 5MB) and non-empty file.
-// 3. Inspects the first 512 bytes for PDF (%PDF-) or DOCX (PK\x03\x04) magic numbers.
+// 3. Validates PDF magic bytes or DOCX OOXML structure (not just ZIP header).
 // 4. Uploads to S3 with sanitized key.
 // 5. Updates resume metadata in PostgreSQL.
 // 6. On database failure, executes compensating S3 deletion.
@@ -236,7 +257,7 @@ func (s *Service) UploadResume(ctx context.Context, claims *auth.UserClaims, fil
 		return nil, ErrUnauthorized
 	}
 	if !claims.EmailVerified {
-		return nil, fmt.Errorf("%w: university email must be verified before performing this action", ErrForbidden)
+		return nil, auth.ErrEmailNotVerified
 	}
 
 	if size <= 0 {
@@ -261,14 +282,23 @@ func (s *Service) UploadResume(ctx context.Context, claims *auth.UserClaims, fil
 		return nil, ErrInvalidFileType
 	}
 
-	isPDF := bytes.HasPrefix(headBytes, []byte("%PDF-"))
-	isDOCX := bytes.HasPrefix(headBytes, []byte("PK\x03\x04"))
+	limited := io.LimitReader(reader, MaxResumeSize+1-int64(len(headBytes)))
+	all, err := io.ReadAll(io.MultiReader(bytes.NewReader(headBytes), limited))
+	if err != nil {
+		return nil, fmt.Errorf("read resume body: %w", err)
+	}
+	if int64(len(all)) > MaxResumeSize {
+		return nil, ErrFileTooLarge
+	}
+
+	isPDF := bytes.HasPrefix(all, []byte("%PDF-"))
+	isDOCX := IsDOCX(all)
 
 	if ext == ".pdf" && !isPDF {
 		return nil, fmt.Errorf("%w: file extension is .pdf but content magic bytes do not match PDF", ErrInvalidFileType)
 	}
 	if ext == ".docx" && !isDOCX {
-		return nil, fmt.Errorf("%w: file extension is .docx but content magic bytes do not match DOCX", ErrInvalidFileType)
+		return nil, fmt.Errorf("%w: file extension is .docx but content is not a valid OOXML document", ErrInvalidFileType)
 	}
 	if !isPDF && !isDOCX {
 		return nil, ErrInvalidFileType
@@ -280,7 +310,7 @@ func (s *Service) UploadResume(ctx context.Context, claims *auth.UserClaims, fil
 		contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	}
 
-	fullBody := io.MultiReader(bytes.NewReader(headBytes), reader)
+	fullBody := bytes.NewReader(all)
 
 	if s.storage == nil {
 		return nil, ErrStorageNotConfigured
@@ -304,14 +334,13 @@ func (s *Service) UploadResume(ctx context.Context, claims *auth.UserClaims, fil
 	}
 
 	if err := s.repo.UpdateResume(ctx, claims.UserID, key, sanitizedFilename, size); err != nil {
-		// Compensating deletion on DB failure
-		_ = s.storage.DeleteResume(ctx, key)
+		s.deleteResumeBestEffort(ctx, key, "db metadata update failed")
 		return nil, fmt.Errorf("update resume metadata: %w", err)
 	}
 
 	// Clean up previous resume object if replacing
 	if oldResumeKey != "" && oldResumeKey != key {
-		_ = s.storage.DeleteResume(ctx, oldResumeKey)
+		s.deleteResumeBestEffort(ctx, oldResumeKey, "replace previous object")
 	}
 
 	updated, err := s.repo.GetProfile(ctx, claims.UserID)
@@ -319,6 +348,18 @@ func (s *Service) UploadResume(ctx context.Context, claims *auth.UserClaims, fil
 		return nil, err
 	}
 	return updated, nil
+}
+
+func (s *Service) deleteResumeBestEffort(ctx context.Context, key, reason string) {
+	if s.storage == nil || key == "" {
+		return
+	}
+	delCtx := context.WithoutCancel(ctx)
+	delCtx, cancel := context.WithTimeout(delCtx, 10*time.Second)
+	defer cancel()
+	if err := s.storage.DeleteResume(delCtx, key); err != nil {
+		log.Printf("[ERROR] compensating resume delete failed key=%s reason=%s err=%v", key, reason, err)
+	}
 }
 
 // ResumeDownloadResult contains the generated presigned download URL and the stored filename.
@@ -329,8 +370,8 @@ type ResumeDownloadResult struct {
 
 // GetResumeDownloadResult generates a presigned download URL and returns the filename for a target user's resume,
 // enforcing strict access authorization:
-// Caller must be the profile owner (claims.UserID == targetUserID or owns target profile)
-// or an administrator (claims.HasRole("admin")).
+// Caller must be the profile owner (claims.UserID == targetUserID or owns target profile),
+// an administrator (claims.HasRole("admin")), or a job poster with an application from the target applicant.
 // Unauthorized requests return ErrForbidden without leaking profile existence.
 func (s *Service) GetResumeDownloadResult(ctx context.Context, claims *auth.UserClaims, targetUserID string) (*ResumeDownloadResult, error) {
 	if claims == nil || claims.UserID == "" {
@@ -352,10 +393,6 @@ func (s *Service) GetResumeDownloadResult(ctx context.Context, claims *auth.User
 		}
 	}
 
-	if !isOwner && !isAdmin {
-		return nil, ErrForbidden
-	}
-
 	profile, err := s.repo.GetProfile(ctx, targetUserID)
 	if err == nil && profile == nil {
 		profile, err = s.repo.GetProfileByID(ctx, targetUserID)
@@ -363,6 +400,26 @@ func (s *Service) GetResumeDownloadResult(ctx context.Context, claims *auth.User
 	if err != nil {
 		return nil, err
 	}
+
+	if !isOwner && !isAdmin {
+		if profile == nil {
+			return nil, ErrForbidden
+		}
+		if s.resumeAccess != nil {
+			allowed, err := s.resumeAccess.JobOwnerMayDownloadApplicantResume(ctx, claims.UserID, profile.UserID)
+			if err != nil {
+				return nil, err
+			}
+			if allowed {
+				isOwner = true
+			}
+		}
+	}
+
+	if !isOwner && !isAdmin {
+		return nil, ErrForbidden
+	}
+
 	if profile == nil {
 		return nil, ErrProfileNotFound
 	}

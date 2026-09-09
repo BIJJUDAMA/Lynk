@@ -15,7 +15,7 @@ import {
   EmailVerification,
 } from "@/lib/supertokens";
 import { isEduEmail } from "@/lib/email-validation";
-import { AuthRole, AuthTokens, AuthUser } from "@/lib/auth";
+import { AuthRole, AuthTokens, AuthUser, syncUserWithBackend } from "@/lib/auth";
 import { DEFAULT_API_BASE_URL } from "@/lib/api";
 import { Profile, User } from "@/types/api";
 
@@ -42,7 +42,7 @@ export interface AuthContextType {
   ) => Promise<void>;
   logout: (redirectPath?: string) => Promise<void>;
   getToken: () => Promise<string | null>;
-  setSession: (tokens?: AuthTokens, syncedUser?: User | null) => void;
+  setSession: (tokens?: AuthTokens, syncedUser?: User | null) => Promise<void>;
   resendVerificationEmail: () => Promise<void>;
 }
 
@@ -60,12 +60,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isVerified, setIsVerified] = useState<boolean>(false);
   const [role, setRole] = useState<AuthRole>(null);
+  const syncGen = React.useRef(0);
 
   // Sync auth state from SuperTokens session and backend profile
   const syncAuthState = useCallback(async (): Promise<boolean> => {
+    const gen = ++syncGen.current;
     try {
       initSuperTokens();
       const sessionExists = await Session.doesSessionExist();
+      if (gen !== syncGen.current) return false;
       if (!sessionExists) {
         setUser(null);
         setToken(null);
@@ -79,7 +82,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userId = await Session.getUserId();
       const payload = await Session.getAccessTokenPayloadSecurely().catch(() => ({}));
       const accessToken = (await Session.getAccessToken().catch(() => null)) ?? null;
+      if (gen !== syncGen.current) return false;
       setToken(accessToken);
+
+      if (accessToken) {
+        await syncUserWithBackend(accessToken, {});
+      }
+      if (gen !== syncGen.current) return false;
 
       let emailVerified = false;
       try {
@@ -104,10 +113,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           credentials: "include",
           headers,
         });
+        if (gen !== syncGen.current) return false;
         if (res.ok) {
           const json = await res.json();
           if (json?.data?.user) {
             bUser = json.data.user;
+            if (gen !== syncGen.current) return false;
             setBackendUser(json.data.user);
           }
           if (json?.data?.profile) {
@@ -141,11 +152,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         roles: resolvedRole ? [resolvedRole] : ["member"],
       };
 
+      if (gen !== syncGen.current) return false;
       setUser(authUser);
       setIsVerified(emailVerified);
       setRole(resolvedRole);
       return true;
     } catch (err) {
+      if (gen !== syncGen.current) return false;
       console.error("Error syncing auth state:", err);
       setUser(null);
       setToken(null);
@@ -185,7 +198,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Backward-compatible session sync helper
   const setSession = useCallback(
-    (tokens?: AuthTokens, syncedUser?: User | null) => {
+    async (tokens?: AuthTokens, syncedUser?: User | null) => {
       if (syncedUser !== undefined) {
         setBackendUser(syncedUser);
       }
@@ -193,7 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setToken(tokens.accessToken);
         setRefreshToken(tokens.refreshToken ?? null);
       }
-      syncAuthState();
+      await syncAuthState();
     },
     [syncAuthState]
   );
@@ -348,6 +361,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Sign out of SuperTokens session & redirect
   const logout = useCallback(async (redirectPath = "/") => {
+    syncGen.current++;
     initSuperTokens();
     try {
       await Session.signOut();

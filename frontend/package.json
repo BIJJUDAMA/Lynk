@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/lib/auth.test.ts src/lib/api.test.ts src/lib/formatters.test.ts src/lib/email-validation.test.ts"
+    "test": "node --experimental-strip-types --test src/lib/auth.test.ts src/lib/api.test.ts src/lib/formatters.test.ts src/lib/email-validation.test.ts src/types/api.identity.test.ts"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

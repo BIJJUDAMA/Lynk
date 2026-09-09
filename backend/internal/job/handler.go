@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/httpx"
 	"github.com/lynk/backend/internal/httputil"
 )
 
@@ -36,36 +37,24 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 	r.Get("/", h.ListJobs)
 	r.Get("/jobs", h.ListJobs)
 
+	authMiddleware = httpx.DefaultAuthMiddleware(authMiddleware)
+
 	// Protected routes (any verified campus member)
-	if authMiddleware != nil {
-		r.Group(func(pr chi.Router) {
-			pr.Use(authMiddleware)
+	r.Group(func(pr chi.Router) {
+		pr.Use(authMiddleware)
 
-			pr.Post("/", h.CreateJob)
-			pr.Post("/jobs", h.CreateJob)
+		pr.Post("/", h.CreateJob)
+		pr.Post("/jobs", h.CreateJob)
 
-			pr.Get("/mine", h.GetMyJobs)
-			pr.Get("/jobs/mine", h.GetMyJobs)
+		pr.Get("/mine", h.GetMyJobs)
+		pr.Get("/jobs/mine", h.GetMyJobs)
 
-			pr.Put("/{id}", h.UpdateJob)
-			pr.Put("/jobs/{id}", h.UpdateJob)
+		pr.Put("/{id}", h.UpdateJob)
+		pr.Put("/jobs/{id}", h.UpdateJob)
 
-			pr.Delete("/{id}", h.DeleteJob)
-			pr.Delete("/jobs/{id}", h.DeleteJob)
-		})
-	} else {
-		r.Post("/", h.CreateJob)
-		r.Post("/jobs", h.CreateJob)
-
-		r.Get("/mine", h.GetMyJobs)
-		r.Get("/jobs/mine", h.GetMyJobs)
-
-		r.Put("/{id}", h.UpdateJob)
-		r.Put("/jobs/{id}", h.UpdateJob)
-
-		r.Delete("/{id}", h.DeleteJob)
-		r.Delete("/jobs/{id}", h.DeleteJob)
-	}
+		pr.Delete("/{id}", h.DeleteJob)
+		pr.Delete("/jobs/{id}", h.DeleteJob)
+	})
 
 	// Public single job detail route
 	r.Get("/{id}", h.GetJobByID)
@@ -85,14 +74,14 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		Status:     strings.ToLower(strings.TrimSpace(q.Get("status"))),
 	}
 
-	if minStr := strings.TrimSpace(q.Get("min_budget")); minStr != "" {
-		if val, err := strconv.ParseFloat(minStr, 64); err == nil {
-			filter.MinBudget = &val
+	if minStr := strings.TrimSpace(q.Get("min_budget_cents")); minStr != "" {
+		if val, err := strconv.ParseInt(minStr, 10, 64); err == nil {
+			filter.MinBudgetCents = &val
 		}
 	}
-	if maxStr := strings.TrimSpace(q.Get("max_budget")); maxStr != "" {
-		if val, err := strconv.ParseFloat(maxStr, 64); err == nil {
-			filter.MaxBudget = &val
+	if maxStr := strings.TrimSpace(q.Get("max_budget_cents")); maxStr != "" {
+		if val, err := strconv.ParseInt(maxStr, 10, 64); err == nil {
+			filter.MaxBudgetCents = &val
 		}
 	}
 	if limitStr := strings.TrimSpace(q.Get("limit")); limitStr != "" {
@@ -153,29 +142,47 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verification check: campus email must be verified to post opportunities
-	if !claims.EmailVerified {
-		httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Campus verification required to post opportunities", nil)
-		return
-	}
-
-	if strings.TrimSpace(claims.UserID) == "" {
-		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_USER_ID", "User ID is required", nil)
-		return
-	}
-
-	var req CreateJobRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		if errors.Is(err, io.EOF) {
-			httputil.WriteError(w, r, http.StatusBadRequest, "EMPTY_BODY", "Request body cannot be empty", err)
+	if err := auth.CheckEmailVerified(claims); err != nil {
+		if errors.Is(err, auth.ErrEmailNotVerified) {
+			httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg, nil)
 			return
 		}
+		httputil.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Missing credentials", nil)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to read request body", err)
+		return
+	}
+	if len(body) == 0 {
+		httputil.WriteError(w, r, http.StatusBadRequest, "EMPTY_BODY", "Request body cannot be empty", io.EOF)
+		return
+	}
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(body, &probe); err != nil {
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body", err)
+		return
+	}
+	if _, ok := probe["budget"]; ok {
+		if _, ok2 := probe["budget_cents"]; !ok2 {
+			httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "budget_cents (integer) is required; floating-point budget is not accepted", nil)
+			return
+		}
+	}
+	var req CreateJobRequest
+	if err := json.Unmarshal(body, &req); err != nil {
 		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body", err)
 		return
 	}
 
-	job, err := h.service.CreateJob(r.Context(), claims.UserID, req)
+	job, err := h.service.CreateJob(r.Context(), claims, req)
 	if err != nil {
+		if errors.Is(err, auth.ErrEmailNotVerified) {
+			httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg, nil)
+			return
+		}
 		if errors.Is(err, ErrInvalidInput) {
 			httputil.WriteError(w, r, http.StatusBadRequest, "VALIDATION_FAILED", err.Error(), err)
 			return
@@ -217,11 +224,6 @@ func (h *Handler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(claims.UserID) == "" {
-		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_USER_ID", "User ID is required", nil)
-		return
-	}
-
 	idStr := chi.URLParam(r, "id")
 	if idStr == "" {
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
@@ -233,14 +235,38 @@ func (h *Handler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req UpdateJobRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body", err)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to read request body", err)
 		return
 	}
+	if len(body) > 0 {
+		var probe map[string]json.RawMessage
+		if err := json.Unmarshal(body, &probe); err != nil {
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body", err)
+			return
+		}
+		if _, ok := probe["budget"]; ok {
+			if _, ok2 := probe["budget_cents"]; !ok2 {
+				httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "budget_cents (integer) is required; floating-point budget is not accepted", nil)
+				return
+			}
+		}
+	}
+	var req UpdateJobRequest
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &req); err != nil {
+			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body", err)
+			return
+		}
+	}
 
-	job, err := h.service.UpdateJob(r.Context(), claims.UserID, jobID, req)
+	job, err := h.service.UpdateJob(r.Context(), claims, jobID, req)
 	if err != nil {
+		if errors.Is(err, auth.ErrEmailNotVerified) {
+			httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg, nil)
+			return
+		}
 		if errors.Is(err, ErrJobNotFound) {
 			httputil.WriteError(w, r, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found", nil)
 			return
@@ -268,11 +294,6 @@ func (h *Handler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(claims.UserID) == "" {
-		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_USER_ID", "User ID is required", nil)
-		return
-	}
-
 	idStr := chi.URLParam(r, "id")
 	if idStr == "" {
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
@@ -284,8 +305,12 @@ func (h *Handler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.service.DeleteJob(r.Context(), claims.UserID, jobID)
+	err = h.service.DeleteJob(r.Context(), claims, jobID)
 	if err != nil {
+		if errors.Is(err, auth.ErrEmailNotVerified) {
+			httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg, nil)
+			return
+		}
 		if errors.Is(err, ErrJobNotFound) {
 			httputil.WriteError(w, r, http.StatusNotFound, "JOB_NOT_FOUND", "Job not found", nil)
 			return

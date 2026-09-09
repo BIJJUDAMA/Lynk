@@ -8,7 +8,8 @@ import {
   ArrowRight,
   Clock,
 } from "lucide-react";
-import { Job, JobPayType, JobStatus } from "@/types/api";
+import { Job, JobStatus } from "@/types/api";
+import { formatBudget } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 
 export interface JobCardProps {
@@ -16,18 +17,7 @@ export interface JobCardProps {
   className?: string;
 }
 
-/**
- * Formats a currency number with pay type badge (e.g. "$500 Fixed" or "$25/hr").
- */
-export function formatBudget(budget: number, payType: JobPayType): string {
-  const formatted = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(budget);
-
-  return payType === "hourly" ? `${formatted}/hr` : `${formatted} Fixed`;
-}
+export { formatBudget } from "@/lib/formatters";
 
 /**
  * Formats ISO date string into human-readable date.
@@ -139,7 +129,7 @@ export function JobCard({ job, className }: JobCardProps) {
           {/* Budget Badge */}
           <div className="inline-flex items-center gap-1 rounded-[10px] bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
             <DollarSign className="h-3.5 w-3.5" />
-            <span>{formatBudget(job.budget, job.pay_type)}</span>
+            <span>{formatBudget(job.budget_cents, job.pay_type)}</span>
           </div>
         </div>
 

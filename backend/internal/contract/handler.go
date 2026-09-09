@@ -5,11 +5,13 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/httpx"
 	"github.com/lynk/backend/internal/httputil"
 )
 
@@ -41,14 +43,11 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 		rt.Patch("/api/v1/contracts/{id}/status", h.UpdateContractStatus)
 	}
 
-	if authMiddleware != nil {
-		r.Group(func(pr chi.Router) {
-			pr.Use(authMiddleware)
-			routeSetup(pr)
-		})
-	} else {
-		routeSetup(r)
-	}
+	authMiddleware = httpx.DefaultAuthMiddleware(authMiddleware)
+	r.Group(func(pr chi.Router) {
+		pr.Use(authMiddleware)
+		routeSetup(pr)
+	})
 
 	return r
 }
@@ -56,9 +55,7 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 // ContractRoutes provides a subrouter suitable for mounting at /api/v1/contracts.
 func (h *Handler) ContractRoutes(authMiddleware func(http.Handler) http.Handler) chi.Router {
 	r := chi.NewRouter()
-	if authMiddleware != nil {
-		r.Use(authMiddleware)
-	}
+	r.Use(httpx.DefaultAuthMiddleware(authMiddleware))
 	r.Get("/", h.ListContracts)
 	r.Get("/{id}", h.GetContractByID)
 	r.Patch("/{id}/status", h.UpdateContractStatus)
@@ -73,7 +70,10 @@ func (h *Handler) ListContracts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contracts, err := h.service.ListContracts(r.Context(), claims)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
+	contracts, err := h.service.ListContracts(r.Context(), claims, limit, offset)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
 			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
@@ -156,6 +156,10 @@ func (h *Handler) UpdateContractStatus(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.service.UpdateContractStatus(r.Context(), claims, contractID, req)
 	if err != nil {
+		if errors.Is(err, auth.ErrEmailNotVerified) {
+			httputil.WriteError(w, r, http.StatusForbidden, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg, nil)
+			return
+		}
 		if errors.Is(err, ErrContractNotFound) {
 			httputil.WriteError(w, r, http.StatusNotFound, "CONTRACT_NOT_FOUND", "Contract not found", nil)
 			return
