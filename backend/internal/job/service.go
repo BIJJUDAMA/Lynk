@@ -27,8 +27,8 @@ func NewService(repo JobRepository) *Service {
 }
 
 // CreateJob validates and creates a new job posting.
-func (s *Service) CreateJob(ctx context.Context, createdBy uuid.UUID, req CreateJobRequest) (*Job, error) {
-	if createdBy == uuid.Nil {
+func (s *Service) CreateJob(ctx context.Context, createdBy string, req CreateJobRequest) (*Job, error) {
+	if strings.TrimSpace(createdBy) == "" {
 		return nil, fmt.Errorf("%w: valid creator ID is required", ErrInvalidInput)
 	}
 
@@ -45,8 +45,8 @@ func (s *Service) CreateJob(ctx context.Context, createdBy uuid.UUID, req Create
 		return nil, fmt.Errorf("%w: description is required", ErrInvalidInput)
 	}
 
-	if req.Budget < 0 {
-		return nil, fmt.Errorf("%w: budget must be non-negative", ErrInvalidInput)
+	if req.Budget < 0 || req.Budget > 99999999.99 {
+		return nil, fmt.Errorf("%w: budget must be between 0 and 99,999,999.99", ErrInvalidInput)
 	}
 
 	payType := strings.ToLower(strings.TrimSpace(req.PayType))
@@ -103,15 +103,15 @@ func (s *Service) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, error
 }
 
 // GetMyJobs retrieves all jobs posted by the specified creator.
-func (s *Service) GetMyJobs(ctx context.Context, createdBy uuid.UUID) ([]*Job, error) {
-	if createdBy == uuid.Nil {
+func (s *Service) GetMyJobs(ctx context.Context, createdBy string) ([]*Job, error) {
+	if strings.TrimSpace(createdBy) == "" {
 		return nil, fmt.Errorf("%w: invalid creator ID", ErrInvalidInput)
 	}
 	return s.repo.ListJobs(ctx, JobFilter{CreatedBy: &createdBy})
 }
 
 // UpdateJob updates an existing job if caller owns the job.
-func (s *Service) UpdateJob(ctx context.Context, callerID uuid.UUID, id uuid.UUID, req UpdateJobRequest) (*Job, error) {
+func (s *Service) UpdateJob(ctx context.Context, callerID string, id uuid.UUID, req UpdateJobRequest) (*Job, error) {
 	if id == uuid.Nil {
 		return nil, fmt.Errorf("%w: invalid job ID", ErrInvalidInput)
 	}
@@ -146,8 +146,8 @@ func (s *Service) UpdateJob(ctx context.Context, callerID uuid.UUID, id uuid.UUI
 	}
 
 	if req.Budget != nil {
-		if *req.Budget < 0 {
-			return nil, fmt.Errorf("%w: budget must be non-negative", ErrInvalidInput)
+		if *req.Budget < 0 || *req.Budget > 99999999.99 {
+			return nil, fmt.Errorf("%w: budget must be between 0 and 99,999,999.99", ErrInvalidInput)
 		}
 		job.Budget = *req.Budget
 	}
@@ -181,6 +181,14 @@ func (s *Service) UpdateJob(ctx context.Context, callerID uuid.UUID, id uuid.UUI
 		if st != StatusOpen && st != StatusInProgress && st != StatusClosed && st != StatusCancelled {
 			return nil, fmt.Errorf("%w: invalid status '%s'", ErrInvalidInput, st)
 		}
+		// Cannot manually set job to in_progress (only via applicant acceptance)
+		if st == StatusInProgress {
+			return nil, fmt.Errorf("%w: jobs cannot be manually set to in-progress", ErrInvalidInput)
+		}
+		// Cannot reopen a job that is already in_progress or closed
+		if (job.Status == StatusInProgress || job.Status == StatusClosed) && st == StatusOpen {
+			return nil, fmt.Errorf("%w: active or completed jobs cannot be reopened", ErrInvalidInput)
+		}
 		job.Status = st
 	}
 
@@ -192,7 +200,7 @@ func (s *Service) UpdateJob(ctx context.Context, callerID uuid.UUID, id uuid.UUI
 }
 
 // DeleteJob removes a job posting if caller owns the job.
-func (s *Service) DeleteJob(ctx context.Context, callerID uuid.UUID, id uuid.UUID) error {
+func (s *Service) DeleteJob(ctx context.Context, callerID string, id uuid.UUID) error {
 	if id == uuid.Nil {
 		return fmt.Errorf("%w: invalid job ID", ErrInvalidInput)
 	}

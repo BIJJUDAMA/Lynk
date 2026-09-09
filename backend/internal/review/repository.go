@@ -16,8 +16,8 @@ import (
 type ReviewRepository interface {
 	CreateReview(ctx context.Context, review *Review) error
 	GetReviewsByContractID(ctx context.Context, contractID uuid.UUID) ([]*Review, error)
-	GetUserReviewsWithSummary(ctx context.Context, userID uuid.UUID) (*UserReviewSummary, error)
-	HasUserReviewedContract(ctx context.Context, contractID, reviewerID uuid.UUID) (bool, error)
+	GetUserReviewsWithSummary(ctx context.Context, userID string) (*UserReviewSummary, error)
+	HasUserReviewedContract(ctx context.Context, contractID uuid.UUID, reviewerID string) (bool, error)
 }
 
 // Repository implements ReviewRepository backed by PostgreSQL with pgxpool.Pool.
@@ -137,7 +137,7 @@ func (r *Repository) GetReviewsByContractID(ctx context.Context, contractID uuid
 }
 
 // GetUserReviewsWithSummary calculates average rating, review count, and retrieves all reviews received by a user.
-func (r *Repository) GetUserReviewsWithSummary(ctx context.Context, userID uuid.UUID) (*UserReviewSummary, error) {
+func (r *Repository) GetUserReviewsWithSummary(ctx context.Context, userID string) (*UserReviewSummary, error) {
 	// First verify that the user exists in users table
 	var userExists bool
 	userCheckQuery := `SELECT EXISTS(SELECT 1 FROM users WHERE id = $1);`
@@ -206,7 +206,7 @@ func (r *Repository) GetUserReviewsWithSummary(ctx context.Context, userID uuid.
 }
 
 // HasUserReviewedContract checks if a reviewer has already submitted a review for a contract.
-func (r *Repository) HasUserReviewedContract(ctx context.Context, contractID, reviewerID uuid.UUID) (bool, error) {
+func (r *Repository) HasUserReviewedContract(ctx context.Context, contractID uuid.UUID, reviewerID string) (bool, error) {
 	var exists bool
 	query := `SELECT EXISTS(SELECT 1 FROM reviews WHERE contract_id = $1 AND reviewer_id = $2);`
 	err := r.db.QueryRow(ctx, query, contractID, reviewerID).Scan(&exists)

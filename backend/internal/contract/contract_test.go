@@ -91,7 +91,7 @@ func (m *mockContractRepo) GetContractByID(ctx context.Context, id uuid.UUID) (*
 	return &cp, nil
 }
 
-func (m *mockContractRepo) ListContractsByUserID(ctx context.Context, userID uuid.UUID) ([]*ContractWithDetails, error) {
+func (m *mockContractRepo) ListContractsByUserID(ctx context.Context, userID string) ([]*ContractWithDetails, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -133,6 +133,16 @@ func (m *mockContractRepo) UpdateContractStatus(ctx context.Context, id uuid.UUI
 			c.Job = &JobSummary{
 				ID:     c.JobID,
 				Status: "closed",
+			}
+		}
+	}
+	if targetStatus == StatusCancelled {
+		if c.Job != nil {
+			c.Job.Status = "open"
+		} else {
+			c.Job = &JobSummary{
+				ID:     c.JobID,
+				Status: "open",
 			}
 		}
 	}
@@ -235,9 +245,9 @@ func TestContract_ParticipantAuthorization(t *testing.T) {
 	handler := NewHandler(service)
 	router := handler.Routes(nil)
 
-	freelancerID := uuid.New()
-	clientID := uuid.New()
-	unrelatedID := uuid.New()
+	freelancerID := uuid.New().String()
+	clientID := uuid.New().String()
+	unrelatedID := uuid.New().String()
 	contractID := uuid.New()
 
 	testContract := &Contract{
@@ -252,14 +262,14 @@ func TestContract_ParticipantAuthorization(t *testing.T) {
 	_ = repo.CreateContract(context.Background(), testContract)
 
 	freelancerClaims := &auth.UserClaims{
-		UserID:        freelancerID.String(),
+		UserID:        freelancerID,
 		Email:         "student@uni.edu",
 		EmailVerified: true,
 		Roles:         []string{"member"},
 	}
 
 	clientClaims := &auth.UserClaims{
-		UserID:        clientID.String(),
+		UserID:        clientID,
 		Email:         "employer@corp.com",
 		EmailVerified: true,
 		Roles:         []string{"member"},
@@ -273,7 +283,7 @@ func TestContract_ParticipantAuthorization(t *testing.T) {
 	}
 
 	unrelatedClaims := &auth.UserClaims{
-		UserID:        unrelatedID.String(),
+		UserID:        unrelatedID,
 		Email:         "stranger@other.com",
 		EmailVerified: true,
 		Roles:         []string{"member"},
@@ -353,8 +363,8 @@ func TestContract_ListContracts(t *testing.T) {
 	handler := NewHandler(service)
 	router := handler.Routes(nil)
 
-	freelancerID := uuid.New()
-	clientID := uuid.New()
+	freelancerID := uuid.New().String()
+	clientID := uuid.New().String()
 
 	c1 := &Contract{
 		ID:            uuid.New(),
@@ -378,8 +388,8 @@ func TestContract_ListContracts(t *testing.T) {
 		ID:            uuid.New(),
 		JobID:         uuid.New(),
 		ApplicationID: uuid.New(),
-		ClientID:      uuid.New(),
-		FreelancerID:  uuid.New(),
+		ClientID:      uuid.New().String(),
+		FreelancerID:  uuid.New().String(),
 		AgreedBudget:  1000.0,
 		Status:        StatusActive,
 	}
@@ -390,7 +400,7 @@ func TestContract_ListContracts(t *testing.T) {
 
 	t.Run("member lists contracts where they are participant", func(t *testing.T) {
 		claims := &auth.UserClaims{
-			UserID:        freelancerID.String(),
+			UserID:        freelancerID,
 			Email:         "student@uni.edu",
 			EmailVerified: true,
 			Roles:         []string{"member"},
@@ -413,26 +423,37 @@ func TestContract_ListContracts(t *testing.T) {
 			t.Fatalf("expected 2 contracts, got %d", len(contracts))
 		}
 	})
+
+	t.Run("unauthenticated call rejected (401)", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/contracts", nil)
+		rec := httptest.NewRecorder()
+
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec.Code)
+		}
+	})
 }
 
-func TestContract_StatusTransitions(t *testing.T) {
+func TestContract_StateTransitions(t *testing.T) {
 	repo := newMockContractRepo()
 	service := NewService(repo)
 	handler := NewHandler(service)
 	router := handler.Routes(nil)
 
-	freelancerID := uuid.New()
-	clientID := uuid.New()
+	freelancerID := uuid.New().String()
+	clientID := uuid.New().String()
 
 	freelancerClaims := &auth.UserClaims{
-		UserID:        freelancerID.String(),
+		UserID:        freelancerID,
 		Email:         "student@uni.edu",
 		EmailVerified: true,
 		Roles:         []string{"member"},
 	}
 
 	clientClaims := &auth.UserClaims{
-		UserID:        clientID.String(),
+		UserID:        clientID,
 		Email:         "employer@corp.com",
 		EmailVerified: true,
 		Roles:         []string{"member"},
@@ -540,11 +561,120 @@ func TestContract_StatusTransitions(t *testing.T) {
 			t.Fatalf("expected code FORBIDDEN, got %+v", env.Error)
 		}
 	})
+
+	t.Run("client can cancel active contract via HTTP and reopen job (200 OK)", func(t *testing.T) {
+		cID := uuid.New()
+		c := &Contract{
+			ID:            cID,
+			JobID:         uuid.New(),
+			ApplicationID: uuid.New(),
+			ClientID:      clientID,
+			FreelancerID:  freelancerID,
+			AgreedBudget:  650.0,
+			Status:        StatusActive,
+		}
+		_ = repo.CreateContract(context.Background(), c)
+
+		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusCancelled})
+		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
+		req = withAuth(req, clientClaims)
+		rec := httptest.NewRecorder()
+
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+
+		var updated ContractWithDetails
+		env := parseEnvelope(t, rec.Body.Bytes())
+		_ = json.Unmarshal(env.Data, &updated)
+		if updated.Status != StatusCancelled {
+			t.Fatalf("expected status 'cancelled', got '%s'", updated.Status)
+		}
+		if updated.Job == nil || updated.Job.Status != "open" {
+			t.Fatalf("expected job status 'open', got %+v", updated.Job)
+		}
+	})
+
+	t.Run("freelancer can cancel active contract via HTTP and reopen job (200 OK)", func(t *testing.T) {
+		cID := uuid.New()
+		c := &Contract{
+			ID:            cID,
+			JobID:         uuid.New(),
+			ApplicationID: uuid.New(),
+			ClientID:      clientID,
+			FreelancerID:  freelancerID,
+			AgreedBudget:  650.0,
+			Status:        StatusActive,
+		}
+		_ = repo.CreateContract(context.Background(), c)
+
+		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusCancelled})
+		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
+		req = withAuth(req, freelancerClaims)
+		rec := httptest.NewRecorder()
+
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+
+		var updated ContractWithDetails
+		env := parseEnvelope(t, rec.Body.Bytes())
+		_ = json.Unmarshal(env.Data, &updated)
+		if updated.Status != StatusCancelled {
+			t.Fatalf("expected status 'cancelled', got '%s'", updated.Status)
+		}
+		if updated.Job == nil || updated.Job.Status != "open" {
+			t.Fatalf("expected job status 'open', got %+v", updated.Job)
+		}
+	})
+
+	t.Run("unrelated user cannot cancel active contract via HTTP (403 Forbidden)", func(t *testing.T) {
+		cID := uuid.New()
+		c := &Contract{
+			ID:            cID,
+			JobID:         uuid.New(),
+			ApplicationID: uuid.New(),
+			ClientID:      clientID,
+			FreelancerID:  freelancerID,
+			AgreedBudget:  650.0,
+			Status:        StatusActive,
+		}
+		_ = repo.CreateContract(context.Background(), c)
+
+		unrelatedClaims := &auth.UserClaims{
+			UserID:        uuid.New().String(),
+			Email:         "stranger@other.edu",
+			EmailVerified: true,
+			Roles:         []string{"member"},
+		}
+
+		payload, _ := json.Marshal(UpdateContractStatusRequest{Status: StatusCancelled})
+		req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/contracts/%s/status", cID), bytes.NewReader(payload))
+		req = withAuth(req, unrelatedClaims)
+		rec := httptest.NewRecorder()
+
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden, got %d", rec.Code)
+		}
+		env := parseEnvelope(t, rec.Body.Bytes())
+		if env.Success {
+			t.Fatalf("expected success=false")
+		}
+		if env.Error == nil || env.Error.Code != "FORBIDDEN" {
+			t.Fatalf("expected code FORBIDDEN, got %+v", env.Error)
+		}
+	})
 }
 
 func TestService_FreelancerCannotMarkContractCompleted(t *testing.T) {
-	clientID := uuid.New()
-	freelancerID := uuid.New()
+	clientID := uuid.New().String()
+	freelancerID := uuid.New().String()
 	contractID := uuid.New()
 
 	mockRepo := newMockContractRepo()
@@ -559,7 +689,7 @@ func TestService_FreelancerCannotMarkContractCompleted(t *testing.T) {
 	svc := NewService(mockRepo)
 
 	// Freelancer attempts to mark as completed -> MUST return ErrForbidden
-	freelancerClaims := &auth.UserClaims{UserID: freelancerID.String(), Roles: []string{"member"}}
+	freelancerClaims := &auth.UserClaims{UserID: freelancerID, Roles: []string{"member"}}
 	_, err := svc.UpdateContractStatus(context.Background(), freelancerClaims, contractID, UpdateContractStatusRequest{Status: StatusCompleted})
 	if err == nil {
 		t.Fatalf("expected error when freelancer marks contract completed, got nil")
@@ -569,7 +699,7 @@ func TestService_FreelancerCannotMarkContractCompleted(t *testing.T) {
 	}
 
 	// Client marks as completed -> succeeds
-	clientClaims := &auth.UserClaims{UserID: clientID.String(), Roles: []string{"member"}}
+	clientClaims := &auth.UserClaims{UserID: clientID, Roles: []string{"member"}}
 	updated, err := svc.UpdateContractStatus(context.Background(), clientClaims, contractID, UpdateContractStatusRequest{Status: StatusCompleted})
 	if err != nil {
 		t.Fatalf("expected client to successfully mark completed, got: %v", err)
@@ -591,8 +721,8 @@ func TestService_FreelancerCannotMarkContractCompleted(t *testing.T) {
 			Status:       StatusActive,
 		},
 	}
-	adminID := uuid.New()
-	adminClaims := &auth.UserClaims{UserID: adminID.String(), Roles: []string{"admin"}}
+	adminID := uuid.New().String()
+	adminClaims := &auth.UserClaims{UserID: adminID, Roles: []string{"admin"}}
 	adminUpdated, err := svc.UpdateContractStatus(context.Background(), adminClaims, contract2ID, UpdateContractStatusRequest{Status: StatusCompleted})
 	if err != nil {
 		t.Fatalf("expected admin to successfully mark completed, got: %v", err)
@@ -609,8 +739,8 @@ func TestContract_CompleteContractClosesJob(t *testing.T) {
 	repo := newMockContractRepo()
 	service := NewService(repo)
 
-	clientID := uuid.New()
-	freelancerID := uuid.New()
+	clientID := uuid.New().String()
+	freelancerID := uuid.New().String()
 	contractID := uuid.New()
 	jobID := uuid.New()
 
@@ -637,7 +767,7 @@ func TestContract_CompleteContractClosesJob(t *testing.T) {
 	}
 
 	clientClaims := &auth.UserClaims{
-		UserID:        clientID.String(),
+		UserID:        clientID,
 		Email:         "client@uni.edu",
 		EmailVerified: true,
 		Roles:         []string{"member"},
@@ -654,4 +784,188 @@ func TestContract_CompleteContractClosesJob(t *testing.T) {
 	if updated.Job == nil || updated.Job.Status != "closed" {
 		t.Fatalf("expected job status 'closed' upon contract completion, got %+v", updated.Job)
 	}
+}
+
+func TestContract_CancelContractReopensJob(t *testing.T) {
+	repo := newMockContractRepo()
+	service := NewService(repo)
+
+	clientID := uuid.New().String()
+	freelancerID := uuid.New().String()
+	unrelatedID := uuid.New().String()
+
+	clientClaims := &auth.UserClaims{
+		UserID:        clientID,
+		Email:         "client@uni.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+	freelancerClaims := &auth.UserClaims{
+		UserID:        freelancerID,
+		Email:         "freelancer@uni.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+	unrelatedClaims := &auth.UserClaims{
+		UserID:        unrelatedID,
+		Email:         "stranger@uni.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	t.Run("client cancels active contract and reopens job", func(t *testing.T) {
+		contractID := uuid.New()
+		jobID := uuid.New()
+		c := &Contract{
+			ID:            contractID,
+			JobID:         jobID,
+			ApplicationID: uuid.New(),
+			ClientID:      clientID,
+			FreelancerID:  freelancerID,
+			AgreedBudget:  500.0,
+			Status:        StatusActive,
+		}
+		if err := repo.CreateContract(context.Background(), c); err != nil {
+			t.Fatalf("failed to create contract: %v", err)
+		}
+
+		updated, err := service.UpdateContractStatus(context.Background(), clientClaims, contractID, UpdateContractStatusRequest{Status: StatusCancelled})
+		if err != nil {
+			t.Fatalf("expected cancel to succeed, got: %v", err)
+		}
+		if updated.Status != StatusCancelled {
+			t.Fatalf("expected status 'cancelled', got '%s'", updated.Status)
+		}
+		if updated.Job == nil || updated.Job.Status != "open" {
+			t.Fatalf("expected job status 'open', got %+v", updated.Job)
+		}
+	})
+
+	t.Run("freelancer cancels active contract and reopens job", func(t *testing.T) {
+		contractID := uuid.New()
+		jobID := uuid.New()
+		c := &Contract{
+			ID:            contractID,
+			JobID:         jobID,
+			ApplicationID: uuid.New(),
+			ClientID:      clientID,
+			FreelancerID:  freelancerID,
+			AgreedBudget:  750.0,
+			Status:        StatusActive,
+		}
+		if err := repo.CreateContract(context.Background(), c); err != nil {
+			t.Fatalf("failed to create contract: %v", err)
+		}
+
+		updated, err := service.UpdateContractStatus(context.Background(), freelancerClaims, contractID, UpdateContractStatusRequest{Status: StatusCancelled})
+		if err != nil {
+			t.Fatalf("expected cancel to succeed, got: %v", err)
+		}
+		if updated.Status != StatusCancelled {
+			t.Fatalf("expected status 'cancelled', got '%s'", updated.Status)
+		}
+		if updated.Job == nil || updated.Job.Status != "open" {
+			t.Fatalf("expected job status 'open', got %+v", updated.Job)
+		}
+	})
+
+	t.Run("client cancels draft contract and reopens job", func(t *testing.T) {
+		contractID := uuid.New()
+		jobID := uuid.New()
+		c := &Contract{
+			ID:            contractID,
+			JobID:         jobID,
+			ApplicationID: uuid.New(),
+			ClientID:      clientID,
+			FreelancerID:  freelancerID,
+			AgreedBudget:  300.0,
+			Status:        StatusDraft,
+		}
+		if err := repo.CreateContract(context.Background(), c); err != nil {
+			t.Fatalf("failed to create contract: %v", err)
+		}
+
+		updated, err := service.UpdateContractStatus(context.Background(), clientClaims, contractID, UpdateContractStatusRequest{Status: StatusCancelled})
+		if err != nil {
+			t.Fatalf("expected cancel to succeed, got: %v", err)
+		}
+		if updated.Status != StatusCancelled {
+			t.Fatalf("expected status 'cancelled', got '%s'", updated.Status)
+		}
+		if updated.Job == nil || updated.Job.Status != "open" {
+			t.Fatalf("expected job status 'open', got %+v", updated.Job)
+		}
+	})
+
+	t.Run("unrelated user cannot cancel contract", func(t *testing.T) {
+		contractID := uuid.New()
+		c := &Contract{
+			ID:            contractID,
+			JobID:         uuid.New(),
+			ApplicationID: uuid.New(),
+			ClientID:      clientID,
+			FreelancerID:  freelancerID,
+			AgreedBudget:  500.0,
+			Status:        StatusActive,
+		}
+		if err := repo.CreateContract(context.Background(), c); err != nil {
+			t.Fatalf("failed to create contract: %v", err)
+		}
+
+		_, err := service.UpdateContractStatus(context.Background(), unrelatedClaims, contractID, UpdateContractStatusRequest{Status: StatusCancelled})
+		if err == nil {
+			t.Fatalf("expected error for unrelated user, got nil")
+		}
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got: %v", err)
+		}
+	})
+
+	t.Run("cannot cancel completed contract", func(t *testing.T) {
+		contractID := uuid.New()
+		c := &Contract{
+			ID:            contractID,
+			JobID:         uuid.New(),
+			ApplicationID: uuid.New(),
+			ClientID:      clientID,
+			FreelancerID:  freelancerID,
+			AgreedBudget:  500.0,
+			Status:        StatusCompleted,
+		}
+		if err := repo.CreateContract(context.Background(), c); err != nil {
+			t.Fatalf("failed to create contract: %v", err)
+		}
+
+		_, err := service.UpdateContractStatus(context.Background(), clientClaims, contractID, UpdateContractStatusRequest{Status: StatusCancelled})
+		if err == nil {
+			t.Fatalf("expected error cancelling completed contract, got nil")
+		}
+		if !errors.Is(err, ErrTerminalStatus) {
+			t.Fatalf("expected ErrTerminalStatus, got: %v", err)
+		}
+	})
+
+	t.Run("cannot cancel already cancelled contract", func(t *testing.T) {
+		contractID := uuid.New()
+		c := &Contract{
+			ID:            contractID,
+			JobID:         uuid.New(),
+			ApplicationID: uuid.New(),
+			ClientID:      clientID,
+			FreelancerID:  freelancerID,
+			AgreedBudget:  500.0,
+			Status:        StatusCancelled,
+		}
+		if err := repo.CreateContract(context.Background(), c); err != nil {
+			t.Fatalf("failed to create contract: %v", err)
+		}
+
+		_, err := service.UpdateContractStatus(context.Background(), clientClaims, contractID, UpdateContractStatusRequest{Status: StatusCancelled})
+		if err == nil {
+			t.Fatalf("expected error cancelling cancelled contract, got nil")
+		}
+		if !errors.Is(err, ErrInvalidTransition) {
+			t.Fatalf("expected ErrInvalidTransition, got: %v", err)
+		}
+	})
 }

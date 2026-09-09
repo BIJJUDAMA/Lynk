@@ -25,7 +25,7 @@ const (
 type Application struct {
 	ID          uuid.UUID `json:"id"`
 	JobID       uuid.UUID `json:"job_id"`
-	ApplicantID uuid.UUID `json:"applicant_id"`
+	ApplicantID string    `json:"applicant_id"`
 	CoverLetter string    `json:"cover_letter"`
 	ResumeKey   *string   `json:"resume_key,omitempty"`
 	Status      string    `json:"status"` // pending, accepted, rejected
@@ -35,22 +35,22 @@ type Application struct {
 
 // ApplicantSummary provides public applicant details attached to an application.
 type ApplicantSummary struct {
-	ID             uuid.UUID `json:"id"`
-	Email          string    `json:"email"`
-	FirstName      string    `json:"first_name"`
-	LastName       string    `json:"last_name"`
-	Bio            string    `json:"bio,omitempty"`
-	Department     string    `json:"department"`
-	GraduationYear int       `json:"graduation_year"`
-	Skills         []string  `json:"skills"`
-	ResumeKey      *string   `json:"resume_key,omitempty"`
-	ResumeFilename *string   `json:"resume_filename,omitempty"`
+	ID             string   `json:"id"`
+	Email          string   `json:"email"`
+	FirstName      string   `json:"first_name"`
+	LastName       string   `json:"last_name"`
+	Bio            string   `json:"bio,omitempty"`
+	Department     string   `json:"department"`
+	GraduationYear int      `json:"graduation_year"`
+	Skills         []string `json:"skills"`
+	ResumeKey      *string  `json:"resume_key,omitempty"`
+	ResumeFilename *string  `json:"resume_filename,omitempty"`
 }
 
 // JobSummary provides job context attached to an application.
 type JobSummary struct {
 	ID          uuid.UUID `json:"id"`
-	CreatedBy   uuid.UUID `json:"created_by"`
+	CreatedBy   string    `json:"created_by"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
 	Budget      float64   `json:"budget"`
@@ -64,8 +64,8 @@ type Contract struct {
 	ID            uuid.UUID  `json:"id"`
 	JobID         uuid.UUID  `json:"job_id"`
 	ApplicationID uuid.UUID  `json:"application_id"`
-	ClientID      uuid.UUID  `json:"client_id"`
-	FreelancerID  uuid.UUID  `json:"freelancer_id"`
+	ClientID      string     `json:"client_id"`
+	FreelancerID  string     `json:"freelancer_id"`
 	AgreedBudget  float64    `json:"agreed_budget"`
 	Status        string     `json:"status"`
 	StartedAt     *time.Time `json:"started_at,omitempty"`

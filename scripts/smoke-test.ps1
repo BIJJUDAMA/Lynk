@@ -909,7 +909,7 @@ startxref
     Log-Substep "Employer submits 5-star review for student on completed contract..."
     $empReviewPayload = @{
         rating = 5
-        comment = "Exceptional work! Jordan delivered clean Go code, thorough unit tests, and excellent communication throughout the milestone."
+        comment = "Exceptional work! Jordan delivered clean Go code, thorough unit tests, and excellent communication throughout the project."
     } | ConvertTo-Json
 
     $empRevResp = Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/contracts/$ContractId/reviews" -Token $EmployerToken -Body $empReviewPayload -ExpectedStatusCode 201
@@ -923,7 +923,7 @@ startxref
     Log-Substep "Student submits 5-star review for employer on completed contract..."
     $stuReviewPayload = @{
         rating = 5
-        comment = "Outstanding employer to work with! Clear requirements, flexible milestones, and prompt feedback."
+        comment = "Outstanding employer to work with! Clear requirements, clear deliverables, and prompt feedback."
     } | ConvertTo-Json
 
     $stuRevResp = Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/contracts/$ContractId/reviews" -Token $VerifiedStudentToken -Body $stuReviewPayload -ExpectedStatusCode 201

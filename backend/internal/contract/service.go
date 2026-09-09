@@ -25,10 +25,10 @@ func (s *Service) ListContracts(ctx context.Context, claims *auth.UserClaims) ([
 		return nil, ErrForbidden
 	}
 
-	callerID, err := uuid.Parse(claims.UserID)
-	if err != nil || callerID == uuid.Nil {
+	if strings.TrimSpace(claims.UserID) == "" {
 		return nil, fmt.Errorf("%w: invalid user id", ErrInvalidInput)
 	}
+	callerID := claims.UserID
 
 	contracts, err := s.repo.ListContractsByUserID(ctx, callerID)
 	if err != nil {
@@ -46,10 +46,10 @@ func (s *Service) GetContractByID(ctx context.Context, claims *auth.UserClaims, 
 		return nil, ErrForbidden
 	}
 
-	callerID, err := uuid.Parse(claims.UserID)
-	if err != nil || callerID == uuid.Nil {
+	if strings.TrimSpace(claims.UserID) == "" {
 		return nil, fmt.Errorf("%w: invalid user id", ErrInvalidInput)
 	}
+	callerID := claims.UserID
 
 	if contractID == uuid.Nil {
 		return nil, fmt.Errorf("%w: valid contract id is required", ErrInvalidInput)
@@ -82,10 +82,10 @@ func (s *Service) UpdateContractStatus(
 		return nil, ErrForbidden
 	}
 
-	callerID, err := uuid.Parse(claims.UserID)
-	if err != nil || callerID == uuid.Nil {
+	if strings.TrimSpace(claims.UserID) == "" {
 		return nil, fmt.Errorf("%w: invalid user id", ErrInvalidInput)
 	}
+	callerID := claims.UserID
 
 	if contractID == uuid.Nil {
 		return nil, fmt.Errorf("%w: valid contract id is required", ErrInvalidInput)

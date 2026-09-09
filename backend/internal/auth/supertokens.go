@@ -131,6 +131,25 @@ func InitSupertokens(cfg SuperTokensConfig) error {
 			}),
 			session.Init(&sessmodels.TypeInput{
 				ExposeAccessTokenToFrontendInCookieBasedAuth: true,
+				Override: &sessmodels.OverrideStruct{
+					Functions: func(originalImplementation sessmodels.RecipeInterface) sessmodels.RecipeInterface {
+						ogCreateNewSession := *originalImplementation.CreateNewSession
+						(*originalImplementation.CreateNewSession) = func(userID string, accessTokenPayload map[string]interface{}, sessionDataInDatabase map[string]interface{}, disableAntiCsrf *bool, tenantId string, userContext supertokens.UserContext) (sessmodels.SessionContainer, error) {
+							if accessTokenPayload == nil {
+								accessTokenPayload = map[string]interface{}{}
+							}
+							// Fetch email from SuperTokens user store if missing
+							emailVal, ok := accessTokenPayload["email"].(string)
+							if !ok || strings.TrimSpace(emailVal) == "" {
+								if user, err := emailpassword.GetUserByID(userID, userContext); err == nil && user != nil {
+									accessTokenPayload["email"] = user.Email
+								}
+							}
+							return ogCreateNewSession(userID, accessTokenPayload, sessionDataInDatabase, disableAntiCsrf, tenantId, userContext)
+						}
+						return originalImplementation
+					},
+				},
 			}),
 			userroles.Init(nil),
 		},

@@ -6,6 +6,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// Role definitions for campus members and administrators.
+const (
+	RoleMember = "member"
+	RoleAdmin  = "admin"
+)
+
 // User mirrors the authenticated user record in PostgreSQL.
 type User struct {
 	ID        string    `json:"id"`
@@ -47,9 +53,10 @@ type UpdateProfileRequest struct {
 	OrganizationWebsite string   `json:"organization_website,omitempty"`
 }
 
-// SyncUserRequest contains optional role choice on first user sync.
+// SyncUserRequest contains optional user profile attributes on sync.
 type SyncUserRequest struct {
-	Role string `json:"role,omitempty"`
+	FirstName string `json:"first_name,omitempty"`
+	LastName  string `json:"last_name,omitempty"`
 }
 
 // UserProfileSummary represents the combined user and profile summary for /auth/me.

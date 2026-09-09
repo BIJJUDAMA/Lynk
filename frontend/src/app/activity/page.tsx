@@ -196,7 +196,7 @@ function ActivityContent() {
             Campus Activity Workspace
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Track submitted proposals, manage your job postings, and review milestone contracts.
+            Track submitted proposals, manage your job postings, and review active contracts.
           </p>
         </div>
 
@@ -263,14 +263,14 @@ function ActivityContent() {
           )}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Milestone Contracts</span>
+            <span className="text-xs font-medium text-muted-foreground">Active Contracts</span>
             <FileCheck className="h-4 w-4 text-primary" />
           </div>
           <div className="mt-2 text-2xl font-bold text-foreground">
             {contractsList.length}
           </div>
           <p className="mt-1 text-[11px] text-muted-foreground">
-            {activeContractsCount} active milestone contracts
+            {activeContractsCount} active contracts
           </p>
         </div>
       </div>

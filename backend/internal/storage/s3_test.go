@@ -278,3 +278,21 @@ func TestGetPresignedDownloadURL_WithPublicEndpoint(t *testing.T) {
 		t.Errorf("expected presigned signature to be present")
 	}
 }
+
+func TestS3Client_EnsureBucketMethodExists(t *testing.T) {
+	client := &S3Client{bucket: "resumes"}
+	// Testing that EnsureBucket interface method is declared and handles nil client gracefully
+	err := client.EnsureBucket(context.Background())
+	if err == nil {
+		t.Fatalf("expected error on uninitialized client, got nil")
+	}
+}
+
+func TestS3Client_DeleteResumeMethodExists(t *testing.T) {
+	var client Client = &S3Client{bucket: "resumes"}
+	if client == nil {
+		t.Fatal("client must not be nil")
+	}
+}
+
+

@@ -22,18 +22,18 @@ var (
 
 // UserSummary represents minimal user profile information attached to reviews.
 type UserSummary struct {
-	ID        uuid.UUID `json:"id"`
-	FirstName string    `json:"first_name"`
-	LastName  string    `json:"last_name"`
-	Role      string    `json:"role"`
+	ID        string `json:"id"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Role      string `json:"role"`
 }
 
 // Review represents a peer review and rating submitted by a participant of a completed contract.
 type Review struct {
 	ID         uuid.UUID    `json:"id"`
 	ContractID uuid.UUID    `json:"contract_id"`
-	ReviewerID uuid.UUID    `json:"reviewer_id"`
-	RevieweeID uuid.UUID    `json:"reviewee_id"`
+	ReviewerID string       `json:"reviewer_id"`
+	RevieweeID string       `json:"reviewee_id"`
 	Rating     int          `json:"rating"`
 	Comment    string       `json:"comment"`
 	CreatedAt  time.Time    `json:"created_at"`
@@ -49,7 +49,7 @@ type CreateReviewRequest struct {
 
 // UserReviewSummary encapsulates the aggregated ratings and list of reviews received by a user.
 type UserReviewSummary struct {
-	UserID        uuid.UUID `json:"user_id"`
+	UserID        string    `json:"user_id"`
 	AverageRating float64   `json:"average_rating"`
 	ReviewCount   int       `json:"review_count"`
 	Reviews       []*Review `json:"reviews"`

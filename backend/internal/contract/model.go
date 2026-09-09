@@ -31,8 +31,8 @@ type Contract struct {
 	ID            uuid.UUID  `json:"id"`
 	JobID         uuid.UUID  `json:"job_id"`
 	ApplicationID uuid.UUID  `json:"application_id"`
-	ClientID      uuid.UUID  `json:"client_id"`
-	FreelancerID  uuid.UUID  `json:"freelancer_id"`
+	ClientID      string     `json:"client_id"`
+	FreelancerID  string     `json:"freelancer_id"`
 	AgreedBudget  float64    `json:"agreed_budget"`
 	Status        string     `json:"status"` // draft, active, completed, cancelled
 	StartedAt     *time.Time `json:"started_at,omitempty"`
@@ -44,7 +44,7 @@ type Contract struct {
 // JobSummary provides job context attached to a contract.
 type JobSummary struct {
 	ID          uuid.UUID `json:"id"`
-	CreatedBy   uuid.UUID `json:"created_by"`
+	CreatedBy   string    `json:"created_by"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
 	Budget      float64   `json:"budget"`
@@ -55,12 +55,12 @@ type JobSummary struct {
 
 // MemberSummary provides participant details attached to a contract.
 type MemberSummary struct {
-	ID             uuid.UUID `json:"id"`
-	Email          string    `json:"email"`
-	FirstName      string    `json:"first_name"`
-	LastName       string    `json:"last_name"`
-	Department     string    `json:"department"`
-	GraduationYear int       `json:"graduation_year"`
+	ID             string `json:"id"`
+	Email          string `json:"email"`
+	FirstName      string `json:"first_name"`
+	LastName       string `json:"last_name"`
+	Department     string `json:"department"`
+	GraduationYear int    `json:"graduation_year"`
 }
 
 // ContractWithDetails enriches Contract with joined job, client, and freelancer details.

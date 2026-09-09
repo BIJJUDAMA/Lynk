@@ -37,10 +37,10 @@ func (s *Service) CreateReview(ctx context.Context, claims *auth.UserClaims, con
 		return nil, ErrForbidden
 	}
 
-	callerID, err := uuid.Parse(claims.UserID)
-	if err != nil || callerID == uuid.Nil {
+	if strings.TrimSpace(claims.UserID) == "" {
 		return nil, fmt.Errorf("%w: invalid user id", ErrInvalidInput)
 	}
+	callerID := claims.UserID
 
 	if contractID == uuid.Nil {
 		return nil, fmt.Errorf("%w: valid contract id is required", ErrInvalidInput)
@@ -72,7 +72,7 @@ func (s *Service) CreateReview(ctx context.Context, claims *auth.UserClaims, con
 
 	// Invariant: Reviewer MUST be participant (client or freelancer).
 	// Reviewee is automatically determined as the other participant.
-	var revieweeID uuid.UUID
+	var revieweeID string
 	if callerID == c.FreelancerID {
 		revieweeID = c.ClientID
 	} else if callerID == c.ClientID {
@@ -134,8 +134,8 @@ func (s *Service) GetReviewsByContractID(ctx context.Context, contractID uuid.UU
 }
 
 // GetUserReviewsWithSummary retrieves a user's aggregate review summary and received reviews.
-func (s *Service) GetUserReviewsWithSummary(ctx context.Context, userID uuid.UUID) (*UserReviewSummary, error) {
-	if userID == uuid.Nil {
+func (s *Service) GetUserReviewsWithSummary(ctx context.Context, userID string) (*UserReviewSummary, error) {
+	if strings.TrimSpace(userID) == "" {
 		return nil, fmt.Errorf("%w: valid user id is required", ErrInvalidInput)
 	}
 

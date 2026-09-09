@@ -65,7 +65,7 @@ export default function HomePage() {
 
               <p className="mt-6 text-lg leading-8 text-slate-600 dark:text-slate-300">
                 Lynk connects verified university students with freelance opportunities,
-                structured milestones, clear contracts, and peer reviews.
+                clear deliverable contracts, and peer reviews.
               </p>
 
               <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
@@ -208,7 +208,7 @@ export default function HomePage() {
                   <FileText className="h-6 w-6" />
                 </div>
                 <h3 className="mt-6 text-lg font-bold text-slate-900 dark:text-white">
-                  Deterministic Milestone Contracts
+                  Binding Campus Contracts
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
                   Accepted proposals automatically create structured contracts that track project status from active work through completion.
@@ -308,7 +308,7 @@ export default function HomePage() {
                     <div>
                       <strong className="text-slate-900 dark:text-white">Apply and deliver under contract</strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Submit proposals, complete agreed milestones, and earn authentic feedback.
+                        Submit proposals, deliver agreed project scope, and earn authentic feedback.
                       </p>
                     </div>
                   </li>

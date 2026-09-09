@@ -28,6 +28,7 @@ type Config struct {
 type Client interface {
 	UploadResume(ctx context.Context, key string, contentType string, body io.Reader) error
 	GetPresignedDownloadURL(ctx context.Context, key string, expiry time.Duration) (string, error)
+	DeleteResume(ctx context.Context, key string) error
 }
 
 type S3Client struct {
@@ -126,3 +127,36 @@ func (s *S3Client) GetPresignedDownloadURL(ctx context.Context, key string, expi
 	}
 	return s.rewritePresignedURL(req.URL), nil
 }
+
+func (s *S3Client) DeleteResume(ctx context.Context, key string) error {
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("delete s3 object %q: %w", key, err)
+	}
+	return nil
+}
+
+// EnsureBucket verifies if the configured bucket exists, and creates it if it does not.
+func (s *S3Client) EnsureBucket(ctx context.Context) error {
+	if s == nil || s.client == nil {
+		return fmt.Errorf("s3 client is not initialized")
+	}
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(s.bucket),
+	})
+	if err == nil {
+		return nil
+	}
+
+	_, err = s.client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(s.bucket),
+	})
+	if err != nil {
+		return fmt.Errorf("auto-create s3 bucket %q: %w", s.bucket, err)
+	}
+	return nil
+}
+

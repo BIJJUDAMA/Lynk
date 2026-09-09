@@ -20,14 +20,14 @@ import (
 type mockReviewRepo struct {
 	mu         sync.Mutex
 	reviews    map[uuid.UUID]*Review
-	knownUsers map[uuid.UUID]bool
+	knownUsers map[string]bool
 	forceErr   error
 }
 
 func newMockReviewRepo() *mockReviewRepo {
 	return &mockReviewRepo{
 		reviews:    make(map[uuid.UUID]*Review),
-		knownUsers: make(map[uuid.UUID]bool),
+		knownUsers: make(map[string]bool),
 	}
 }
 
@@ -73,7 +73,7 @@ func (m *mockReviewRepo) GetReviewsByContractID(ctx context.Context, contractID 
 	return list, nil
 }
 
-func (m *mockReviewRepo) GetUserReviewsWithSummary(ctx context.Context, userID uuid.UUID) (*UserReviewSummary, error) {
+func (m *mockReviewRepo) GetUserReviewsWithSummary(ctx context.Context, userID string) (*UserReviewSummary, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -110,7 +110,7 @@ func (m *mockReviewRepo) GetUserReviewsWithSummary(ctx context.Context, userID u
 	}, nil
 }
 
-func (m *mockReviewRepo) HasUserReviewedContract(ctx context.Context, contractID, reviewerID uuid.UUID) (bool, error) {
+func (m *mockReviewRepo) HasUserReviewedContract(ctx context.Context, contractID uuid.UUID, reviewerID string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -210,8 +210,8 @@ func TestReview_ModelValidation(t *testing.T) {
 }
 
 func TestReview_CompletedContractCheck(t *testing.T) {
-	freelancerID := uuid.New()
-	clientID := uuid.New()
+	freelancerID := uuid.New().String()
+	clientID := uuid.New().String()
 
 	contractStatuses := []struct {
 		status        string
@@ -249,7 +249,7 @@ func TestReview_CompletedContractCheck(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/contracts/"+contractID.String()+"/reviews", bytes.NewReader(body))
 			req = withAuth(req, &auth.UserClaims{
-				UserID: freelancerID.String(),
+				UserID: freelancerID,
 				Email:  "student@university.edu",
 				Roles:  []string{"member"},
 			})
@@ -265,9 +265,9 @@ func TestReview_CompletedContractCheck(t *testing.T) {
 }
 
 func TestReview_ParticipantAuthorization(t *testing.T) {
-	freelancerID := uuid.New()
-	clientID := uuid.New()
-	unrelatedID := uuid.New()
+	freelancerID := uuid.New().String()
+	clientID := uuid.New().String()
+	unrelatedID := uuid.New().String()
 
 	contractID := uuid.New()
 	contractReader := newMockContractReader()
@@ -288,7 +288,7 @@ func TestReview_ParticipantAuthorization(t *testing.T) {
 		body, _ := json.Marshal(CreateReviewRequest{Rating: 5, Comment: "Great client!"})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/contracts/"+contractID.String()+"/reviews", bytes.NewReader(body))
 		req = withAuth(req, &auth.UserClaims{
-			UserID: freelancerID.String(),
+			UserID: freelancerID,
 			Email:  "student@university.edu",
 			Roles:  []string{"member"},
 		})
@@ -319,7 +319,7 @@ func TestReview_ParticipantAuthorization(t *testing.T) {
 		body, _ := json.Marshal(CreateReviewRequest{Rating: 4, Comment: "Strong freelancer performance!"})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/contracts/"+contractID.String()+"/reviews", bytes.NewReader(body))
 		req = withAuth(req, &auth.UserClaims{
-			UserID: clientID.String(),
+			UserID: clientID,
 			Email:  "client@company.com",
 			Roles:  []string{"member"},
 		})
@@ -350,7 +350,7 @@ func TestReview_ParticipantAuthorization(t *testing.T) {
 		body, _ := json.Marshal(CreateReviewRequest{Rating: 5, Comment: "I was not involved"})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/contracts/"+contractID.String()+"/reviews", bytes.NewReader(body))
 		req = withAuth(req, &auth.UserClaims{
-			UserID: unrelatedID.String(),
+			UserID: unrelatedID,
 			Email:  "outsider@example.com",
 			Roles:  []string{"member"},
 		})
@@ -364,8 +364,8 @@ func TestReview_ParticipantAuthorization(t *testing.T) {
 }
 
 func TestReview_DuplicateSubmission(t *testing.T) {
-	freelancerID := uuid.New()
-	clientID := uuid.New()
+	freelancerID := uuid.New().String()
+	clientID := uuid.New().String()
 	contractID := uuid.New()
 
 	contractReader := newMockContractReader()
@@ -385,7 +385,7 @@ func TestReview_DuplicateSubmission(t *testing.T) {
 	body1, _ := json.Marshal(CreateReviewRequest{Rating: 5, Comment: "First review from freelancer"})
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/contracts/"+contractID.String()+"/reviews", bytes.NewReader(body1))
 	req1 = withAuth(req1, &auth.UserClaims{
-		UserID: freelancerID.String(),
+		UserID: freelancerID,
 		Email:  "student@university.edu",
 		Roles:  []string{"member"},
 	})
@@ -400,7 +400,7 @@ func TestReview_DuplicateSubmission(t *testing.T) {
 	body2, _ := json.Marshal(CreateReviewRequest{Rating: 4, Comment: "Second attempt"})
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/contracts/"+contractID.String()+"/reviews", bytes.NewReader(body2))
 	req2 = withAuth(req2, &auth.UserClaims{
-		UserID: freelancerID.String(),
+		UserID: freelancerID,
 		Email:  "student@university.edu",
 		Roles:  []string{"member"},
 	})
@@ -417,7 +417,7 @@ func TestReview_GetUserReviewsWithSummary(t *testing.T) {
 	service := NewService(repo, nil)
 	handler := NewHandler(service)
 
-	targetUserID := uuid.New()
+	targetUserID := uuid.New().String()
 	repo.knownUsers[targetUserID] = true
 
 	cID1 := uuid.New()
@@ -425,20 +425,20 @@ func TestReview_GetUserReviewsWithSummary(t *testing.T) {
 
 	_ = repo.CreateReview(context.Background(), &Review{
 		ContractID: cID1,
-		ReviewerID: uuid.New(),
+		ReviewerID: uuid.New().String(),
 		RevieweeID: targetUserID,
 		Rating:     5,
 		Comment:    "Outstanding",
 	})
 	_ = repo.CreateReview(context.Background(), &Review{
 		ContractID: cID2,
-		ReviewerID: uuid.New(),
+		ReviewerID: uuid.New().String(),
 		RevieweeID: targetUserID,
 		Rating:     4,
 		Comment:    "Very good",
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+targetUserID.String()+"/reviews", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+targetUserID+"/reviews", nil)
 	w := httptest.NewRecorder()
 	handler.Routes(nil).ServeHTTP(w, req)
 

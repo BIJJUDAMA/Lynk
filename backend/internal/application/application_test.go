@@ -26,8 +26,8 @@ type mockApplicationRepo struct {
 	applications map[uuid.UUID]*Application
 	contracts    map[uuid.UUID]*Contract
 	jobs         map[uuid.UUID]*job.Job
-	users        map[uuid.UUID]*user.User
-	profiles     map[uuid.UUID]*user.Profile
+	users        map[string]*user.User
+	profiles     map[string]*user.Profile
 }
 
 func newMockApplicationRepo() *mockApplicationRepo {
@@ -35,8 +35,8 @@ func newMockApplicationRepo() *mockApplicationRepo {
 		applications: make(map[uuid.UUID]*Application),
 		contracts:    make(map[uuid.UUID]*Contract),
 		jobs:         make(map[uuid.UUID]*job.Job),
-		users:        make(map[uuid.UUID]*user.User),
-		profiles:     make(map[uuid.UUID]*user.Profile),
+		users:        make(map[string]*user.User),
+		profiles:     make(map[string]*user.Profile),
 	}
 }
 
@@ -62,7 +62,7 @@ func (m *mockApplicationRepo) CreateApplication(ctx context.Context, app *Applic
 	return nil
 }
 
-func (m *mockApplicationRepo) GetApplicationByJobAndApplicant(ctx context.Context, jobID, applicantID uuid.UUID) (*Application, error) {
+func (m *mockApplicationRepo) GetApplicationByJobAndApplicant(ctx context.Context, jobID uuid.UUID, applicantID string) (*Application, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -100,7 +100,7 @@ func (m *mockApplicationRepo) ListApplicationsByJob(ctx context.Context, jobID u
 	return list, nil
 }
 
-func (m *mockApplicationRepo) ListApplicationsByApplicant(ctx context.Context, applicantID uuid.UUID) ([]*ApplicationWithDetails, error) {
+func (m *mockApplicationRepo) ListApplicationsByApplicant(ctx context.Context, applicantID string) ([]*ApplicationWithDetails, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -200,7 +200,7 @@ func (m *mockApplicationRepo) GetJobByID(ctx context.Context, id uuid.UUID) (*jo
 	return &cp, nil
 }
 
-func (m *mockApplicationRepo) GetProfile(ctx context.Context, userID uuid.UUID) (*user.Profile, error) {
+func (m *mockApplicationRepo) GetProfile(ctx context.Context, userID string) (*user.Profile, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -298,6 +298,76 @@ func parseEnvelope(t *testing.T, body []byte) jsonResponse {
 	return res
 }
 
+type mockJobLookup struct{}
+
+func (m *mockJobLookup) GetJobByID(ctx context.Context, id uuid.UUID) (*job.Job, error) {
+	return &job.Job{
+		ID:        id,
+		CreatedBy: "usr_employer",
+		Title:     "Dev",
+		Budget:    100.0,
+		Status:    job.StatusOpen,
+	}, nil
+}
+
+func TestService_ApplyToJob_RejectsAlienResumeKey(t *testing.T) {
+	svc := NewService(newMockApplicationRepo(), &mockJobLookup{}, nil)
+	claims := &auth.UserClaims{UserID: "usr_alice", EmailVerified: true}
+	alienKey := "resumes/usr_bob/confidential.pdf"
+	_, err := svc.ApplyToJob(context.Background(), claims, uuid.New(), ApplyRequest{
+		CoverLetter: "Hi there!",
+		ResumeKey:   &alienKey,
+	})
+	if err == nil {
+		t.Fatalf("expected error when applicant passes alien resume key, got nil")
+	}
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+
+	t.Run("rejects path traversal in resume key", func(t *testing.T) {
+		traversalKey := "resumes/usr_alice/../usr_bob/confidential.pdf"
+		_, err := svc.ApplyToJob(context.Background(), claims, uuid.New(), ApplyRequest{
+			CoverLetter: "Hi there!",
+			ResumeKey:   &traversalKey,
+		})
+		if err == nil {
+			t.Fatalf("expected error when applicant passes traversal resume key, got nil")
+		}
+		if !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("expected ErrInvalidInput, got %v", err)
+		}
+	})
+
+	t.Run("rejects resume key exceeding 512 chars", func(t *testing.T) {
+		longKey := fmt.Sprintf("resumes/usr_alice/%s.pdf", strings.Repeat("a", 500))
+		_, err := svc.ApplyToJob(context.Background(), claims, uuid.New(), ApplyRequest{
+			CoverLetter: "Hi there!",
+			ResumeKey:   &longKey,
+		})
+		if err == nil {
+			t.Fatalf("expected error when applicant passes too long resume key, got nil")
+		}
+		if !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("expected ErrInvalidInput, got %v", err)
+		}
+	})
+
+	t.Run("accepts valid applicant resume key", func(t *testing.T) {
+		validKey := "resumes/usr_alice/valid_resume.pdf"
+		app, err := svc.ApplyToJob(context.Background(), claims, uuid.New(), ApplyRequest{
+			CoverLetter: "Hi there!",
+			ResumeKey:   &validKey,
+		})
+		if err != nil {
+			t.Fatalf("expected success with valid applicant resume key, got %v", err)
+		}
+		if app.ResumeKey == nil || *app.ResumeKey != validKey {
+			t.Fatalf("expected resume key %s, got %v", validKey, app.ResumeKey)
+		}
+	})
+}
+
 // --- Test Suites ---
 
 func TestApplication_Validation(t *testing.T) {
@@ -366,7 +436,7 @@ func TestApplication_InstitutionalEmailGate(t *testing.T) {
 	router := handler.Routes(nil)
 
 	jobID := uuid.New()
-	creatorID := uuid.New()
+	creatorID := uuid.New().String()
 	repo.jobs[jobID] = &job.Job{
 		ID:        jobID,
 		CreatedBy: creatorID,
@@ -376,9 +446,9 @@ func TestApplication_InstitutionalEmailGate(t *testing.T) {
 	}
 
 	t.Run("unverified applicant is rejected with 403 EMAIL_NOT_VERIFIED", func(t *testing.T) {
-		applicantID := uuid.New()
+		applicantID := uuid.New().String()
 		unverifiedClaims := &auth.UserClaims{
-			UserID:        applicantID.String(),
+			UserID:        applicantID,
 			Email:         "student@mit.edu",
 			EmailVerified: false, // NOT VERIFIED
 			Roles:         []string{"member"},
@@ -407,9 +477,9 @@ func TestApplication_InstitutionalEmailGate(t *testing.T) {
 	})
 
 	t.Run("verified member succeeds with 201 Created", func(t *testing.T) {
-		applicantID := uuid.New()
+		applicantID := uuid.New().String()
 		verifiedClaims := &auth.UserClaims{
-			UserID:        applicantID.String(),
+			UserID:        applicantID,
 			Email:         "student@mit.edu",
 			EmailVerified: true, // VERIFIED
 			Roles:         []string{"member"},
@@ -452,7 +522,7 @@ func TestApplication_ResourceOwnershipEnforcement(t *testing.T) {
 	handler := NewHandler(service, repo)
 	router := handler.Routes(nil)
 
-	creatorID := uuid.New()
+	creatorID := uuid.New().String()
 	jobID := uuid.New()
 	repo.jobs[jobID] = &job.Job{
 		ID:        jobID,
@@ -464,7 +534,7 @@ func TestApplication_ResourceOwnershipEnforcement(t *testing.T) {
 
 	t.Run("job creator cannot apply to own job (403 Forbidden)", func(t *testing.T) {
 		creatorClaims := &auth.UserClaims{
-			UserID:        creatorID.String(),
+			UserID:        creatorID,
 			Email:         "creator@corp.com",
 			EmailVerified: true,
 			Roles:         []string{"member"},
@@ -537,23 +607,23 @@ func TestApplication_ResumeAutoAttachment(t *testing.T) {
 	jobID := uuid.New()
 	repo.jobs[jobID] = &job.Job{
 		ID:        jobID,
-		CreatedBy: uuid.New(),
+		CreatedBy: uuid.New().String(),
 		Title:     "ML Engineer",
 		Budget:    1000.00,
 		Status:    job.StatusOpen,
 	}
 
-	applicantID := uuid.New()
+	applicantID := uuid.New().String()
 	profileResumeKey := "resumes/applicant-123/cv.pdf"
 	repo.profiles[applicantID] = &user.Profile{
-		UserID:    applicantID.String(),
+		UserID:    applicantID,
 		FirstName: "Jane",
 		LastName:  "Doe",
 		ResumeKey: &profileResumeKey,
 	}
 
 	claims := &auth.UserClaims{
-		UserID:        applicantID.String(),
+		UserID:        applicantID,
 		Email:         "jane@stanford.edu",
 		EmailVerified: true,
 		Roles:         []string{"member"},
@@ -586,13 +656,13 @@ func TestApplication_ResumeAutoAttachment(t *testing.T) {
 		job2ID := uuid.New()
 		repo.jobs[job2ID] = &job.Job{
 			ID:        job2ID,
-			CreatedBy: uuid.New(),
+			CreatedBy: uuid.New().String(),
 			Title:     "Data Analyst",
 			Budget:    600.00,
 			Status:    job.StatusOpen,
 		}
 
-		explicitKey := "resumes/custom/specialized_resume.pdf"
+		explicitKey := fmt.Sprintf("resumes/%s/specialized_resume.pdf", applicantID)
 		payload, _ := json.Marshal(ApplyRequest{
 			CoverLetter: "Custom resume application.",
 			ResumeKey:   &explicitKey,
@@ -626,15 +696,15 @@ func TestApplication_DuplicatePrevention(t *testing.T) {
 	jobID := uuid.New()
 	repo.jobs[jobID] = &job.Job{
 		ID:        jobID,
-		CreatedBy: uuid.New(),
+		CreatedBy: uuid.New().String(),
 		Title:     "Tutor",
 		Budget:    200.00,
 		Status:    job.StatusOpen,
 	}
 
-	applicantID := uuid.New()
+	applicantID := uuid.New().String()
 	claims := &auth.UserClaims{
-		UserID:        applicantID.String(),
+		UserID:        applicantID,
 		Email:         "tutor@caltech.edu",
 		EmailVerified: true,
 		Roles:         []string{"member"},
@@ -701,7 +771,7 @@ func TestApplication_JobStatusChecks(t *testing.T) {
 		inProgressJobID := uuid.New()
 		repo.jobs[inProgressJobID] = &job.Job{
 			ID:        inProgressJobID,
-			CreatedBy: uuid.New(),
+			CreatedBy: uuid.New().String(),
 			Title:     "Active Job",
 			Budget:    400.00,
 			Status:    job.StatusInProgress,
@@ -731,7 +801,7 @@ func TestApplication_AcceptApplication_AtomicWorkflow(t *testing.T) {
 	router := handler.Routes(nil)
 
 	jobID := uuid.New()
-	creatorID := uuid.New()
+	creatorID := uuid.New().String()
 	targetJob := &job.Job{
 		ID:          jobID,
 		CreatedBy:   creatorID,
@@ -745,7 +815,7 @@ func TestApplication_AcceptApplication_AtomicWorkflow(t *testing.T) {
 	repo.jobs[jobID] = targetJob
 
 	creatorClaims := &auth.UserClaims{
-		UserID:        creatorID.String(),
+		UserID:        creatorID,
 		Email:         "founder@startup.io",
 		EmailVerified: true,
 		Roles:         []string{"member"},
@@ -753,7 +823,7 @@ func TestApplication_AcceptApplication_AtomicWorkflow(t *testing.T) {
 
 	// Seed 3 member applications:
 	// Applicant 1 (to be accepted)
-	s1ID := uuid.New()
+	s1ID := uuid.New().String()
 	app1 := &Application{
 		ID:          uuid.New(),
 		JobID:       jobID,
@@ -762,16 +832,16 @@ func TestApplication_AcceptApplication_AtomicWorkflow(t *testing.T) {
 		Status:      StatusPending,
 	}
 	_ = repo.CreateApplication(context.Background(), app1)
-	repo.users[s1ID] = &user.User{ID: s1ID.String(), Email: "s1@stanford.edu", Role: "member"}
+	repo.users[s1ID] = &user.User{ID: s1ID, Email: "s1@stanford.edu", Role: "member"}
 	repo.profiles[s1ID] = &user.Profile{
-		UserID:    s1ID.String(),
+		UserID:    s1ID,
 		FirstName: "Alice",
 		LastName:  "Smith",
 		Skills:    []string{"Go", "React"},
 	}
 
 	// Applicant 2 (will be rejected automatically)
-	s2ID := uuid.New()
+	s2ID := uuid.New().String()
 	app2 := &Application{
 		ID:          uuid.New(),
 		JobID:       jobID,
@@ -782,7 +852,7 @@ func TestApplication_AcceptApplication_AtomicWorkflow(t *testing.T) {
 	_ = repo.CreateApplication(context.Background(), app2)
 
 	// Applicant 3 (will be rejected automatically)
-	s3ID := uuid.New()
+	s3ID := uuid.New().String()
 	app3 := &Application{
 		ID:          uuid.New(),
 		JobID:       jobID,
@@ -897,7 +967,7 @@ func TestApplication_RejectApplication(t *testing.T) {
 	router := handler.Routes(nil)
 
 	jobID := uuid.New()
-	creatorID := uuid.New()
+	creatorID := uuid.New().String()
 	targetJob := &job.Job{
 		ID:        jobID,
 		CreatedBy: creatorID,
@@ -908,14 +978,14 @@ func TestApplication_RejectApplication(t *testing.T) {
 	repo.jobs[jobID] = targetJob
 
 	creatorClaims := &auth.UserClaims{
-		UserID:        creatorID.String(),
+		UserID:        creatorID,
 		Email:         "emp@corp.com",
 		EmailVerified: true,
 		Roles:         []string{"member"},
 	}
 
 	appID := uuid.New()
-	applicantID := uuid.New()
+	applicantID := uuid.New().String()
 	app := &Application{
 		ID:          appID,
 		JobID:       jobID,
@@ -960,7 +1030,7 @@ func TestApplication_ListJobApplications(t *testing.T) {
 	router := handler.Routes(nil)
 
 	jobID := uuid.New()
-	creatorID := uuid.New()
+	creatorID := uuid.New().String()
 	repo.jobs[jobID] = &job.Job{
 		ID:        jobID,
 		CreatedBy: creatorID,
@@ -970,13 +1040,13 @@ func TestApplication_ListJobApplications(t *testing.T) {
 	}
 
 	creatorClaims := &auth.UserClaims{
-		UserID:        creatorID.String(),
+		UserID:        creatorID,
 		Email:         "emp@univ.com",
 		EmailVerified: true,
 		Roles:         []string{"member"},
 	}
 
-	s1ID := uuid.New()
+	s1ID := uuid.New().String()
 	app1 := &Application{
 		ID:          uuid.New(),
 		JobID:       jobID,
@@ -985,9 +1055,9 @@ func TestApplication_ListJobApplications(t *testing.T) {
 		Status:      StatusPending,
 	}
 	_ = repo.CreateApplication(context.Background(), app1)
-	repo.users[s1ID] = &user.User{ID: s1ID.String(), Email: "s1@school.edu"}
+	repo.users[s1ID] = &user.User{ID: s1ID, Email: "s1@school.edu"}
 	repo.profiles[s1ID] = &user.Profile{
-		UserID:    s1ID.String(),
+		UserID:    s1ID,
 		FirstName: "Sam",
 		LastName:  "Taylor",
 	}
@@ -1043,9 +1113,9 @@ func TestApplication_GetMyApplications(t *testing.T) {
 	handler := NewHandler(service, repo)
 	router := handler.Routes(nil)
 
-	applicantID := uuid.New()
+	applicantID := uuid.New().String()
 	applicantClaims := &auth.UserClaims{
-		UserID:        applicantID.String(),
+		UserID:        applicantID,
 		Email:         "member@campus.edu",
 		EmailVerified: true,
 		Roles:         []string{"member"},
@@ -1054,7 +1124,7 @@ func TestApplication_GetMyApplications(t *testing.T) {
 	job1ID := uuid.New()
 	repo.jobs[job1ID] = &job.Job{
 		ID:        job1ID,
-		CreatedBy: uuid.New(),
+		CreatedBy: uuid.New().String(),
 		Title:     "Job 1",
 		Budget:    100,
 		Status:    job.StatusOpen,
@@ -1100,8 +1170,8 @@ func TestApplication_GetApplicationByID(t *testing.T) {
 	router := handler.Routes(nil)
 
 	jobID := uuid.New()
-	creatorID := uuid.New()
-	applicantID := uuid.New()
+	creatorID := uuid.New().String()
+	applicantID := uuid.New().String()
 	appID := uuid.New()
 
 	repo.jobs[jobID] = &job.Job{
@@ -1124,7 +1194,7 @@ func TestApplication_GetApplicationByID(t *testing.T) {
 	t.Run("applicant can view application detail", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/applications/%s", appID), nil)
 		req = withAuthContext(req, &auth.UserClaims{
-			UserID:        applicantID.String(),
+			UserID:        applicantID,
 			Email:         "applicant@school.edu",
 			EmailVerified: true,
 			Roles:         []string{"member"},
@@ -1141,7 +1211,7 @@ func TestApplication_GetApplicationByID(t *testing.T) {
 	t.Run("job creator can view application detail", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/applications/%s", appID), nil)
 		req = withAuthContext(req, &auth.UserClaims{
-			UserID:        creatorID.String(),
+			UserID:        creatorID,
 			Email:         "creator@school.edu",
 			EmailVerified: true,
 			Roles:         []string{"member"},
@@ -1181,7 +1251,7 @@ func TestApplication_WithAuthMiddleware(t *testing.T) {
 	jobID := uuid.New()
 	repo.jobs[jobID] = &job.Job{
 		ID:        jobID,
-		CreatedBy: uuid.New(),
+		CreatedBy: uuid.New().String(),
 		Title:     "Campus Tour Guide",
 		Budget:    80.00,
 		Status:    job.StatusOpen,

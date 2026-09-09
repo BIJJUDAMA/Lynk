@@ -10,6 +10,16 @@ import (
 
 	"github.com/lynk/backend/internal/auth"
 	"github.com/lynk/backend/internal/middleware"
+	"github.com/supertokens/supertokens-golang/recipe/emailpassword"
+	"github.com/supertokens/supertokens-golang/recipe/emailpassword/epmodels"
+	"github.com/supertokens/supertokens-golang/recipe/emailverification"
+	"github.com/supertokens/supertokens-golang/recipe/emailverification/evmodels"
+	"github.com/supertokens/supertokens-golang/recipe/session"
+	"github.com/supertokens/supertokens-golang/recipe/session/claims"
+	"github.com/supertokens/supertokens-golang/recipe/session/sessmodels"
+	"github.com/supertokens/supertokens-golang/recipe/userroles"
+	"github.com/supertokens/supertokens-golang/recipe/userroles/userrolesmodels"
+	"github.com/supertokens/supertokens-golang/supertokens"
 )
 
 type mockValidator struct {
@@ -366,3 +376,287 @@ func TestRequireVerifiedEmail_NoContext(t *testing.T) {
 		t.Errorf("expected message %q, got %q", expectedMsg, resp.Error.Message)
 	}
 }
+
+func initSuperTokensForMiddlewareTest(
+	getSessionFn func() (sessmodels.SessionContainer, error),
+	getUserByIDFn func(userID string) (*epmodels.User, error),
+	isEmailVerifiedFn func(userID, email string) (bool, error),
+	getRolesFn func(userID string) ([]string, error),
+) error {
+	supertokens.ResetForTest()
+	apiBasePath := "/api/v1/auth"
+	websiteBasePath := "/auth"
+
+	return supertokens.Init(supertokens.TypeInput{
+		Supertokens: &supertokens.ConnectionInfo{
+			ConnectionURI: "http://localhost:3567",
+		},
+		AppInfo: supertokens.AppInfo{
+			AppName:         "LynkTest",
+			APIDomain:       "http://localhost:8080",
+			WebsiteDomain:   "http://localhost:3000",
+			APIBasePath:     &apiBasePath,
+			WebsiteBasePath: &websiteBasePath,
+		},
+		RecipeList: []supertokens.Recipe{
+			emailpassword.Init(&epmodels.TypeInput{
+				Override: &epmodels.OverrideStruct{
+					Functions: func(original epmodels.RecipeInterface) epmodels.RecipeInterface {
+						if getUserByIDFn != nil {
+							fn := func(userID string, userContext supertokens.UserContext) (*epmodels.User, error) {
+								return getUserByIDFn(userID)
+							}
+							original.GetUserByID = &fn
+						}
+						return original
+					},
+				},
+			}),
+			emailverification.Init(evmodels.TypeInput{
+				Mode: evmodels.ModeRequired,
+				Override: &evmodels.OverrideStruct{
+					Functions: func(original evmodels.RecipeInterface) evmodels.RecipeInterface {
+						if isEmailVerifiedFn != nil {
+							fn := func(userID, email string, userContext supertokens.UserContext) (bool, error) {
+								return isEmailVerifiedFn(userID, email)
+							}
+							original.IsEmailVerified = &fn
+						}
+						return original
+					},
+				},
+			}),
+			session.Init(&sessmodels.TypeInput{
+				Override: &sessmodels.OverrideStruct{
+					Functions: func(original sessmodels.RecipeInterface) sessmodels.RecipeInterface {
+						if getSessionFn != nil {
+							fn := func(accessToken *string, antiCSRFToken *string, options *sessmodels.VerifySessionOptions, userContext supertokens.UserContext) (sessmodels.SessionContainer, error) {
+								return getSessionFn()
+							}
+							original.GetSession = &fn
+							globalClaimFn := func(userId string, claimValidatorsAddedByOtherRecipes []claims.SessionClaimValidator, tenantId string, userContext supertokens.UserContext) ([]claims.SessionClaimValidator, error) {
+								return []claims.SessionClaimValidator{}, nil
+							}
+							original.GetGlobalClaimValidators = &globalClaimFn
+						}
+						return original
+					},
+				},
+			}),
+			userroles.Init(&userrolesmodels.TypeInput{
+				Override: &userrolesmodels.OverrideStruct{
+					Functions: func(original userrolesmodels.RecipeInterface) userrolesmodels.RecipeInterface {
+						if getRolesFn != nil {
+							fn := func(userID string, tenantId string, userContext supertokens.UserContext) (userrolesmodels.GetRolesForUserResponse, error) {
+								roles, err := getRolesFn(userID)
+								if err != nil {
+									return userrolesmodels.GetRolesForUserResponse{}, err
+								}
+								return userrolesmodels.GetRolesForUserResponse{
+									OK: &struct{ Roles []string }{Roles: roles},
+								}, nil
+							}
+							original.GetRolesForUser = &fn
+						}
+						return original
+					},
+				},
+			}),
+		},
+	})
+}
+
+func newMockSessionContainer(userID string, payload map[string]interface{}) sessmodels.SessionContainer {
+	return &sessmodels.TypeSessionContainer{
+		GetUserID: func() string { return userID },
+		GetUserIDWithContext: func(userContext supertokens.UserContext) string { return userID },
+		GetTenantId: func() string { return "public" },
+		GetTenantIdWithContext: func(userContext supertokens.UserContext) string { return "public" },
+		GetAccessTokenPayload: func() map[string]interface{} {
+			return payload
+		},
+		GetAccessTokenPayloadWithContext: func(userContext supertokens.UserContext) map[string]interface{} {
+			return payload
+		},
+		AssertClaimsWithContext: func(claimValidators []claims.SessionClaimValidator, userContext supertokens.UserContext) error {
+			return nil
+		},
+		AttachToRequestResponseWithContext: func(info sessmodels.RequestResponseInfo, userContext supertokens.UserContext) error {
+			return nil
+		},
+	}
+}
+
+func TestSessionMiddleware_HandlesMissingEmailInPayloadWithFallback(t *testing.T) {
+	stUser := &epmodels.User{
+		ID:    "st_user_fallback",
+		Email: "fallback@stanford.edu",
+	}
+
+	err := initSuperTokensForMiddlewareTest(
+		func() (sessmodels.SessionContainer, error) {
+			return newMockSessionContainer("st_user_fallback", map[string]interface{}{}), nil
+		},
+		func(userID string) (*epmodels.User, error) {
+			if userID == "st_user_fallback" {
+				return stUser, nil
+			}
+			return nil, errors.New("user not found")
+		},
+		func(userID, email string) (bool, error) {
+			return true, nil
+		},
+		func(userID string) ([]string, error) {
+			return []string{"member"}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("failed to init supertokens: %v", err)
+	}
+
+	var capturedClaims *auth.UserClaims
+	handler := middleware.SessionMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, err := auth.GetUserContext(r.Context())
+		if err != nil {
+			t.Fatalf("failed to get user context: %v", err)
+		}
+		capturedClaims = claims
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/api/v1/profile/me", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if capturedClaims == nil {
+		t.Fatal("expected captured claims, got nil")
+	}
+	if capturedClaims.Email != "fallback@stanford.edu" {
+		t.Errorf("expected email 'fallback@stanford.edu', got %q", capturedClaims.Email)
+	}
+}
+
+func TestSessionMiddleware_SuperTokensError_EmailVerification(t *testing.T) {
+	err := initSuperTokensForMiddlewareTest(
+		func() (sessmodels.SessionContainer, error) {
+			return newMockSessionContainer("st_user_network_err", map[string]interface{}{"email": "student@stanford.edu"}), nil
+		},
+		nil,
+		func(userID, email string) (bool, error) {
+			return false, errors.New("connection refused to supertokens core")
+		},
+		func(userID string) ([]string, error) {
+			return []string{"member"}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("failed to init supertokens: %v", err)
+	}
+
+	handler := middleware.SessionMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/api/v1/profile/me", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 Bad Gateway, got %d", rr.Code)
+	}
+
+	var resp errorResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Error.Code != "AUTH_SERVICE_UNAVAILABLE" {
+		t.Errorf("expected code AUTH_SERVICE_UNAVAILABLE, got %s", resp.Error.Code)
+	}
+}
+
+func TestSessionMiddleware_SuperTokensError_UserRoles(t *testing.T) {
+	err := initSuperTokensForMiddlewareTest(
+		func() (sessmodels.SessionContainer, error) {
+			return newMockSessionContainer("st_user_network_err", map[string]interface{}{"email": "student@stanford.edu"}), nil
+		},
+		nil,
+		func(userID, email string) (bool, error) {
+			return true, nil
+		},
+		func(userID string) ([]string, error) {
+			return nil, errors.New("connection timeout to supertokens core")
+		},
+	)
+	if err != nil {
+		t.Fatalf("failed to init supertokens: %v", err)
+	}
+
+	handler := middleware.SessionMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/api/v1/profile/me", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 Bad Gateway, got %d", rr.Code)
+	}
+
+	var resp errorResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Error.Code != "AUTH_SERVICE_UNAVAILABLE" {
+		t.Errorf("expected code AUTH_SERVICE_UNAVAILABLE, got %s", resp.Error.Code)
+	}
+}
+
+func TestSessionMiddleware_RejectsSessionWhenEmailCannotBeResolved(t *testing.T) {
+	err := initSuperTokensForMiddlewareTest(
+		func() (sessmodels.SessionContainer, error) {
+			return newMockSessionContainer("st_user_no_email", map[string]interface{}{}), nil
+		},
+		func(userID string) (*epmodels.User, error) {
+			return nil, errors.New("user deleted or not found")
+		},
+		func(userID, email string) (bool, error) {
+			return true, nil
+		},
+		func(userID string) ([]string, error) {
+			return []string{"member"}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("failed to init supertokens: %v", err)
+	}
+
+	handler := middleware.SessionMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/api/v1/profile/me", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp errorResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Error.Code != "UNAUTHORIZED" {
+		t.Errorf("expected code UNAUTHORIZED, got %s", resp.Error.Code)
+	}
+	expectedMsg := "User email could not be resolved from session"
+	if resp.Error.Message != expectedMsg {
+		t.Errorf("expected message %q, got %q", expectedMsg, resp.Error.Message)
+	}
+}
+
+

@@ -31,7 +31,7 @@ type JobReader interface {
 
 // ProfileReader provides read-only profile lookup required to auto-attach resumes.
 type ProfileReader interface {
-	GetProfile(ctx context.Context, userID uuid.UUID) (*user.Profile, error)
+	GetProfile(ctx context.Context, userID string) (*user.Profile, error)
 }
 
 // Service provides business logic and authorization gates for job applications and contract provisioning.
@@ -61,10 +61,10 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 		return nil, ErrEmailNotVerified
 	}
 
-	applicantID, err := uuid.Parse(claims.UserID)
-	if err != nil || applicantID == uuid.Nil {
+	if strings.TrimSpace(claims.UserID) == "" {
 		return nil, fmt.Errorf("%w: invalid applicant user id", ErrInvalidInput)
 	}
+	applicantID := claims.UserID
 
 	if jobID == uuid.Nil {
 		return nil, fmt.Errorf("%w: valid job id is required", ErrInvalidInput)
@@ -114,6 +114,11 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 		if len(trimmed) > 512 {
 			return nil, fmt.Errorf("%w: resume key cannot exceed 512 characters", ErrInvalidInput)
 		}
+		// Prevent victim resume hijacking (F-16)
+		expectedPrefix := fmt.Sprintf("resumes/%s/", applicantID)
+		if !strings.HasPrefix(trimmed, expectedPrefix) || strings.Contains(trimmed, "..") {
+			return nil, fmt.Errorf("%w: resume key must belong to the applicant", ErrInvalidInput)
+		}
 		resumeKey = &trimmed
 	} else if s.profileReader != nil {
 		profile, err := s.profileReader.GetProfile(ctx, applicantID)
@@ -144,10 +149,10 @@ func (s *Service) ListJobApplications(ctx context.Context, claims *auth.UserClai
 		return nil, ErrForbidden
 	}
 
-	callerID, err := uuid.Parse(claims.UserID)
-	if err != nil || callerID == uuid.Nil {
+	if strings.TrimSpace(claims.UserID) == "" {
 		return nil, fmt.Errorf("%w: invalid user id", ErrInvalidInput)
 	}
+	callerID := claims.UserID
 
 	if jobID == uuid.Nil {
 		return nil, fmt.Errorf("%w: valid job id is required", ErrInvalidInput)
@@ -185,10 +190,10 @@ func (s *Service) ListMyApplications(ctx context.Context, claims *auth.UserClaim
 		return nil, ErrForbidden
 	}
 
-	applicantID, err := uuid.Parse(claims.UserID)
-	if err != nil || applicantID == uuid.Nil {
+	if strings.TrimSpace(claims.UserID) == "" {
 		return nil, fmt.Errorf("%w: invalid user id", ErrInvalidInput)
 	}
+	applicantID := claims.UserID
 
 	apps, err := s.repo.ListApplicationsByApplicant(ctx, applicantID)
 	if err != nil {
@@ -206,10 +211,10 @@ func (s *Service) GetApplicationByID(ctx context.Context, claims *auth.UserClaim
 		return nil, ErrForbidden
 	}
 
-	callerID, err := uuid.Parse(claims.UserID)
-	if err != nil || callerID == uuid.Nil {
+	if strings.TrimSpace(claims.UserID) == "" {
 		return nil, fmt.Errorf("%w: invalid user id", ErrInvalidInput)
 	}
+	callerID := claims.UserID
 
 	if appID == uuid.Nil {
 		return nil, fmt.Errorf("%w: valid application id is required", ErrInvalidInput)
@@ -258,10 +263,10 @@ func (s *Service) UpdateApplicationStatus(
 		return nil, nil, ErrForbidden
 	}
 
-	callerID, err := uuid.Parse(claims.UserID)
-	if err != nil || callerID == uuid.Nil {
+	if strings.TrimSpace(claims.UserID) == "" {
 		return nil, nil, fmt.Errorf("%w: invalid user id", ErrInvalidInput)
 	}
+	callerID := claims.UserID
 
 	if appID == uuid.Nil {
 		return nil, nil, fmt.Errorf("%w: valid application id is required", ErrInvalidInput)

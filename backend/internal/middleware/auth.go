@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lynk/backend/internal/auth"
+	"github.com/supertokens/supertokens-golang/recipe/emailpassword"
 	"github.com/supertokens/supertokens-golang/recipe/emailverification"
 	"github.com/supertokens/supertokens-golang/recipe/session"
 	"github.com/supertokens/supertokens-golang/recipe/session/sessmodels"
@@ -27,20 +28,43 @@ func SessionMiddleware() func(http.Handler) http.Handler {
 			if sessionContainer.GetUserID != nil {
 				userID = sessionContainer.GetUserID()
 			}
+			if userID == "" {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing or invalid session credentials")
+				return
+			}
 
+			// 1. Extract email from payload, with fallback to emailpassword.GetUserByID
 			var email string
 			if sessionContainer.GetAccessTokenPayload != nil {
 				payload := sessionContainer.GetAccessTokenPayload()
 				if e, ok := payload["email"].(string); ok {
-					email = e
+					email = strings.TrimSpace(e)
 				}
 			}
+			if email == "" {
+				if stUser, err := emailpassword.GetUserByID(userID); err == nil && stUser != nil {
+					email = strings.TrimSpace(stUser.Email)
+				}
+			}
+			if email == "" {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "User email could not be resolved from session")
+				return
+			}
 
-			// Check email verification status via SuperTokens
-			isVerified, _ := emailverification.IsEmailVerified(userID, nil)
+			// 2. Check email verification status with error handling
+			isVerified, err := emailverification.IsEmailVerified(userID, nil)
+			if err != nil {
+				// If SuperTokens Core is down/unreachable, do not silently misinterpret as unverified
+				writeError(w, http.StatusBadGateway, "AUTH_SERVICE_UNAVAILABLE", "Authentication identity provider unreachable")
+				return
+			}
 
-			// Get roles
-			rolesRes, _ := userroles.GetRolesForUser("public", userID)
+			// 3. Get roles with error handling
+			rolesRes, err := userroles.GetRolesForUser("public", userID)
+			if err != nil {
+				writeError(w, http.StatusBadGateway, "AUTH_SERVICE_UNAVAILABLE", "Failed to retrieve user authorizations")
+				return
+			}
 			var roles []string
 			if rolesRes.OK != nil {
 				roles = rolesRes.OK.Roles

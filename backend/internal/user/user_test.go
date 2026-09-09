@@ -185,6 +185,39 @@ func TestSyncUser_AdminPrivilege(t *testing.T) {
 	}
 }
 
+func TestSyncUser_AutoProvisionsProfileWithNames(t *testing.T) {
+	repo := newMockUserRepository()
+	svc := user.NewService(repo)
+
+	claims := &auth.UserClaims{
+		UserID:        uuid.New().String(),
+		Email:         "taylor@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	req := user.SyncUserRequest{
+		FirstName: "Taylor",
+		LastName:  "Swift",
+	}
+
+	u, err := svc.SyncUser(context.Background(), claims, req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u.Role != user.RoleMember {
+		t.Errorf("expected role member, got %s", u.Role)
+	}
+
+	p, err := repo.GetProfile(context.Background(), u.ID)
+	if err != nil || p == nil {
+		t.Fatalf("expected profile to be auto-provisioned, err: %v", err)
+	}
+	if p.FirstName != "Taylor" || p.LastName != "Swift" {
+		t.Errorf("expected profile name 'Taylor Swift', got '%s %s'", p.FirstName, p.LastName)
+	}
+}
+
 func TestGetMe_Success(t *testing.T) {
 	repo := newMockUserRepository()
 	svc := user.NewService(repo)
@@ -252,6 +285,13 @@ func TestUpdateProfile_Validation(t *testing.T) {
 	if !errors.Is(err, user.ErrInvalidInput) {
 		t.Errorf("expected ErrInvalidInput, got %v", err)
 	}
+
+	// 4. Organization website length exceeds 255
+	longWebsite := "https://" + strings.Repeat("a", 250) + ".edu" // length > 255
+	_, err = svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{OrganizationWebsite: longWebsite})
+	if !errors.Is(err, user.ErrInvalidInput) {
+		t.Errorf("expected ErrInvalidInput for organization website > 255 chars, got %v", err)
+	}
 }
 
 func TestHandler_Routes(t *testing.T) {
@@ -302,3 +342,43 @@ func TestHandler_Routes(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestRepository_GetProfileByID_SARGableQueryBranching(t *testing.T) {
+	// 1. Valid UUID lookup branches to WHERE id = $1 OR user_id = $2
+	validUUID := uuid.New()
+	uuidStr := validUUID.String()
+
+	queryWithUUID, argsWithUUID := user.BuildGetProfileByIDQuery(uuidStr)
+	if strings.Contains(queryWithUUID, "id::text") {
+		t.Errorf("expected SARGable query without id::text cast, got: %s", queryWithUUID)
+	}
+	if !strings.Contains(queryWithUUID, "WHERE id = $1 OR user_id = $2") {
+		t.Errorf("expected query with 'WHERE id = $1 OR user_id = $2', got: %s", queryWithUUID)
+	}
+	if len(argsWithUUID) != 2 {
+		t.Fatalf("expected 2 query arguments for UUID lookup, got %d", len(argsWithUUID))
+	}
+	if argsWithUUID[0] != validUUID {
+		t.Errorf("expected first argument to be parsed uuid.UUID %v, got %v", validUUID, argsWithUUID[0])
+	}
+	if argsWithUUID[1] != uuidStr {
+		t.Errorf("expected second argument to be id string %s, got %v", uuidStr, argsWithUUID[1])
+	}
+
+	// 2. Non-UUID lookup branches to WHERE user_id = $1
+	nonUUID := "usr_supertokens_auth_string_12345"
+	queryNonUUID, argsNonUUID := user.BuildGetProfileByIDQuery(nonUUID)
+	if strings.Contains(queryNonUUID, "id::text") {
+		t.Errorf("expected SARGable query without id::text cast, got: %s", queryNonUUID)
+	}
+	if !strings.Contains(queryNonUUID, "WHERE user_id = $1") {
+		t.Errorf("expected query with 'WHERE user_id = $1', got: %s", queryNonUUID)
+	}
+	if len(argsNonUUID) != 1 {
+		t.Fatalf("expected 1 query argument for non-UUID lookup, got %d", len(argsNonUUID))
+	}
+	if argsNonUUID[0] != nonUUID {
+		t.Errorf("expected argument to be %s, got %v", nonUUID, argsNonUUID[0])
+	}
+}
+

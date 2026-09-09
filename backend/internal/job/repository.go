@@ -69,7 +69,7 @@ func (r *Repository) GetJobByID(ctx context.Context, id uuid.UUID) (*Job, error)
 	`
 	var (
 		j            Job
-		creatorID    *uuid.UUID
+		creatorID    *string
 		creatorEmail string
 		firstName    string
 		lastName     string
@@ -253,7 +253,7 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 	for rows.Next() {
 		var (
 			j            Job
-			creatorID    *uuid.UUID
+			creatorID    *string
 			creatorEmail string
 			firstName    string
 			lastName     string

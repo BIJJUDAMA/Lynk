@@ -333,8 +333,8 @@ export default function JobDetailPage() {
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {job.pay_type === "hourly"
-                ? "Paid hourly upon contract milestone approval."
-                : "Fixed project price held in milestone escrow."}
+                ? "Paid upon contract deliverable approval."
+                : "Fixed project price paid upon contract deliverable approval."}
             </p>
           </div>
 

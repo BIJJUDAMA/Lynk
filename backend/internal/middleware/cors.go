@@ -95,15 +95,12 @@ func CORSWithConfig(cfg CORSConfig) func(http.Handler) http.Handler {
 			// Check origin match
 			isAllowed := false
 			if allowAll {
-				isAllowed = true
-				if cfg.AllowCredentials {
-					if origin != "" {
-						w.Header().Set("Access-Control-Allow-Origin", origin)
-					} else {
-						w.Header().Set("Access-Control-Allow-Origin", "*")
-					}
-				} else {
+				if !cfg.AllowCredentials {
 					w.Header().Set("Access-Control-Allow-Origin", "*")
+					isAllowed = true
+				} else {
+					// Disallow wildcard with credentials
+					isAllowed = false
 				}
 			} else if origin != "" {
 				if _, ok := originSet[origin]; ok {

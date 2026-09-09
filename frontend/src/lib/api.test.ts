@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   ApiClientError,
+  DEFAULT_API_BASE_URL,
   buildQueryString,
   createApiClient,
   isEmailNotVerifiedError,
@@ -404,3 +405,9 @@ test("Domain functions call expected endpoints with expected payloads and parame
     restore();
   }
 });
+
+test("DEFAULT_API_BASE_URL correctly resolves with /api/v1 suffix", () => {
+  assert.ok(DEFAULT_API_BASE_URL.endsWith("/api/v1"));
+  assert.ok(!DEFAULT_API_BASE_URL.endsWith("/api/v1/api/v1"));
+});
+

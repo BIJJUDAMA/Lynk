@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,9 +16,9 @@ import (
 type ApplicationRepository interface {
 	CreateApplication(ctx context.Context, app *Application) error
 	GetApplicationByID(ctx context.Context, id uuid.UUID) (*ApplicationWithDetails, error)
-	GetApplicationByJobAndApplicant(ctx context.Context, jobID, applicantID uuid.UUID) (*Application, error)
+	GetApplicationByJobAndApplicant(ctx context.Context, jobID uuid.UUID, applicantID string) (*Application, error)
 	ListApplicationsByJob(ctx context.Context, jobID uuid.UUID) ([]*ApplicationWithDetails, error)
-	ListApplicationsByApplicant(ctx context.Context, applicantID uuid.UUID) ([]*ApplicationWithDetails, error)
+	ListApplicationsByApplicant(ctx context.Context, applicantID string) ([]*ApplicationWithDetails, error)
 	AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (*ApplicationWithDetails, *Contract, error)
 	RejectApplication(ctx context.Context, appID uuid.UUID) (*Application, error)
 }
@@ -61,7 +62,7 @@ func (r *Repository) CreateApplication(ctx context.Context, app *Application) er
 }
 
 // GetApplicationByJobAndApplicant finds an existing application by unique (job_id, applicant_id) pair.
-func (r *Repository) GetApplicationByJobAndApplicant(ctx context.Context, jobID, applicantID uuid.UUID) (*Application, error) {
+func (r *Repository) GetApplicationByJobAndApplicant(ctx context.Context, jobID uuid.UUID, applicantID string) (*Application, error) {
 	query := `
 		SELECT id, job_id, applicant_id, cover_letter, resume_key, status, created_at, updated_at
 		FROM applications
@@ -245,7 +246,7 @@ func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID)
 }
 
 // ListApplicationsByApplicant lists all applications submitted by a campus member, ordered newest first.
-func (r *Repository) ListApplicationsByApplicant(ctx context.Context, applicantID uuid.UUID) ([]*ApplicationWithDetails, error) {
+func (r *Repository) ListApplicationsByApplicant(ctx context.Context, applicantID string) ([]*ApplicationWithDetails, error) {
 	query := `
 		SELECT 
 			a.id, a.job_id, a.applicant_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
@@ -344,39 +345,51 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 	}
 	defer tx.Rollback(ctx)
 
-	// 1. Lock application and job rows
-	selectQuery := `
-		SELECT 
-			a.id, a.job_id, a.applicant_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
-			j.id, j.created_by, j.title, j.description, j.budget, j.pay_type, j.department, j.status
-		FROM applications a
-		JOIN jobs j ON a.job_id = j.id
-		WHERE a.id = $1
+	// 1. Lock the parent job row FIRST to serialize concurrent accepts on this job
+	lockJobQuery := `
+		SELECT j.id, j.created_by, j.title, j.description, j.budget, j.pay_type, j.department, j.status
+		FROM jobs j
+		WHERE j.id = (SELECT job_id FROM applications WHERE id = $1)
 		FOR UPDATE;
 	`
-	var (
-		app Application
-		job JobSummary
-	)
-	err = tx.QueryRow(ctx, selectQuery, appID).Scan(
-		&app.ID, &app.JobID, &app.ApplicantID, &app.CoverLetter, &app.ResumeKey, &app.Status, &app.CreatedAt, &app.UpdatedAt,
-		&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Budget, &job.PayType, &job.Department, &job.Status,
+	var job JobSummary
+	err = tx.QueryRow(ctx, lockJobQuery, appID).Scan(
+		&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Budget,
+		&job.PayType, &job.Department, &job.Status,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil, ErrApplicationNotFound
 	}
 	if err != nil {
-		return nil, nil, err
-	}
-
-	if app.Status != StatusPending {
-		return nil, nil, ErrApplicationNotPending
+		return nil, nil, fmt.Errorf("lock job: %w", err)
 	}
 	if job.Status != "open" {
 		return nil, nil, ErrJobNotOpen
 	}
 
-	// 2. Mark this application accepted
+	// 2. Fetch and lock the target application row
+	selectAppQuery := `
+		SELECT id, job_id, applicant_id, cover_letter, resume_key, status, created_at, updated_at
+		FROM applications
+		WHERE id = $1
+		FOR UPDATE;
+	`
+	var app Application
+	err = tx.QueryRow(ctx, selectAppQuery, appID).Scan(
+		&app.ID, &app.JobID, &app.ApplicantID, &app.CoverLetter, &app.ResumeKey, &app.Status,
+		&app.CreatedAt, &app.UpdatedAt,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, nil, ErrApplicationNotFound
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("select application: %w", err)
+	}
+	if app.Status != StatusPending {
+		return nil, nil, ErrApplicationNotPending
+	}
+
+	// 3. Mark this application accepted
 	updateAppQuery := `
 		UPDATE applications
 		SET status = $1, updated_at = NOW()
@@ -389,7 +402,7 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 	}
 	app.Status = StatusAccepted
 
-	// 3. Mark other pending applications for that job as rejected
+	// 4. Mark other pending applications for that job as rejected
 	rejectOthersQuery := `
 		UPDATE applications
 		SET status = $1, updated_at = NOW()
@@ -400,7 +413,7 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 		return nil, nil, err
 	}
 
-	// 4. Update job status to 'in_progress'
+	// 5. Update job status to 'in_progress'
 	updateJobQuery := `
 		UPDATE jobs
 		SET status = 'in_progress', updated_at = NOW()
@@ -412,7 +425,7 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 	}
 	job.Status = "in_progress"
 
-	// 5. Insert Contract in active status
+	// 6. Insert Contract in active status
 	contractID := uuid.New()
 	insertContractQuery := `
 		INSERT INTO contracts (

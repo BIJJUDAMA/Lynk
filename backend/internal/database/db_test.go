@@ -16,7 +16,7 @@ func TestMigrationFilesExist(t *testing.T) {
 		t.Fatalf("failed to read migrations directory: %v", err)
 	}
 
-	var foundUp1, foundDown1, foundUp2, foundDown2, foundUp3, foundDown3 bool
+	var foundUp1, foundDown1, foundUp2, foundDown2, foundUp3, foundDown3, foundUp4, foundDown4 bool
 	for _, e := range entries {
 		if filepath.Ext(e.Name()) == ".sql" {
 			switch filepath.Base(e.Name()) {
@@ -32,6 +32,10 @@ func TestMigrationFilesExist(t *testing.T) {
 				foundUp3 = true
 			case "000003_supertokens_identity.down.sql":
 				foundDown3 = true
+			case "000004_performance_and_contract_fixes.up.sql":
+				foundUp4 = true
+			case "000004_performance_and_contract_fixes.down.sql":
+				foundDown4 = true
 			}
 		}
 	}
@@ -53,6 +57,12 @@ func TestMigrationFilesExist(t *testing.T) {
 	}
 	if !foundDown3 {
 		t.Errorf("expected 000003_supertokens_identity.down.sql to exist")
+	}
+	if !foundUp4 {
+		t.Errorf("expected 000004_performance_and_contract_fixes.up.sql to exist")
+	}
+	if !foundDown4 {
+		t.Errorf("expected 000004_performance_and_contract_fixes.down.sql to exist")
 	}
 }
 

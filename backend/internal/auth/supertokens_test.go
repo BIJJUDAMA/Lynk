@@ -7,6 +7,7 @@ import (
 	"github.com/lynk/backend/internal/auth"
 	"github.com/supertokens/supertokens-golang/recipe/emailpassword"
 	"github.com/supertokens/supertokens-golang/recipe/emailpassword/epmodels"
+	"github.com/supertokens/supertokens-golang/recipe/session"
 	"github.com/supertokens/supertokens-golang/supertokens"
 )
 
@@ -140,3 +141,98 @@ func TestSignUpOverride_RejectsNonEdu(t *testing.T) {
 		t.Errorf("expected GeneralError message %q, got %q", expectedMsg, postResp.GeneralError.Message)
 	}
 }
+
+func TestSessionInit_InjectsEmailIntoAccessTokenPayload(t *testing.T) {
+	supertokens.ResetForTest()
+
+	cfg := auth.SuperTokensConfig{
+		ConnectionURI: "http://localhost:3567",
+		APIKey:        "some-api-key",
+		APIDomain:     "http://localhost:8080",
+		WebsiteDomain: "http://localhost:3000",
+	}
+
+	err := auth.InitSupertokens(cfg)
+	if err != nil {
+		t.Fatalf("InitSupertokens failed: %v", err)
+	}
+
+	sessRecipe, err := session.GetRecipeInstanceOrThrowError()
+	if err != nil {
+		t.Fatalf("failed to get session recipe instance: %v", err)
+	}
+
+	epRecipe, err := emailpassword.GetRecipeInstanceOrThrowError()
+	if err != nil {
+		t.Fatalf("failed to get emailpassword recipe instance: %v", err)
+	}
+	mockUser := &epmodels.User{
+		ID:    "user_123",
+		Email: "student@stanford.edu",
+	}
+	getUserByIDFn := func(userID string, userContext supertokens.UserContext) (*epmodels.User, error) {
+		if userID == "user_123" {
+			return mockUser, nil
+		}
+		return nil, nil
+	}
+	epRecipe.RecipeImpl.GetUserByID = &getUserByIDFn
+
+	payload := map[string]interface{}{}
+	userCtx := &map[string]interface{}{}
+
+	// Call CreateNewSession on the recipe implementation
+	_, _ = (*sessRecipe.RecipeImpl.CreateNewSession)("user_123", payload, nil, nil, "public", userCtx)
+
+	if payload["email"] != "student@stanford.edu" {
+		t.Errorf("expected email 'student@stanford.edu' in payload, got %v", payload["email"])
+	}
+}
+
+func TestSessionInit_InjectsEmailIntoAccessTokenPayload_WhenEmptyString(t *testing.T) {
+	supertokens.ResetForTest()
+
+	cfg := auth.SuperTokensConfig{
+		ConnectionURI: "http://localhost:3567",
+		APIKey:        "some-api-key",
+		APIDomain:     "http://localhost:8080",
+		WebsiteDomain: "http://localhost:3000",
+	}
+
+	err := auth.InitSupertokens(cfg)
+	if err != nil {
+		t.Fatalf("InitSupertokens failed: %v", err)
+	}
+
+	sessRecipe, err := session.GetRecipeInstanceOrThrowError()
+	if err != nil {
+		t.Fatalf("failed to get session recipe instance: %v", err)
+	}
+
+	epRecipe, err := emailpassword.GetRecipeInstanceOrThrowError()
+	if err != nil {
+		t.Fatalf("failed to get emailpassword recipe instance: %v", err)
+	}
+	mockUser := &epmodels.User{
+		ID:    "user_123",
+		Email: "student@stanford.edu",
+	}
+	getUserByIDFn := func(userID string, userContext supertokens.UserContext) (*epmodels.User, error) {
+		if userID == "user_123" {
+			return mockUser, nil
+		}
+		return nil, nil
+	}
+	epRecipe.RecipeImpl.GetUserByID = &getUserByIDFn
+
+	payload := map[string]interface{}{"email": "   "}
+	userCtx := &map[string]interface{}{}
+
+	_, _ = (*sessRecipe.RecipeImpl.CreateNewSession)("user_123", payload, nil, nil, "public", userCtx)
+
+	if payload["email"] != "student@stanford.edu" {
+		t.Errorf("expected email 'student@stanford.edu' in payload, got %v", payload["email"])
+	}
+}
+
+

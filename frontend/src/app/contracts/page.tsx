@@ -149,7 +149,7 @@ export default function ContractsPage() {
                 Contracts & Agreements
               </h1>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Track deliverables, complete milestone agreements, and exchange verified peer reviews
+                Track deliverables, complete binding agreements, and exchange verified peer reviews
               </p>
             </div>
           </div>
@@ -340,7 +340,7 @@ export default function ContractsPage() {
             No contracts yet
           </h3>
           <p className="mx-auto mt-2 max-w-md text-xs text-slate-500 dark:text-slate-400">
-            When an application is accepted, an active contract will appear here to track deliverables, milestones, and peer reviews.
+            When an application is accepted, an active contract will appear here to track deliverables and peer reviews.
           </p>
           <div className="mt-6 flex justify-center gap-3">
             <Link

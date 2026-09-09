@@ -15,7 +15,7 @@ import (
 type ContractRepository interface {
 	CreateContract(ctx context.Context, contract *Contract) error
 	GetContractByID(ctx context.Context, id uuid.UUID) (*ContractWithDetails, error)
-	ListContractsByUserID(ctx context.Context, userID uuid.UUID) ([]*ContractWithDetails, error)
+	ListContractsByUserID(ctx context.Context, userID string) ([]*ContractWithDetails, error)
 	UpdateContractStatus(ctx context.Context, id uuid.UUID, targetStatus string) (*ContractWithDetails, error)
 }
 
@@ -114,7 +114,7 @@ func (r *Repository) GetContractByID(ctx context.Context, id uuid.UUID) (*Contra
 }
 
 // ListContractsByUserID retrieves all contracts where the given user is either client or freelancer.
-func (r *Repository) ListContractsByUserID(ctx context.Context, userID uuid.UUID) ([]*ContractWithDetails, error) {
+func (r *Repository) ListContractsByUserID(ctx context.Context, userID string) ([]*ContractWithDetails, error) {
 	query := `
 		SELECT 
 			c.id, c.job_id, c.application_id, c.client_id, c.freelancer_id,
@@ -186,6 +186,16 @@ func getCloseJobOnContractCompletionQuery() string {
 	return queryCloseJobOnContractCompletion
 }
 
+const queryReopenJobOnContractCancellation = `
+	UPDATE jobs
+	SET status = 'open', updated_at = NOW()
+	WHERE id = (SELECT job_id FROM contracts WHERE id = $1);
+`
+
+func getReopenJobOnContractCancellationQuery() string {
+	return queryReopenJobOnContractCancellation
+}
+
 // UpdateContractStatus updates a contract's status, managing started_at and completed_at timestamps.
 func (r *Repository) UpdateContractStatus(ctx context.Context, id uuid.UUID, targetStatus string) (*ContractWithDetails, error) {
 	tx, err := r.db.Begin(ctx)
@@ -231,6 +241,12 @@ func (r *Repository) UpdateContractStatus(ctx context.Context, id uuid.UUID, tar
 		jobCloseQuery := queryCloseJobOnContractCompletion
 		if _, err := tx.Exec(ctx, jobCloseQuery, id); err != nil {
 			return nil, fmt.Errorf("close job: %w", err)
+		}
+	} else if targetStatus == StatusCancelled {
+		// Re-open job so the employer can review other applicants, or mark cancelled
+		jobCancelQuery := queryReopenJobOnContractCancellation
+		if _, err := tx.Exec(ctx, jobCancelQuery, id); err != nil {
+			return nil, fmt.Errorf("reopen job on contract cancellation: %w", err)
 		}
 	}
 

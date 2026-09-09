@@ -293,7 +293,7 @@ export function ReviewModal({
                 setComment(e.target.value);
                 if (errorMessage) setErrorMessage(null);
               }}
-              placeholder="Highlight key milestones, communication quality, reliability, work quality, and what it was like working together..."
+              placeholder="Highlight project deliverables and communication, reliability, work quality, and what it was like working together..."
               className="w-full rounded-[10px] border border-input bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 transition-colors"
             />
           </div>

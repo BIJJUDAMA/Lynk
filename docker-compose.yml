@@ -22,7 +22,7 @@ services:
       retries: 5
 
   supertokens:
-    image: registry.supertokens.io/supertokens/supertokens-postgresql:9.2
+    image: registry.supertokens.io/supertokens/supertokens-postgresql:9.3
     container_name: lynk-supertokens
     restart: unless-stopped
     depends_on:
@@ -30,7 +30,7 @@ services:
         condition: service_healthy
     environment:
       POSTGRESQL_CONNECTION_URI: "postgresql://lynk_user:lynk_password@postgres:5432/supertokens_db"
-      API_KEYS: "lynk_supertokens_secret_api_key_2026"
+      API_KEYS: "${SUPERTOKENS_API_KEY:-lynk_supertokens_secret_api_key_2026}"
     ports:
       - "3567:3567"
     networks:
@@ -42,13 +42,13 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:RELEASE.2024-01-18T22-51-28Z
+    image: minio/minio:RELEASE.2024-11-07T00-52-28Z
     container_name: lynk-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minio_admin
-      MINIO_ROOT_PASSWORD: minio_password
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minio_admin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minio_password}"
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -57,25 +57,10 @@ services:
     networks:
       - lynk-net
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 5
-
-  minio-init:
-    image: minio/mc:latest
-    container_name: lynk-minio-init
-    depends_on:
-      minio:
-        condition: service_healthy
-    networks:
-      - lynk-net
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set myminio http://minio:9000 minio_admin minio_password;
-      mc mb --ignore-existing myminio/resumes;
-      exit 0;
-      "
 
   api:
     build:
@@ -88,13 +73,13 @@ services:
       DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
       MIGRATIONS_DIR: "/app/migrations"
       SUPERTOKENS_CONNECTION_URI: "http://supertokens:3567"
-      SUPERTOKENS_API_KEY: "lynk_supertokens_secret_api_key_2026"
+      SUPERTOKENS_API_KEY: "${SUPERTOKENS_API_KEY:-lynk_supertokens_secret_api_key_2026}"
       API_DOMAIN: "http://localhost:8080"
       WEBSITE_DOMAIN: "http://localhost:3000"
       MINIO_ENDPOINT: "minio:9000"
       MINIO_PUBLIC_ENDPOINT: "http://localhost:9000"
-      MINIO_ACCESS_KEY: "minio_admin"
-      MINIO_SECRET_KEY: "minio_password"
+      MINIO_ACCESS_KEY: "${MINIO_ROOT_USER:-minio_admin}"
+      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-minio_password}"
       MINIO_BUCKET: "resumes"
       MINIO_USE_SSL: "false"
       CORS_ALLOWED_ORIGINS: "http://localhost:3000"
@@ -107,8 +92,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
     networks:
       - lynk-net
     healthcheck:

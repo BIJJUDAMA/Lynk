@@ -79,7 +79,7 @@ Lynk/
 |   |   +-- user/               # Campus member profiles and resume handling
 |   |   +-- job/                # Job postings, filtering, and search
 |   |   +-- application/        # Job applications and proposal management
-|   |   +-- contract/           # Milestone/contract state machine
+|   |   +-- contract/           # Deliverable contract state machine
 |   |   +-- review/             # Post-completion ratings and reviews
 |   |   +-- storage/            # MinIO S3 client wrapper
 |   |   +-- database/           # Connection pooling (pgxpool) and raw SQL migrator

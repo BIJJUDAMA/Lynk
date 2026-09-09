@@ -7,6 +7,7 @@ import {
   generateCodeChallenge,
   decodeJwtClaims,
   extractUserFromClaims,
+  syncUserWithBackend,
 } from "./auth.ts";
 import type { JwtClaims } from "./auth.ts";
 
@@ -99,4 +100,50 @@ test("extractUserFromClaims resolves member and admin roles and email verificati
   assert.equal(adminUser.role, "admin");
   assert.equal(adminUser.isVerified, true);
 });
+
+test("syncUserWithBackend posts profile payload without role field", async () => {
+  const originalFetch = global.fetch;
+  let capturedUrl = "";
+  let capturedBody: unknown = null;
+  let capturedHeaders: Record<string, string> = {};
+
+  global.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
+    capturedUrl = String(url);
+    capturedBody = init?.body ? JSON.parse(String(init.body)) : null;
+    capturedHeaders = (init?.headers as Record<string, string>) || {};
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: {
+          id: "user-123",
+          email: "student@stanford.edu",
+          role: "member",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        error: null,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    const res = await syncUserWithBackend("fake-token", {
+      first_name: "Taylor",
+      last_name: "Swift",
+    });
+    assert.equal(res.success, true);
+    assert.ok(capturedUrl.endsWith("/auth/sync"));
+    assert.equal(capturedHeaders.Authorization, "Bearer fake-token");
+    assert.deepEqual(capturedBody, {
+      first_name: "Taylor",
+      last_name: "Swift",
+    });
+    // Ensure 'role' is never sent in the request body
+    assert.equal((capturedBody as Record<string, unknown>).role, undefined);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 

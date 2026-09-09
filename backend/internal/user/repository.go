@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -88,16 +89,32 @@ func (r *Repository) GetProfile(ctx context.Context, userID string) (*Profile, e
 	return p, nil
 }
 
-func (r *Repository) GetProfileByID(ctx context.Context, id string) (*Profile, error) {
-	p := &Profile{}
-	var linksJSON []byte
+// BuildGetProfileByIDQuery constructs a SARGable query and argument list for profile lookup by ID or UserID.
+func BuildGetProfileByIDQuery(id string) (string, []interface{}) {
+	if parsedUUID, err := uuid.Parse(id); err == nil {
+		query := `
+		SELECT id, user_id, first_name, last_name, bio, department, graduation_year, skills,
+		       portfolio_links, resume_key, resume_filename, resume_byte_size,
+		       organization, organization_website, updated_at
+		FROM profiles WHERE id = $1 OR user_id = $2;
+	`
+		return query, []interface{}{parsedUUID, id}
+	}
+
 	query := `
 		SELECT id, user_id, first_name, last_name, bio, department, graduation_year, skills,
 		       portfolio_links, resume_key, resume_filename, resume_byte_size,
 		       organization, organization_website, updated_at
-		FROM profiles WHERE id::text = $1 OR user_id = $1;
+		FROM profiles WHERE user_id = $1;
 	`
-	err := r.db.QueryRow(ctx, query, id).Scan(
+	return query, []interface{}{id}
+}
+
+func (r *Repository) GetProfileByID(ctx context.Context, id string) (*Profile, error) {
+	p := &Profile{}
+	var linksJSON []byte
+	query, args := BuildGetProfileByIDQuery(id)
+	err := r.db.QueryRow(ctx, query, args...).Scan(
 		&p.ID, &p.UserID, &p.FirstName, &p.LastName, &p.Bio, &p.Department,
 		&p.GraduationYear, &p.Skills, &linksJSON, &p.ResumeKey, &p.ResumeFilename,
 		&p.ResumeByteSize, &p.Organization, &p.OrganizationWebsite, &p.UpdatedAt,

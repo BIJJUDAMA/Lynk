@@ -632,7 +632,7 @@ export default function ProfilePage() {
               Campus Account Trust
             </h3>
             <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-              Lynk enforces institutional authenticity. One account allows you to post jobs, hire applicants, submit proposals, and sign milestone contracts.
+              Lynk enforces institutional authenticity. One account allows you to post jobs, hire applicants, submit proposals, and sign deliverable contracts.
             </p>
 
             <div className="mt-4 space-y-2 text-xs">

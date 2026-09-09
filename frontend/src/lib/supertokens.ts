@@ -3,7 +3,9 @@ import Session from "supertokens-web-js/recipe/session";
 import EmailPassword from "supertokens-web-js/recipe/emailpassword";
 import EmailVerification from "supertokens-web-js/recipe/emailverification";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080")
+  .replace(/\/api\/v1\/?$/, "")
+  .replace(/\/+$/, "");
 
 let initialized = false;
 

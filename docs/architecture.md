@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary & Core Thesis
 
-**Lynk** is a university-centric freelance and campus gig platform designed to bridge the trust gap between students, campus departments, and student founders. Unlike generic freelance platforms that segregate users into rigid "student" vs "employer" silos, Lynk enforces a **Unified Campus Member** architecture. Any verified student or faculty member can both offer services (as a contributor) and publish opportunities (as an organizer), powered by institutional `.edu` email verification, structured milestone contracts, and transparent peer reviews.
+**Lynk** is a university-centric freelance and campus gig platform designed to bridge the trust gap between students, campus departments, and student founders. Unlike generic freelance platforms that segregate users into rigid "student" vs "employer" silos, Lynk enforces a **Unified Campus Member** architecture. Any verified student or faculty member can both offer services (as a contributor) and publish opportunities (as an organizer), powered by institutional `.edu` email verification, direct deliverable contracts, and transparent peer reviews.
 
 ### Primary Architectural Invariants
 1. **Strict MVP Scope ("Nothing Else Initially"):** Zero message queues, zero distributed caches, and zero commercial cloud auth SaaS vendors (Auth0/Firebase/Supabase) during MVP. Self-hosted **SuperTokens Core** in Docker handles session management, user credentials, and email verification. Synchronous HTTP + PostgreSQL + MinIO + SuperTokens handles 100% of MVP requirements.
@@ -193,7 +193,7 @@ HTTP Request (with Session Cookie / Bearer Token)
 | `user` | Unified campus member profile creation, updates, and portfolio links (keyed by SuperTokens `user_id`). |
 | `job` | Job posting CRUD, search, filtering by department, budget, and required skills. |
 | `application` | Application submission, cover letter, resume linking, and member proposal review (accept/reject). |
-| `contract` | Milestone/contract state machine (`Draft` -> `Active` -> `Completed` | `Cancelled`). |
+| `contract` | Deliverable contract state machine (`Draft` -> `Active` -> `Completed` | `Cancelled`). |
 | `review` | Rating (1-5) and written feedback submission following contract completion. |
 | `storage` | MinIO client abstraction for uploading, fetching, and generating pre-signed URLs for resumes. |
 | `database` | PostgreSQL connection pooling (`pgxpool`), health checks, and raw SQL migration runner. |
@@ -380,7 +380,7 @@ All application endpoints are prefixed with `/api/v1`. Authentication is passed 
 | Method | Path | Auth | Role | Description |
 | :--- | :--- | :---: | :---: | :--- |
 | `GET`  | `/contracts` | Session | Any | List contracts involving the authenticated member. |
-| `GET`  | `/contracts/{id}` | Session | Participant | Retrieve detailed contract terms, status, and milestone history. |
+| `GET`  | `/contracts/{id}` | Session | Participant | Retrieve detailed contract terms, status, and contract history. |
 | `PATCH`| `/contracts/{id}/status` | Session | Participant | Update contract status: `Active` -> `Completed` | `Cancelled`. |
 
 #### Reviews & Ratings (`/api/v1/contracts/{id}/reviews`)

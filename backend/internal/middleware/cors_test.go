@@ -137,3 +137,25 @@ func TestCORS_Wildcard(t *testing.T) {
 		t.Errorf("expected '*', got '%s'", got)
 	}
 }
+
+func TestCORS_DisallowsWildcardWithCredentials(t *testing.T) {
+	cfg := CORSConfig{
+		AllowedOrigins:   []string{"*"},
+		AllowCredentials: true,
+	}
+	handler := CORSWithConfig(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("Origin", "http://malicious-site.com")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	// Under RFC 6454 / W3C CORS, arbitrary origin must NOT be reflected if credentials are true and allowed is wildcard
+	allowOrigin := rec.Header().Get("Access-Control-Allow-Origin")
+	if allowOrigin == "http://malicious-site.com" {
+		t.Fatalf("expected CORS middleware to reject reflecting arbitrary origin with credentials, got %q", allowOrigin)
+	}
+}

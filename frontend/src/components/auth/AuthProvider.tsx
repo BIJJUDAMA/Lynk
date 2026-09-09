@@ -16,6 +16,7 @@ import {
 } from "@/lib/supertokens";
 import { isEduEmail } from "@/lib/email-validation";
 import { AuthRole, AuthTokens, AuthUser } from "@/lib/auth";
+import { DEFAULT_API_BASE_URL } from "@/lib/api";
 import { Profile, User } from "@/types/api";
 
 // ==========================================
@@ -92,7 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let bUser: User | null = null;
       let bProfile: Profile | null = null;
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+        const apiBase = DEFAULT_API_BASE_URL;
         const headers: Record<string, string> = {
           Accept: "application/json",
         };

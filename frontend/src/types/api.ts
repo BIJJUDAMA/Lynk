@@ -99,7 +99,8 @@ export type UpdateStudentProfileRequest = UpdateProfileRequest;
 export type UpdateEmployerProfileRequest = UpdateProfileRequest;
 
 export interface SyncUserRequest {
-  role?: UserRole;
+  first_name?: string;
+  last_name?: string;
 }
 
 export interface ResumeUploadResponse {

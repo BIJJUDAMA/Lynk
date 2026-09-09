@@ -898,7 +898,7 @@ log_substep "Employer submits 5-star review for student on completed contract...
 EMP_REVIEW_PAYLOAD=$(cat <<EOF
 {
   "rating": 5,
-  "comment": "Exceptional work! Jordan delivered clean Go code, thorough unit tests, and excellent communication throughout the milestone."
+  "comment": "Exceptional work! Jordan delivered clean Go code, thorough unit tests, and excellent communication throughout the project."
 }
 EOF
 )
@@ -914,7 +914,7 @@ log_substep "Student submits 5-star review for employer on completed contract...
 STU_REVIEW_PAYLOAD=$(cat <<EOF
 {
   "rating": 5,
-  "comment": "Outstanding employer to work with! Clear requirements, flexible milestones, and prompt feedback."
+  "comment": "Outstanding employer to work with! Clear requirements, clear deliverables, and prompt feedback."
 }
 EOF
 )

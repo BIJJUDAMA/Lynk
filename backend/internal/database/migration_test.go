@@ -210,3 +210,64 @@ func TestRunMigrations_000003_Integration(t *testing.T) {
 		t.Fatalf("failed to re-apply 000003 up migration after rollback: %v", err)
 	}
 }
+
+func TestMigration000004_UpSQL_Structure(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000004_performance_and_contract_fixes.up.sql"))
+	if err != nil {
+		t.Fatalf("failed to read 000004 up migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	expectedFragments := []string{
+		"ALTER TABLE contracts DROP CONSTRAINT IF EXISTS contracts_job_id_key;",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_contracts_active_job",
+		"ON contracts(job_id)",
+		"WHERE status NOT IN ('cancelled');",
+		"CREATE INDEX IF NOT EXISTS idx_jobs_status_created_at ON jobs(status, created_at DESC);",
+		"CREATE INDEX IF NOT EXISTS idx_jobs_department_lower ON jobs(LOWER(department));",
+		"CREATE INDEX IF NOT EXISTS idx_jobs_required_skills_gin ON jobs USING GIN(required_skills);",
+		"CREATE INDEX IF NOT EXISTS idx_applications_job_id_created ON applications(job_id, created_at DESC);",
+		"CREATE INDEX IF NOT EXISTS idx_applications_applicant_created ON applications(applicant_id, created_at DESC);",
+		"CREATE INDEX IF NOT EXISTS idx_contracts_client_created ON contracts(client_id, created_at DESC);",
+		"CREATE INDEX IF NOT EXISTS idx_contracts_freelancer_created ON contracts(freelancer_id, created_at DESC);",
+		"CREATE INDEX IF NOT EXISTS idx_reviews_reviewee_created ON reviews(reviewee_id, created_at DESC);",
+		"ALTER TABLE contracts ADD CONSTRAINT chk_contracts_different_parties CHECK (client_id != freelancer_id);",
+		"ALTER TABLE reviews ADD CONSTRAINT chk_reviews_different_parties CHECK (reviewer_id != reviewee_id);",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(content, fragment) {
+			t.Errorf("000004 up migration missing fragment: %s", fragment)
+		}
+	}
+}
+
+func TestMigration000004_DownSQL_Structure(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000004_performance_and_contract_fixes.down.sql"))
+	if err != nil {
+		t.Fatalf("failed to read 000004 down migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	expectedFragments := []string{
+		"ALTER TABLE reviews DROP CONSTRAINT IF EXISTS chk_reviews_different_parties;",
+		"ALTER TABLE contracts DROP CONSTRAINT IF EXISTS chk_contracts_different_parties;",
+		"DROP INDEX IF EXISTS idx_reviews_reviewee_created;",
+		"DROP INDEX IF EXISTS idx_contracts_freelancer_created;",
+		"DROP INDEX IF EXISTS idx_contracts_client_created;",
+		"DROP INDEX IF EXISTS idx_applications_applicant_created;",
+		"DROP INDEX IF EXISTS idx_applications_job_id_created;",
+		"DROP INDEX IF EXISTS idx_jobs_required_skills_gin;",
+		"DROP INDEX IF EXISTS idx_jobs_department_lower;",
+		"DROP INDEX IF EXISTS idx_jobs_status_created_at;",
+		"DROP INDEX IF EXISTS uq_contracts_active_job;",
+		"ALTER TABLE contracts ADD CONSTRAINT contracts_job_id_key UNIQUE (job_id);",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(content, fragment) {
+			t.Errorf("000004 down migration missing fragment: %s", fragment)
+		}
+	}
+}
+

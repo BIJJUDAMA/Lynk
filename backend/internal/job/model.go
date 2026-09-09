@@ -24,19 +24,19 @@ const (
 
 // CreatorInfo represents public campus member metadata attached to job postings.
 type CreatorInfo struct {
-	ID                  uuid.UUID `json:"id"`
-	Email               string    `json:"email"`
-	FirstName           string    `json:"first_name"`
-	LastName            string    `json:"last_name"`
-	Department          string    `json:"department"`
-	Organization        string    `json:"organization,omitempty"`
-	OrganizationWebsite string    `json:"organization_website,omitempty"`
+	ID                  string `json:"id"`
+	Email               string `json:"email"`
+	FirstName           string `json:"first_name"`
+	LastName            string `json:"last_name"`
+	Department          string `json:"department"`
+	Organization        string `json:"organization,omitempty"`
+	OrganizationWebsite string `json:"organization_website,omitempty"`
 }
 
 // Job represents a job posting in the Lynk marketplace.
 type Job struct {
 	ID             uuid.UUID    `json:"id"`
-	CreatedBy      uuid.UUID    `json:"created_by"`
+	CreatedBy      string       `json:"created_by"`
 	Title          string       `json:"title"`
 	Description    string       `json:"description"`
 	Budget         float64      `json:"budget"`
@@ -75,17 +75,17 @@ type UpdateJobRequest struct {
 
 // JobFilter specifies criteria for searching and filtering job postings.
 type JobFilter struct {
-	Search     string     `json:"search,omitempty"`
-	Department string     `json:"department,omitempty"`
-	Skill      string     `json:"skill,omitempty"`
-	Skills     []string   `json:"skills,omitempty"`
-	MinBudget  *float64   `json:"min_budget,omitempty"`
-	MaxBudget  *float64   `json:"max_budget,omitempty"`
-	PayType    string     `json:"pay_type,omitempty"`
-	Status     string     `json:"status,omitempty"`
-	CreatedBy  *uuid.UUID `json:"created_by,omitempty"`
-	Limit      int        `json:"limit,omitempty"`
-	Offset     int        `json:"offset,omitempty"`
+	Search     string   `json:"search,omitempty"`
+	Department string   `json:"department,omitempty"`
+	Skill      string   `json:"skill,omitempty"`
+	Skills     []string `json:"skills,omitempty"`
+	MinBudget  *float64 `json:"min_budget,omitempty"`
+	MaxBudget  *float64 `json:"max_budget,omitempty"`
+	PayType    string   `json:"pay_type,omitempty"`
+	Status     string   `json:"status,omitempty"`
+	CreatedBy  *string  `json:"created_by,omitempty"`
+	Limit      int      `json:"limit,omitempty"`
+	Offset     int      `json:"offset,omitempty"`
 }
 
 // JobDate provides flexible date deserialization supporting ISO date (YYYY-MM-DD) and RFC3339.

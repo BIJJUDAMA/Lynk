@@ -1,11 +1,12 @@
-import type { ApiResponse, User, UserRole } from "../types/api";
+import type { ApiResponse, SyncUserRequest, User, UserRole } from "../types/api";
 
 // ==========================================
 // Configuration & Constants
 // ==========================================
 
+const rawApiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080").replace(/\/+$/, "");
 export const API_CONFIG = {
-  baseUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1",
+  baseUrl: rawApiUrl.endsWith("/api/v1") ? rawApiUrl : `${rawApiUrl}/api/v1`,
 };
 
 export const STORAGE_KEYS = {
@@ -279,10 +280,10 @@ export function clearRedirectPath(): void {
  */
 export async function syncUserWithBackend(
   accessToken: string,
-  roleHint?: string
+  profileData?: SyncUserRequest
 ): Promise<ApiResponse<User>> {
   const syncUrl = `${API_CONFIG.baseUrl}/auth/sync`;
-  const body = roleHint ? JSON.stringify({ role: roleHint }) : undefined;
+  const body = profileData ? JSON.stringify(profileData) : undefined;
 
   const response = await fetch(syncUrl, {
     method: "POST",

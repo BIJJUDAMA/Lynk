@@ -43,8 +43,10 @@ import { getStoredTokens } from "./auth.ts";
 // Configuration & Constants
 // ============================================================================
 
-export const DEFAULT_API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+const rawApiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080").replace(/\/+$/, "");
+export const DEFAULT_API_BASE_URL = rawApiUrl.endsWith("/api/v1")
+  ? rawApiUrl
+  : `${rawApiUrl}/api/v1`;
 
 export type TokenProvider = () => Promise<string | null> | string | null;
 
