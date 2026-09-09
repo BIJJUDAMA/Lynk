@@ -142,10 +142,10 @@ func (r *Repository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*App
 	if contractID != nil && contractAgreedBudgetCents != nil && contractStatus != nil {
 		details.Contract = &Contract{
 			ID:                *contractID,
-			JobID:             details.Application.JobID,
-			ApplicationID:     details.Application.ID,
+			JobID:             details.JobID,
+			ApplicationID:     details.ID,
 			ClientID:          job.CreatedBy,
-			FreelancerID:      details.Application.ApplicantID,
+			FreelancerID:      details.ApplicantID,
 			AgreedBudgetCents: *contractAgreedBudgetCents,
 			Status:        *contractStatus,
 			StartedAt:     contractStartedAt,
@@ -224,10 +224,10 @@ func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID,
 		if contractID != nil && contractAgreedBudgetCents != nil && contractStatus != nil {
 			details.Contract = &Contract{
 				ID:                *contractID,
-				JobID:             details.Application.JobID,
-				ApplicationID:     details.Application.ID,
+				JobID:             details.JobID,
+				ApplicationID:     details.ID,
 				ClientID:          job.CreatedBy,
-				FreelancerID:      details.Application.ApplicantID,
+				FreelancerID:      details.ApplicantID,
 				AgreedBudgetCents: *contractAgreedBudgetCents,
 				Status:        *contractStatus,
 				StartedAt:     contractStartedAt,
@@ -313,10 +313,10 @@ func (r *Repository) ListApplicationsByApplicant(ctx context.Context, applicantI
 		if contractID != nil && contractAgreedBudgetCents != nil && contractStatus != nil {
 			details.Contract = &Contract{
 				ID:                *contractID,
-				JobID:             details.Application.JobID,
-				ApplicationID:     details.Application.ID,
+				JobID:             details.JobID,
+				ApplicationID:     details.ID,
 				ClientID:          job.CreatedBy,
-				FreelancerID:      details.Application.ApplicantID,
+				FreelancerID:      details.ApplicantID,
 				AgreedBudgetCents: *contractAgreedBudgetCents,
 				Status:        *contractStatus,
 				StartedAt:     contractStartedAt,
