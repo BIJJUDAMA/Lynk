@@ -273,11 +273,9 @@ func TestS3Client_EnsureBucketMethodExists(t *testing.T) {
 	}
 }
 
-func TestS3Client_DeleteResumeMethodExists(t *testing.T) {
-	var client Client = &S3Client{bucket: "resumes"}
-	if client == nil {
-		t.Fatal("client must not be nil")
-	}
+func TestS3Client_ImplementsClient(t *testing.T) {
+	// Compile-time assertion that *S3Client satisfies Client (incl. DeleteResume).
+	var _ Client = (*S3Client)(nil)
 }
 
 

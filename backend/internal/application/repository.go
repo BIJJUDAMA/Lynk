@@ -115,9 +115,9 @@ func (r *Repository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*App
 	)
 
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&details.Application.ID, &details.Application.JobID, &details.Application.ApplicantID,
-		&details.Application.CoverLetter, &details.Application.ResumeKey, &details.Application.Status,
-		&details.Application.CreatedAt, &details.Application.UpdatedAt,
+		&details.ID, &details.JobID, &details.ApplicantID,
+		&details.CoverLetter, &details.ResumeKey, &details.Status,
+		&details.CreatedAt, &details.UpdatedAt,
 		&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.BudgetCents, &job.PayType, &job.Department, &job.Status,
 		&applicant.ID, &applicant.Email,
 		&applicant.FirstName, &applicant.LastName, &applicant.Bio,
@@ -200,9 +200,9 @@ func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID,
 		)
 
 		err := rows.Scan(
-			&details.Application.ID, &details.Application.JobID, &details.Application.ApplicantID,
-			&details.Application.CoverLetter, &details.Application.ResumeKey, &details.Application.Status,
-			&details.Application.CreatedAt, &details.Application.UpdatedAt,
+			&details.ID, &details.JobID, &details.ApplicantID,
+			&details.CoverLetter, &details.ResumeKey, &details.Status,
+			&details.CreatedAt, &details.UpdatedAt,
 			&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.BudgetCents, &job.PayType, &job.Department, &job.Status,
 			&applicant.ID, &applicant.Email,
 			&applicant.FirstName, &applicant.LastName, &applicant.Bio,
@@ -289,9 +289,9 @@ func (r *Repository) ListApplicationsByApplicant(ctx context.Context, applicantI
 		)
 
 		err := rows.Scan(
-			&details.Application.ID, &details.Application.JobID, &details.Application.ApplicantID,
-			&details.Application.CoverLetter, &details.Application.ResumeKey, &details.Application.Status,
-			&details.Application.CreatedAt, &details.Application.UpdatedAt,
+			&details.ID, &details.JobID, &details.ApplicantID,
+			&details.CoverLetter, &details.ResumeKey, &details.Status,
+			&details.CreatedAt, &details.UpdatedAt,
 			&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.BudgetCents, &job.PayType, &job.Department, &job.Status,
 			&applicant.ID, &applicant.Email,
 			&applicant.FirstName, &applicant.LastName, &applicant.Bio,
@@ -354,7 +354,7 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 	if err != nil {
 		return nil, nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	// 1. Lock the parent job row FIRST to serialize concurrent accepts on this job
 	lockJobQuery := `

@@ -140,7 +140,9 @@ func BuildRouter(
 
 	// Global Middlewares
 	r.Use(chimiddleware.RequestID)
-	r.Use(chimiddleware.RealIP)
+	// RealIP is intentionally omitted: chi's RealIP is deprecated (IP spoofing via
+	// X-Forwarded-For / X-Real-IP). Add trusted-proxy aware IP extraction only when
+	// a reverse proxy is part of the deployment topology.
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.Timeout(30 * time.Second))

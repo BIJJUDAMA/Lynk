@@ -229,7 +229,7 @@ func (r *Repository) UpdateContractStatus(ctx context.Context, id uuid.UUID, tar
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	query := `
 		UPDATE contracts
@@ -264,12 +264,13 @@ func (r *Repository) UpdateContractStatus(ctx context.Context, id uuid.UUID, tar
 	}
 
 	// If contract is completed, transition the parent job to 'closed'
-	if targetStatus == StatusCompleted {
+	switch targetStatus {
+	case StatusCompleted:
 		jobCloseQuery := queryCloseJobOnContractCompletion
 		if _, err := tx.Exec(ctx, jobCloseQuery, id); err != nil {
 			return nil, fmt.Errorf("close job: %w", err)
 		}
-	} else if targetStatus == StatusCancelled {
+	case StatusCancelled:
 		if _, err := tx.Exec(ctx, queryLockJobOnContractCancellation, id); err != nil {
 			return nil, fmt.Errorf("lock job on contract cancellation: %w", err)
 		}
