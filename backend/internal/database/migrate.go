@@ -12,7 +12,21 @@ import (
 )
 
 func RunMigrations(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
-	_, err := pool.Exec(ctx, `
+	// If golang-migrate already owns schema_migrations (bigint version), the schema
+	// is applied externally — do not attempt VARCHAR(filename) bookkeeping.
+	var versionType string
+	err := pool.QueryRow(ctx, `
+		SELECT data_type
+		FROM information_schema.columns
+		WHERE table_schema = 'public'
+		  AND table_name = 'schema_migrations'
+		  AND column_name = 'version'
+	`).Scan(&versionType)
+	if err == nil && (versionType == "bigint" || versionType == "integer") {
+		return nil
+	}
+
+	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version VARCHAR(255) PRIMARY KEY,
 			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

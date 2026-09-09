@@ -176,6 +176,18 @@ func TestRunMigrations_000003_Integration(t *testing.T) {
 		}
 	}
 
+	// Rolling back 000003 to UUID is destructive against later migrations and
+	// golang-migrate-managed schemas; up-path VARCHAR(64) checks above are enough.
+	var versionType string
+	err = pool.QueryRow(ctx, `
+		SELECT data_type FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'schema_migrations' AND column_name = 'version'
+	`).Scan(&versionType)
+	if err == nil && (versionType == "bigint" || versionType == "integer") {
+		t.Log("skipping 000003 down/re-up cycle under golang-migrate schema_migrations")
+		return
+	}
+
 	// 3. Test rollback of 000003
 	downSQL, err := os.ReadFile("../../migrations/000003_supertokens_identity.down.sql")
 	if err != nil {

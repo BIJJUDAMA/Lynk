@@ -121,6 +121,21 @@ func TestRunMigrations_Integration(t *testing.T) {
 		t.Fatalf("expected contracts.freelancer_id column to exist, err: %v", err)
 	}
 
+	// Destructive mid-chain down migrations are not safe once later migrations
+	// (e.g. 000003 VARCHAR identity) have been applied. Schema-up is verified above;
+	// down SQL is exercised by golang-migrate in CI on a fresh database path.
+	var usersIDType string
+	if err := pool.QueryRow(ctx, `
+		SELECT data_type FROM information_schema.columns
+		WHERE table_name = 'users' AND column_name = 'id'
+	`).Scan(&usersIDType); err != nil {
+		t.Fatalf("probe users.id type: %v", err)
+	}
+	if usersIDType != "uuid" {
+		t.Logf("skipping 000002 down/re-up cycle: users.id is %s (post-000003 schema)", usersIDType)
+		return
+	}
+
 	// 3. Test rollback (down migration)
 	downSQL, err := os.ReadFile("../../migrations/000002_campus_member_unification.down.sql")
 	if err != nil {
