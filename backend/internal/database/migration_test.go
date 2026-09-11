@@ -320,3 +320,49 @@ func TestMigration000004_DownSQL_Structure(t *testing.T) {
 	}
 }
 
+func TestMigration000009_UpSQL_Structure(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000009_foreign_key_indexes_and_restrict.up.sql"))
+	if err != nil {
+		t.Fatalf("failed to read 000009 up migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	expectedFragments := []string{
+		"CREATE INDEX IF NOT EXISTS idx_contracts_job_id ON contracts(job_id);",
+		"CREATE INDEX IF NOT EXISTS idx_contracts_application_id ON contracts(application_id);",
+		"CREATE INDEX IF NOT EXISTS idx_reviews_reviewer_id ON reviews(reviewer_id);",
+		"ALTER TABLE applications DROP CONSTRAINT IF EXISTS applications_job_id_fkey;",
+		"ALTER TABLE applications ADD CONSTRAINT applications_job_id_fkey",
+		"FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE RESTRICT;",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(content, fragment) {
+			t.Errorf("000009 up migration missing fragment: %s", fragment)
+		}
+	}
+}
+
+func TestMigration000009_DownSQL_Structure(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000009_foreign_key_indexes_and_restrict.down.sql"))
+	if err != nil {
+		t.Fatalf("failed to read 000009 down migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	expectedFragments := []string{
+		"DROP INDEX IF EXISTS idx_contracts_job_id;",
+		"DROP INDEX IF EXISTS idx_contracts_application_id;",
+		"DROP INDEX IF EXISTS idx_reviews_reviewer_id;",
+		"ALTER TABLE applications DROP CONSTRAINT IF EXISTS applications_job_id_fkey;",
+		"ALTER TABLE applications ADD CONSTRAINT applications_job_id_fkey",
+		"FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE;",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(content, fragment) {
+			t.Errorf("000009 down migration missing fragment: %s", fragment)
+		}
+	}
+}
+
