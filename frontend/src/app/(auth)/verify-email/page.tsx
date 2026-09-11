@@ -10,15 +10,16 @@ import {
   Loader2,
   Mail,
 } from "lucide-react";
-import { initSuperTokens, EmailVerification } from "@/lib/supertokens";
+import { initSuperTokens, EmailVerification, Session } from "@/lib/supertokens";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { refreshSessionAfterEmailVerification } from "@/lib/verify-session";
 
 function VerifyEmailContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
 
-  const { isAuthenticated, resendVerificationEmail } = useAuth();
+  const { isAuthenticated, resendVerificationEmail, setSession } = useAuth();
 
   const [status, setStatus] = useState<"verifying" | "success" | "error">(
     "verifying"
@@ -62,6 +63,12 @@ function VerifyEmailContent() {
         }
 
         if (res.status === "OK") {
+          try {
+            await refreshSessionAfterEmailVerification(Session);
+            await setSession();
+          } catch (refreshErr) {
+            console.warn("Session refresh after email verification encountered error:", refreshErr);
+          }
           setStatus("success");
         } else if (res.status === "EMAIL_VERIFICATION_INVALID_TOKEN_ERROR") {
           setStatus("error");
@@ -86,7 +93,7 @@ function VerifyEmailContent() {
     };
 
     performVerification();
-  }, [token]);
+  }, [token, setSession]);
 
   const handleResend = async () => {
     if (!isAuthenticated) {
