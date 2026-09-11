@@ -23,11 +23,8 @@ const (
 // UploadResume handles POST /api/v1/profile/resume.
 // Enforces 5MB max body size (64KB memory threshold), parses multipart payload,
 // and delegates business logic, validation, S3 upload, and metadata persistence to user.Service.
-func (h *Handler) UploadResume(s3Client ...storage.Client) http.HandlerFunc {
+func (h *Handler) UploadResume(_ ...storage.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if len(s3Client) > 0 && s3Client[0] != nil && h.service.storage == nil {
-			h.service.storage = s3Client[0]
-		}
 		if h.service == nil {
 			httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "User service not configured", nil)
 			return
@@ -110,11 +107,8 @@ func (h *Handler) UploadResume(s3Client ...storage.Client) http.HandlerFunc {
 // GetResume handles GET /api/v1/profile/resume and GET /api/v1/profile/{id}/resume.
 // If {id} URL parameter is provided, it retrieves that member's resume download URL;
 // otherwise, it retrieves the authenticated caller's own resume download URL.
-func (h *Handler) GetResume(s3Client ...storage.Client) http.HandlerFunc {
+func (h *Handler) GetResume(_ ...storage.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if len(s3Client) > 0 && s3Client[0] != nil && h.service.storage == nil {
-			h.service.storage = s3Client[0]
-		}
 		if h.service == nil {
 			httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "User service not configured", nil)
 			return

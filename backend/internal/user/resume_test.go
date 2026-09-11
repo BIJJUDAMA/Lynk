@@ -883,4 +883,223 @@ func TestService_UploadResume_UsesProfileLock(t *testing.T) {
 	}
 }
 
+type orderTrackingStorageClient struct {
+	*mockStorageClient
+	mu       sync.Mutex
+	onUpload func()
+	onDelete func()
+}
+
+func (o *orderTrackingStorageClient) UploadResume(ctx context.Context, key string, contentType string, body io.Reader) error {
+	o.mu.Lock()
+	cb := o.onUpload
+	o.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
+	return o.mockStorageClient.UploadResume(ctx, key, contentType, body)
+}
+
+func (o *orderTrackingStorageClient) DeleteResume(ctx context.Context, key string) error {
+	o.mu.Lock()
+	cb := o.onDelete
+	o.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
+	return o.mockStorageClient.DeleteResume(ctx, key)
+}
+
+type orderTrackingRepo struct {
+	user.UserRepository
+	mu           sync.Mutex
+	isLockActive bool
+	onLockEnter  func()
+	onLockExit   func()
+}
+
+func (o *orderTrackingRepo) WithProfileLock(ctx context.Context, userID string, fn func(context.Context) error) error {
+	o.mu.Lock()
+	o.isLockActive = true
+	if o.onLockEnter != nil {
+		o.onLockEnter()
+	}
+	o.mu.Unlock()
+
+	defer func() {
+		o.mu.Lock()
+		o.isLockActive = false
+		if o.onLockExit != nil {
+			o.onLockExit()
+		}
+		o.mu.Unlock()
+	}()
+
+	return o.UserRepository.WithProfileLock(ctx, userID, fn)
+}
+
+func (o *orderTrackingRepo) IsLockActive() bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.isLockActive
+}
+
+func TestService_UploadResume_UploadsToS3BeforeDatabaseLock(t *testing.T) {
+	baseRepo := newMockUserRepository()
+	baseS3 := newMockStorageClient()
+
+	var mu sync.Mutex
+	var executionOrder []string
+	var lockActiveDuringUpload bool
+	var lockCallsDuringUpload int
+
+	repo := &orderTrackingRepo{
+		UserRepository: baseRepo,
+		onLockEnter: func() {
+			mu.Lock()
+			executionOrder = append(executionOrder, "db_lock_enter")
+			mu.Unlock()
+		},
+		onLockExit: func() {
+			mu.Lock()
+			executionOrder = append(executionOrder, "db_lock_exit")
+			mu.Unlock()
+		},
+	}
+
+	s3Client := &orderTrackingStorageClient{
+		mockStorageClient: baseS3,
+		onUpload: func() {
+			mu.Lock()
+			executionOrder = append(executionOrder, "s3_upload")
+			lockActiveDuringUpload = repo.IsLockActive()
+			baseRepo.mu.RLock()
+			lockCallsDuringUpload = baseRepo.lockCalls
+			baseRepo.mu.RUnlock()
+			mu.Unlock()
+		},
+	}
+
+	svc := user.NewService(repo, s3Client)
+
+	claims := &auth.UserClaims{
+		UserID:        uuid.New().String(),
+		Email:         "student@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	pdfContent := []byte("%PDF-1.4 decoupled upload test")
+	pdfBody := bytes.NewReader(pdfContent)
+	profile, err := svc.UploadResume(context.Background(), claims, "resume.pdf", int64(len(pdfContent)), "application/pdf", pdfBody)
+	if err != nil {
+		t.Fatalf("unexpected error uploading resume: %v", err)
+	}
+	if profile == nil {
+		t.Fatal("expected profile to be returned")
+	}
+
+	if lockActiveDuringUpload {
+		t.Error("database advisory lock was held while uploading to S3")
+	}
+	if lockCallsDuringUpload != 0 {
+		t.Errorf("expected 0 lock calls during S3 upload, got %d", lockCallsDuringUpload)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(executionOrder) != 3 {
+		t.Fatalf("expected 3 events [s3_upload, db_lock_enter, db_lock_exit], got %v", executionOrder)
+	}
+	if executionOrder[0] != "s3_upload" {
+		t.Errorf("expected first event to be s3_upload, got %s", executionOrder[0])
+	}
+	if executionOrder[1] != "db_lock_enter" {
+		t.Errorf("expected second event to be db_lock_enter, got %s", executionOrder[1])
+	}
+	if executionOrder[2] != "db_lock_exit" {
+		t.Errorf("expected third event to be db_lock_exit, got %s", executionOrder[2])
+	}
+}
+
+func TestService_UploadResume_S3Failure_DoesNotAcquireLock(t *testing.T) {
+	baseRepo := newMockUserRepository()
+	baseS3 := newMockStorageClient()
+	baseS3.errUpload = errors.New("s3 connection timeout")
+
+	svc := user.NewService(baseRepo, baseS3)
+
+	claims := &auth.UserClaims{
+		UserID:        uuid.New().String(),
+		Email:         "student@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	pdfContent := []byte("%PDF-1.4 s3 failure test")
+	pdfBody := bytes.NewReader(pdfContent)
+	_, err := svc.UploadResume(context.Background(), claims, "resume.pdf", int64(len(pdfContent)), "application/pdf", pdfBody)
+	if err == nil {
+		t.Fatal("expected error due to S3 failure, got nil")
+	}
+
+	baseRepo.mu.RLock()
+	lockCalls := baseRepo.lockCalls
+	baseRepo.mu.RUnlock()
+
+	if lockCalls != 0 {
+		t.Errorf("expected 0 database lock calls when S3 upload fails, got %d", lockCalls)
+	}
+}
+
+func TestService_UploadResume_DBFailure_CompensatingDeleteOutsideLock(t *testing.T) {
+	baseRepo := newMockUserRepository()
+	baseRepo.errUpdateResume = errors.New("db write conflict")
+	baseS3 := newMockStorageClient()
+
+	var lockActiveDuringDelete bool
+	var deleteCalled bool
+	var mu sync.Mutex
+
+	repo := &orderTrackingRepo{
+		UserRepository: baseRepo,
+	}
+
+	s3Client := &orderTrackingStorageClient{
+		mockStorageClient: baseS3,
+		onDelete: func() {
+			mu.Lock()
+			deleteCalled = true
+			lockActiveDuringDelete = repo.IsLockActive()
+			mu.Unlock()
+		},
+	}
+
+	svc := user.NewService(repo, s3Client)
+
+	claims := &auth.UserClaims{
+		UserID:        uuid.New().String(),
+		Email:         "student@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	pdfContent := []byte("%PDF-1.4 db failure compensating delete test")
+	pdfBody := bytes.NewReader(pdfContent)
+	_, err := svc.UploadResume(context.Background(), claims, "resume.pdf", int64(len(pdfContent)), "application/pdf", pdfBody)
+	if err == nil {
+		t.Fatal("expected error due to DB update failure, got nil")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !deleteCalled {
+		t.Fatal("expected compensating delete to be called")
+	}
+	if lockActiveDuringDelete {
+		t.Error("compensating S3 delete was executed while holding database advisory lock")
+	}
+}
+
+
 

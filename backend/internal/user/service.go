@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -225,6 +226,10 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 		if len(link) > 2048 {
 			return nil, fmt.Errorf("%w: portfolio link must not exceed 2048 characters", ErrInvalidInput)
 		}
+		parsed, err := url.ParseRequestURI(link)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return nil, fmt.Errorf("%w: portfolio link must be a valid http or https URL", ErrInvalidInput)
+		}
 	}
 
 	org := existing.Organization
@@ -240,6 +245,12 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 		orgWebsite = strings.TrimSpace(*req.OrganizationWebsite)
 		if len(orgWebsite) > 255 {
 			return nil, fmt.Errorf("%w: organization website must not exceed 255 characters", ErrInvalidInput)
+		}
+		if orgWebsite != "" {
+			parsed, err := url.ParseRequestURI(orgWebsite)
+			if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+				return nil, fmt.Errorf("%w: organization website must be a valid http or https URL", ErrInvalidInput)
+			}
 		}
 	}
 
@@ -344,32 +355,28 @@ func (s *Service) UploadResume(ctx context.Context, claims *auth.UserClaims, fil
 
 	sanitizedFilename := filepath.Base(filename)
 	key := storage.GenerateResumeKey(claims.UserID, sanitizedFilename)
+	size = int64(len(all))
 
+	// 1. Upload to S3 directly without holding any database lock
+	fullBody := bytes.NewReader(all)
+	if err := s.storage.UploadResume(ctx, key, contentType, fullBody); err != nil {
+		return nil, fmt.Errorf("upload resume to storage: %w", err)
+	}
+
+	// 2. Perform metadata update in a quick atomic transaction with advisory lock
+	var oldResumeKey string
 	var updated *Profile
 	err = s.repo.WithProfileLock(ctx, claims.UserID, func(lockCtx context.Context) error {
-		// Capture existing resume key if present to clean up after successful update
 		existingProfile, err := s.repo.GetProfile(lockCtx, claims.UserID)
 		if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrProfileNotFound) {
 			slog.Warn("failed to lookup existing profile during resume upload", "user_id", claims.UserID, "err", err)
 		}
-		var oldResumeKey string
 		if existingProfile != nil && existingProfile.ResumeKey != nil {
 			oldResumeKey = *existingProfile.ResumeKey
 		}
 
-		fullBody := bytes.NewReader(all)
-		if err := s.storage.UploadResume(lockCtx, key, contentType, fullBody); err != nil {
-			return fmt.Errorf("upload resume to storage: %w", err)
-		}
-
 		if err := s.repo.UpdateResume(lockCtx, claims.UserID, key, sanitizedFilename, size); err != nil {
-			s.deleteResumeBestEffort(lockCtx, key, "db metadata update failed")
-			return fmt.Errorf("update resume metadata: %w", err)
-		}
-
-		// Clean up previous resume object if replacing
-		if oldResumeKey != "" && oldResumeKey != key {
-			s.deleteResumeBestEffort(lockCtx, oldResumeKey, "replace previous object")
+			return err
 		}
 
 		p, err := s.repo.GetProfile(lockCtx, claims.UserID)
@@ -380,8 +387,15 @@ func (s *Service) UploadResume(ctx context.Context, claims *auth.UserClaims, fil
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		s.deleteResumeBestEffort(ctx, key, "db metadata update failed")
+		return nil, fmt.Errorf("update resume metadata: %w", err)
 	}
+
+	// 3. Clean up previous resume object if replacing
+	if oldResumeKey != "" && oldResumeKey != key {
+		s.deleteResumeBestEffort(ctx, oldResumeKey, "replace previous object")
+	}
+
 	return updated, nil
 }
 
