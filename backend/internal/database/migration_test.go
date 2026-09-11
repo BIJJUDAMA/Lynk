@@ -225,6 +225,20 @@ func TestRunMigrations_000003_Integration(t *testing.T) {
 		return
 	}
 
+	var laterMigrationExists bool
+	_ = pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = 'schema_migrations'
+		) AND EXISTS (
+			SELECT 1 FROM schema_migrations
+			WHERE version > '000003'
+		)`).Scan(&laterMigrationExists)
+	if laterMigrationExists {
+		t.Log("skipping 000003 down/re-up cycle: later migrations applied")
+		return
+	}
+
 	// 3. Test rollback of 000003
 	downSQL, err := os.ReadFile("../../migrations/000003_supertokens_identity.down.sql")
 	if err != nil {

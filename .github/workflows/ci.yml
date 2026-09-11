@@ -48,6 +48,9 @@ jobs:
           psql -h localhost -U lynk_user -d lynk_db -c "CREATE DATABASE lynk_migrate_check;"
           migrate -path backend/migrations -database "postgres://lynk_user:lynk_password@localhost:5432/lynk_migrate_check?sslmode=disable" up
           psql -h localhost -U lynk_user -d lynk_db -c "DROP DATABASE lynk_migrate_check;"
+      - name: Apply application migrations
+        working-directory: backend
+        run: go test -v -run ^TestRunMigrations_AppliesInitOnEmptyDatabase$ ./internal/database
       - name: Test with race detector
         working-directory: backend
         run: go test -race -count=1 ./...
