@@ -85,7 +85,7 @@ function JobSearchContent() {
 
   useEffect(() => {
     if (gridRef.current && jobs && jobs.length > 0) {
-      animateStaggerList(gridRef.current);
+      return animateStaggerList(gridRef.current);
     }
   }, [jobs]);
 

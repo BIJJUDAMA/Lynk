@@ -18,6 +18,7 @@ import { isEduEmail } from "@/lib/email-validation";
 import { AuthRole, AuthTokens, AuthUser } from "@/lib/auth";
 import { emailVerifiedFromAccessPayload } from "@/lib/auth-bootstrap";
 import { DEFAULT_API_BASE_URL } from "@/lib/api";
+import { syncStaleEmailVerification } from "@/lib/verify-session";
 import { Profile, User } from "@/types/api";
 
 // ==========================================
@@ -87,15 +88,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(accessToken);
 
       const claimed = emailVerifiedFromAccessPayload(payload as Record<string, unknown>);
-      let emailVerified = claimed ?? false;
-      if (claimed === undefined) {
-        try {
-          const isVerifiedRes = await EmailVerification.isEmailVerified();
-          emailVerified = Boolean(isVerifiedRes?.isVerified);
-        } catch (err) {
-          console.warn("Failed to check email verification status:", err);
-        }
-      }
+      let emailVerified = await syncStaleEmailVerification(
+        claimed,
+        () => EmailVerification.isEmailVerified(),
+        () => Session.attemptRefreshingSession()
+      );
       if (gen !== syncGen.current) return false;
 
       // Fetch /api/v1/auth/me to sync and retrieve backend user profile
