@@ -21,8 +21,70 @@ import (
 	"github.com/lynk/backend/internal/job"
 	"github.com/lynk/backend/internal/middleware"
 	"github.com/lynk/backend/internal/review"
+	"github.com/lynk/backend/internal/storage"
 	"github.com/lynk/backend/internal/user"
 )
+
+type stubStore struct{}
+
+func (stubStore) UploadResume(context.Context, string, string, io.Reader) error { return nil }
+func (stubStore) GetPresignedDownloadURL(context.Context, string, time.Duration) (string, error) {
+	return "http://example/signed", nil
+}
+func (stubStore) DeleteResume(context.Context, string) error { return nil }
+
+var _ storage.Client = stubStore{}
+ 
+type readOnlyStoreStub struct {
+	checkErr error
+}
+
+func (r readOnlyStoreStub) UploadResume(context.Context, string, string, io.Reader) error { return nil }
+func (r readOnlyStoreStub) GetPresignedDownloadURL(context.Context, string, time.Duration) (string, error) {
+	return "", nil
+}
+func (r readOnlyStoreStub) DeleteResume(context.Context, string) error { return nil }
+func (r readOnlyStoreStub) EnsureBucket(context.Context) error {
+	panic("EnsureBucket must never be called during health probe")
+}
+func (r readOnlyStoreStub) CheckBucket(context.Context) error {
+	return r.checkErr
+}
+
+var _ storage.Client = readOnlyStoreStub{}
+
+func TestStorageReady(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("nil client returns nil", func(t *testing.T) {
+		if err := storageReady(ctx, nil); err != nil {
+			t.Fatalf("expected nil error for nil storage client, got: %v", err)
+		}
+	})
+
+	t.Run("client without CheckBucket returns nil", func(t *testing.T) {
+		if err := storageReady(ctx, stubStore{}); err != nil {
+			t.Fatalf("expected nil error for client without CheckBucket, got: %v", err)
+		}
+	})
+
+	t.Run("calls CheckBucket and never EnsureBucket on success", func(t *testing.T) {
+		stub := readOnlyStoreStub{}
+		if err := storageReady(ctx, stub); err != nil {
+			t.Fatalf("expected nil error on success, got: %v", err)
+		}
+	})
+
+	t.Run("returns error when CheckBucket fails", func(t *testing.T) {
+		expectedErr := errors.New("bucket not found")
+		stub := readOnlyStoreStub{checkErr: expectedErr}
+		err := storageReady(ctx, stub)
+		if !errors.Is(err, expectedErr) {
+			t.Fatalf("expected error %v, got: %v", expectedErr, err)
+		}
+	})
+}
+
 
 // mockValidator implements middleware.TokenValidator for routing tests.
 type mockValidator struct {
@@ -52,6 +114,38 @@ func (m *mockJobRepo) ListJobs(ctx context.Context, filter job.JobFilter) ([]*jo
 func (m *mockJobRepo) HasActiveContractForJob(ctx context.Context, jobID uuid.UUID) (bool, error) {
 	return false, nil
 }
+func (m *mockJobRepo) HasApplicationsForJob(ctx context.Context, jobID uuid.UUID) (bool, error) {
+	return false, nil
+}
+func (m *mockJobRepo) HasAnyContractForJob(ctx context.Context, jobID uuid.UUID) (bool, error) {
+	return false, nil
+}
+
+// stubUserRepo lets GET /profile/me reach the handler (404) without a database.
+type stubUserRepo struct{}
+
+func (stubUserRepo) UpsertUser(context.Context, *user.User) error { return nil }
+func (stubUserRepo) GetUserByID(context.Context, string) (*user.User, error) {
+	return nil, nil
+}
+func (stubUserRepo) GetProfile(context.Context, string) (*user.Profile, error) {
+	return nil, nil
+}
+func (stubUserRepo) GetProfileByID(context.Context, string) (*user.Profile, error) {
+	return nil, nil
+}
+func (stubUserRepo) UpsertProfile(context.Context, *user.Profile) error { return nil }
+func (stubUserRepo) UpdateResume(context.Context, string, string, string, int64) error {
+	return nil
+}
+func (stubUserRepo) ProvisionUser(context.Context, *user.User, *user.Profile) error {
+	return nil
+}
+func (stubUserRepo) WithProfileLock(ctx context.Context, userID string, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+var _ user.UserRepository = stubUserRepo{}
 
 func TestBuildRouter_HealthNilPoolIsServiceUnavailable(t *testing.T) {
 	cfg := LoadConfig()
@@ -143,6 +237,120 @@ func TestBuildRouter_MarketplaceWritesRequireVerifiedEmail(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "EMAIL_NOT_VERIFIED") {
 		t.Fatalf("expected EMAIL_NOT_VERIFIED code, got %s", rec.Body.String())
+	}
+}
+
+func TestBuildRouter_ResumeGetRequiresVerifiedEmail(t *testing.T) {
+	cfg := DefaultTestConfig()
+	unverified := &auth.UserClaims{UserID: "u1", Email: "a@stanford.edu", EmailVerified: false, Roles: []string{"member"}}
+	authMW := middleware.AuthMiddleware(&mockValidator{validToken: "tok", claims: unverified})
+	userHandler := user.NewHandler(user.NewService(nil), nil)
+	router := BuildRouter(cfg, nil, userHandler, nil, nil, nil, nil, authMW, stubStore{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/profile/resume", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 unverified resume GET, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBuildRouter_AuthMatrix(t *testing.T) {
+	cfg := DefaultTestConfig()
+	unverified := &auth.UserClaims{
+		UserID:        "u1",
+		Email:         "a@stanford.edu",
+		EmailVerified: false,
+		Roles:         []string{"member"},
+	}
+	authMW := middleware.AuthMiddleware(&mockValidator{validToken: "tok", claims: unverified})
+
+	jobRepo := &mockJobRepo{}
+	jobHandler := job.NewHandler(job.NewService(jobRepo), jobRepo)
+
+	userRepo := stubUserRepo{}
+	userHandler := user.NewHandler(user.NewService(userRepo), userRepo)
+
+	router := BuildRouter(cfg, nil, userHandler, jobHandler, nil, nil, nil, authMW, stubStore{})
+
+	jobBody := `{"title":"x","description":"yyyyyyyyyy","budget_cents":10000,"pay_type":"fixed"}`
+
+	tests := []struct {
+		name     string
+		method   string
+		path     string
+		bearer   bool
+		wantOK   func(code int) bool
+		wantDesc string
+	}{
+		{
+			name:     "GET /health none",
+			method:   http.MethodGet,
+			path:     "/health",
+			wantOK:   func(c int) bool { return c == http.StatusServiceUnavailable || c == http.StatusOK },
+			wantDesc: "503 or 200",
+		},
+		{
+			name:     "GET /api/v1/jobs none",
+			method:   http.MethodGet,
+			path:     "/api/v1/jobs",
+			wantOK:   func(c int) bool { return c == http.StatusOK },
+			wantDesc: "200",
+		},
+		{
+			name:     "POST /api/v1/jobs none",
+			method:   http.MethodPost,
+			path:     "/api/v1/jobs",
+			wantOK:   func(c int) bool { return c == http.StatusUnauthorized },
+			wantDesc: "401",
+		},
+		{
+			name:     "POST /api/v1/jobs unverified",
+			method:   http.MethodPost,
+			path:     "/api/v1/jobs",
+			bearer:   true,
+			wantOK:   func(c int) bool { return c == http.StatusForbidden },
+			wantDesc: "403",
+		},
+		{
+			name:     "GET /api/v1/profile/resume unverified",
+			method:   http.MethodGet,
+			path:     "/api/v1/profile/resume",
+			bearer:   true,
+			wantOK:   func(c int) bool { return c == http.StatusForbidden },
+			wantDesc: "403",
+		},
+		{
+			name:   "GET /api/v1/profile/me unverified",
+			method: http.MethodGet,
+			path:   "/api/v1/profile/me",
+			bearer: true,
+			wantOK: func(c int) bool {
+				return c == http.StatusOK || c == http.StatusNotFound
+			},
+			wantDesc: "200 or 404 (not 403)",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var body io.Reader
+			if tc.method == http.MethodPost {
+				body = strings.NewReader(jobBody)
+			}
+			req := httptest.NewRequest(tc.method, tc.path, body)
+			if tc.method == http.MethodPost {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			if tc.bearer {
+				req.Header.Set("Authorization", "Bearer tok")
+			}
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if !tc.wantOK(rec.Code) {
+				t.Fatalf("%s %s: expected %s, got %d body=%s", tc.method, tc.path, tc.wantDesc, rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -435,4 +643,60 @@ func TestRequestBodyLimiter(t *testing.T) {
 		}
 	})
 }
+
+func TestRequestTimeout_ResumeUploadIsLonger(t *testing.T) {
+	up := httptest.NewRequest(http.MethodPost, "/api/v1/profile/resume", nil)
+	if requestTimeout(up) < 60*time.Second {
+		t.Fatalf("resume POST must exceed 60s, got %s", requestTimeout(up))
+	}
+	upTrailing := httptest.NewRequest(http.MethodPost, "/api/v1/profile/resume/", nil)
+	if requestTimeout(upTrailing) < 60*time.Second {
+		t.Fatalf("resume POST with trailing slash must exceed 60s, got %s", requestTimeout(upTrailing))
+	}
+	get := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
+	if requestTimeout(get) != 30*time.Second {
+		t.Fatalf("default 30s, got %s", requestTimeout(get))
+	}
+}
+
+func TestBuildRouter_RequestTimeoutAppliedToContext(t *testing.T) {
+	cfg := DefaultTestConfig()
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	var resumeDeadline time.Time
+	var resumeDeadlineSet bool
+	router.Post("/test-upload/resume", func(w http.ResponseWriter, r *http.Request) {
+		resumeDeadline, resumeDeadlineSet = r.Context().Deadline()
+		w.WriteHeader(http.StatusOK)
+	})
+
+	var defaultDeadline time.Time
+	var defaultDeadlineSet bool
+	router.Get("/test-default", func(w http.ResponseWriter, r *http.Request) {
+		defaultDeadline, defaultDeadlineSet = r.Context().Deadline()
+		w.WriteHeader(http.StatusOK)
+	})
+
+	reqResume := httptest.NewRequest(http.MethodPost, "/test-upload/resume", nil)
+	router.ServeHTTP(httptest.NewRecorder(), reqResume)
+	if !resumeDeadlineSet {
+		t.Fatal("expected deadline to be set on resume context")
+	}
+	remainingResume := time.Until(resumeDeadline)
+	if remainingResume < 80*time.Second || remainingResume > 91*time.Second {
+		t.Fatalf("expected resume deadline ~90s, got remaining %v", remainingResume)
+	}
+
+	reqDefault := httptest.NewRequest(http.MethodGet, "/test-default", nil)
+	router.ServeHTTP(httptest.NewRecorder(), reqDefault)
+	if !defaultDeadlineSet {
+		t.Fatal("expected deadline to be set on default context")
+	}
+	remainingDefault := time.Until(defaultDeadline)
+	if remainingDefault < 25*time.Second || remainingDefault > 31*time.Second {
+		t.Fatalf("expected default deadline ~30s, got remaining %v", remainingDefault)
+	}
+}
+
+
 

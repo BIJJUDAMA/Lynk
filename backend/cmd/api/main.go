@@ -124,6 +124,24 @@ func (a *profileReaderAdapter) GetProfile(ctx context.Context, userID string) (*
 	return a.repo.GetProfile(ctx, userID)
 }
 
+func storageReady(ctx context.Context, s3Client storage.Client) error {
+	if s3Client == nil {
+		return nil
+	}
+	if checker, ok := s3Client.(interface{ CheckBucket(context.Context) error }); ok {
+		return checker.CheckBucket(ctx)
+	}
+	return nil
+}
+
+func requestTimeout(r *http.Request) time.Duration {
+	cleanPath := strings.TrimSuffix(r.URL.Path, "/")
+	if r.Method == http.MethodPost && strings.HasSuffix(cleanPath, "/resume") {
+		return 90 * time.Second
+	}
+	return 30 * time.Second
+}
+
 // BuildRouter assembles the complete Chi HTTP router with middleware and domain routes.
 func BuildRouter(
 	cfg Config,
@@ -145,7 +163,13 @@ func BuildRouter(
 	// a reverse proxy is part of the deployment topology.
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
-	r.Use(chimiddleware.Timeout(30 * time.Second))
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx, cancel := context.WithTimeout(r.Context(), requestTimeout(r))
+			defer cancel()
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	})
 	r.Use(middleware.CORS(cfg.CORSAllowedOrigins))
 
 	// Enforce 1MB limit for JSON request bodies to prevent OOM DoS attacks (F-09)
@@ -177,15 +201,11 @@ func BuildRouter(
 			_ = json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "database": "disconnected"})
 			return
 		}
-		if s3Client != nil {
-			if ensurer, ok := s3Client.(interface{ EnsureBucket(context.Context) error }); ok {
-				if err := ensurer.EnsureBucket(r.Context()); err != nil {
-					slog.Error("healthcheck minio bucket failed", "error", err)
-					w.WriteHeader(http.StatusServiceUnavailable)
-					_ = json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "storage": "unavailable"})
-					return
-				}
-			}
+		if err := storageReady(r.Context(), s3Client); err != nil {
+			slog.Error("healthcheck minio bucket failed", "error", err)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "storage": "unavailable"})
+			return
 		}
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]string{
@@ -216,27 +236,23 @@ func BuildRouter(
 				// Unified profile routes (session-only: unverified users can complete profile)
 				r.Get("/me", userHandler.GetMyProfile)
 				r.Put("/me", userHandler.UpdateMyProfile)
-				if s3Client != nil {
-					r.Get("/resume", userHandler.GetMyResumeURL(s3Client))
-					r.Get("/{id}/resume", userHandler.GetMemberResumeURL(s3Client))
-				}
 
-				// Resume uploads require verified campus email
+				// Resume GET and POST require verified campus email
 				r.Group(func(vr chi.Router) {
 					vr.Use(middleware.RequireVerifiedEmail())
 					if s3Client != nil {
+						vr.Get("/resume", userHandler.GetMyResumeURL(s3Client))
+						vr.Get("/{id}/resume", userHandler.GetMemberResumeURL(s3Client))
 						vr.Post("/resume", userHandler.UploadResume(s3Client))
 						vr.Post("/student/resume", userHandler.UploadResume(s3Client))
+						vr.Get("/student/resume", userHandler.GetMyResumeURL(s3Client))
+						vr.Get("/student/{id}/resume", userHandler.GetStudentResumeURL(s3Client))
 					}
 				})
 
 				// Backward-compatible aliases (PUT profile remains session-only)
 				r.Get("/student", userHandler.GetMyStudentProfile)
 				r.Put("/student", userHandler.UpdateMyStudentProfile)
-				if s3Client != nil {
-					r.Get("/student/resume", userHandler.GetMyResumeURL(s3Client))
-					r.Get("/student/{id}/resume", userHandler.GetStudentResumeURL(s3Client))
-				}
 				r.Get("/student/{id}", userHandler.GetStudentProfileByID)
 				r.Get("/employer", userHandler.GetMyEmployerProfile)
 				r.Put("/employer", userHandler.UpdateMyEmployerProfile)
@@ -339,7 +355,7 @@ func main() {
 			log.Printf("Connected to PostgreSQL successfully")
 			break
 		}
-		log.Printf("Waiting for PostgreSQL connection (%s), attempt %d/15: %v", cfg.DatabaseURL, attempts, dbErr)
+		log.Printf("Waiting for PostgreSQL connection (%s), attempt %d/15: %v", redactDatabaseURL(cfg.DatabaseURL), attempts, dbErr)
 		select {
 		case <-ctx.Done():
 			log.Fatal("Startup cancelled while waiting for database")
