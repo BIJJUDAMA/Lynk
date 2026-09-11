@@ -15,7 +15,10 @@ import {
   updateApplicationStatus,
   updateContractStatus,
   createReview,
+  updateMyProfile,
+  buildProfileUpdatePayload,
 } from "./api.ts";
+import type { UpdateProfileRequest } from "../types/api.ts";
 
 /**
  * Helper to mock globalThis.fetch for the duration of a test.
@@ -410,4 +413,113 @@ test("DEFAULT_API_BASE_URL correctly resolves with /api/v1 suffix", () => {
   assert.ok(DEFAULT_API_BASE_URL.endsWith("/api/v1"));
   assert.ok(!DEFAULT_API_BASE_URL.endsWith("/api/v1/api/v1"));
 });
+
+test("updateMyProfile sends PUT /profile/me and preserves empty optional fields for clearing in DB", async () => {
+  let capturedBody = "";
+  let capturedUrl = "";
+  let capturedMethod = "";
+
+  const restore = mockFetch((url, init) => {
+    capturedUrl = url;
+    capturedMethod = init?.method || "GET";
+    capturedBody = init?.body as string;
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: { id: "profile-1", first_name: "John", last_name: "Doe" },
+        error: null,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  });
+
+  try {
+    const client = createApiClient(undefined, "http://localhost:8080/api/v1");
+    const payload: UpdateProfileRequest = {
+      first_name: "John",
+      last_name: "Doe",
+      department: "",
+      graduation_year: 0,
+      bio: "",
+      skills: [],
+      portfolio_links: [],
+      organization: "",
+      organization_website: "",
+    };
+
+    await updateMyProfile(payload, client);
+
+    assert.equal(capturedUrl, "http://localhost:8080/api/v1/profile/me");
+    assert.equal(capturedMethod, "PUT");
+
+    const parsed = JSON.parse(capturedBody);
+    assert.strictEqual(parsed.first_name, "John");
+    assert.strictEqual(parsed.last_name, "Doe");
+    assert.strictEqual(parsed.department, "");
+    assert.strictEqual(parsed.graduation_year, 0);
+    assert.strictEqual(parsed.bio, "");
+    assert.deepStrictEqual(parsed.skills, []);
+    assert.deepStrictEqual(parsed.portfolio_links, []);
+    assert.strictEqual(parsed.organization, "");
+    assert.strictEqual(parsed.organization_website, "");
+  } finally {
+    restore();
+  }
+});
+
+test("buildProfileUpdatePayload preserves empty fields as \"\" and 0 for clearing", () => {
+  // Clearing optional fields
+  const emptyPayload = buildProfileUpdatePayload({
+    firstName: "  John  ",
+    lastName: "  Doe  ",
+    department: "",
+    customDepartment: "",
+    graduationYear: undefined,
+    bio: "  ",
+    skills: ["React"],
+    portfolioLinks: ["https://github.com/johndoe", "   "],
+    organization: "   ",
+    validatedOrgWebsite: "",
+  });
+
+  assert.deepStrictEqual(emptyPayload, {
+    first_name: "John",
+    last_name: "Doe",
+    department: "",
+    graduation_year: 0,
+    bio: "",
+    skills: ["React"],
+    portfolio_links: ["https://github.com/johndoe"],
+    organization: "",
+    organization_website: "",
+  });
+
+  // When serialized to JSON, keys must NOT be stripped (unlike undefined)
+  const json = JSON.stringify(emptyPayload);
+  assert.ok(json.includes('"department":""'), "department should be preserved as empty string");
+  assert.ok(json.includes('"graduation_year":0'), "graduation_year should be preserved as 0");
+  assert.ok(json.includes('"organization":""'), "organization should be preserved as empty string");
+  assert.ok(json.includes('"organization_website":""'), "organization_website should be preserved as empty string");
+  assert.ok(json.includes('"bio":""'), "bio should be preserved as empty string");
+
+  // Custom department when "Other" is selected
+  const customPayload = buildProfileUpdatePayload({
+    firstName: "Jane",
+    lastName: "Doe",
+    department: "Other",
+    customDepartment: "  Robotics Engineering  ",
+    graduationYear: "2026",
+    bio: "Student engineer",
+    skills: ["ROS", "Python"],
+    portfolioLinks: ["https://robotics.edu"],
+    organization: "  AI Lab  ",
+    validatedOrgWebsite: "https://ailab.edu",
+  });
+
+  assert.strictEqual(customPayload.department, "Robotics Engineering");
+  assert.strictEqual(customPayload.graduation_year, 2026);
+  assert.strictEqual(customPayload.organization, "AI Lab");
+  assert.strictEqual(customPayload.organization_website, "https://ailab.edu");
+});
+
 

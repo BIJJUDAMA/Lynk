@@ -38,6 +38,7 @@ import type {
   UserReviewSummary,
 } from "@/types/api";
 import { getStoredTokens } from "./auth.ts";
+import { Session } from "./supertokens.ts";
 
 // ============================================================================
 // Configuration & Constants
@@ -198,7 +199,6 @@ export function createApiClient(
 
     if (!token && typeof window !== "undefined") {
       try {
-        const { Session } = await import("./supertokens");
         if (await Session.doesSessionExist()) {
           token = (await Session.getAccessToken()) ?? null;
         }
@@ -422,6 +422,44 @@ export async function getMyProfile(
   client: ApiClient = apiClient
 ): Promise<Profile> {
   return client.get<Profile>("/profile/me");
+}
+
+export interface BuildProfilePayloadInput {
+  firstName: string;
+  lastName: string;
+  department: string;
+  customDepartment?: string;
+  graduationYear?: number | string | null;
+  bio: string;
+  skills: string[];
+  portfolioLinks: string[];
+  organization: string;
+  validatedOrgWebsite: string;
+}
+
+/**
+ * Builds an UpdateProfileRequest payload ensuring optional fields retain empty strings
+ * or 0 rather than undefined, allowing users to clear existing values in PostgreSQL.
+ */
+export function buildProfileUpdatePayload(
+  input: BuildProfilePayloadInput
+): UpdateProfileRequest {
+  const effectiveDepartment =
+    input.department === "Other"
+      ? (input.customDepartment || "").trim()
+      : input.department.trim();
+
+  return {
+    first_name: input.firstName.trim(),
+    last_name: input.lastName.trim(),
+    department: effectiveDepartment,
+    graduation_year: input.graduationYear ? Number(input.graduationYear) : 0,
+    bio: input.bio.trim(),
+    skills: input.skills,
+    portfolio_links: input.portfolioLinks.filter((l) => l.trim() !== ""),
+    organization: input.organization.trim(),
+    organization_website: input.validatedOrgWebsite,
+  };
 }
 
 /**

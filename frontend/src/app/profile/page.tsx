@@ -134,12 +134,18 @@ export default function ProfilePage() {
     if (!raw) return;
 
     let targetUrl = raw;
-    if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
-      targetUrl = "https://" + raw;
+    // Reject non-http/https URL schemes like javascript:, data:, ftp:
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) && !/^https?:\/\//i.test(raw)) {
+      setLinkError("Only http:// and https:// URLs are allowed.");
+      return;
+    }
+
+    if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+      targetUrl = "https://" + targetUrl;
     }
 
     if (!isValidUrl(targetUrl)) {
-      setLinkError("Please enter a valid URL (e.g. https://github.com/username)");
+      setLinkError("Please enter a valid http:// or https:// URL (e.g. https://github.com/username)");
       return;
     }
 
@@ -168,18 +174,43 @@ export default function ProfilePage() {
     setSuccessMessage(null);
     setErrorMessage(null);
 
-    const effectiveDepartment = department === "Other" ? customDepartment.trim() : department;
+    const effectiveDepartment = department === "Other" ? customDepartment.trim() : department.trim();
+
+    const trimmedOrgWebsite = orgWebsite.trim();
+    let validatedOrgWebsite = "";
+    if (trimmedOrgWebsite) {
+      let targetWebsite = trimmedOrgWebsite;
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(targetWebsite) && !/^https?:\/\//i.test(targetWebsite)) {
+        setErrorMessage("Organization website must use http:// or https://");
+        return;
+      }
+      if (!targetWebsite.startsWith("http://") && !targetWebsite.startsWith("https://")) {
+        targetWebsite = "https://" + targetWebsite;
+      }
+      if (!isValidUrl(targetWebsite)) {
+        setErrorMessage("Please enter a valid organization website URL (must be http:// or https://)");
+        return;
+      }
+      validatedOrgWebsite = targetWebsite;
+    }
+
+    for (const link of portfolioLinks) {
+      if (!isValidUrl(link)) {
+        setErrorMessage("One or more portfolio links are invalid. Only http:// and https:// URLs are allowed.");
+        return;
+      }
+    }
 
     const payload: UpdateProfileRequest = {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
-      department: effectiveDepartment || undefined,
-      graduation_year: graduationYear ? Number(graduationYear) : undefined,
+      department: effectiveDepartment,
+      graduation_year: graduationYear ? Number(graduationYear) : 0,
       bio: bio.trim(),
       skills,
-      portfolio_links: portfolioLinks,
-      organization: organization.trim() || undefined,
-      organization_website: orgWebsite.trim() || undefined,
+      portfolio_links: portfolioLinks.filter((l) => l.trim() !== ""),
+      organization: organization.trim(),
+      organization_website: validatedOrgWebsite,
     };
 
     try {
@@ -554,7 +585,7 @@ export default function ProfilePage() {
                     className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-xs"
                   >
                     <a
-                      href={link}
+                      href={isValidUrl(link) ? link : "#"}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 text-primary hover:underline truncate max-w-[85%]"
