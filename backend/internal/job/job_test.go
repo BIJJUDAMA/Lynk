@@ -577,3 +577,307 @@ func TestService_UpdateJob_CannotManuallyCloseWhileInProgress(t *testing.T) {
 	}
 }
 
+func TestService_CreateJob_DeadlineValidation(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+	claims := verifiedJobClaims("poster")
+
+	todayCal := job.CalendarDayUTC(time.Now().UTC())
+	todayJD := job.JobDate(todayCal)
+	yesterdayCal := todayCal.AddDate(0, 0, -1)
+	yesterdayJD := job.JobDate(yesterdayCal)
+	tomorrowCal := todayCal.AddDate(0, 0, 1)
+	tomorrowJD := job.JobDate(tomorrowCal)
+
+	// 1. Yesterday's UTC calendar day is rejected
+	_, err := svc.CreateJob(context.Background(), claims, job.CreateJobRequest{
+		Title:       "Job Yesterday Deadline",
+		Description: "Testing past deadline rejection",
+		BudgetCents: 5000,
+		PayType:     job.PayTypeFixed,
+		Deadline:    &yesterdayJD,
+	})
+	if err == nil {
+		t.Fatal("expected error for yesterday's deadline, got nil")
+	}
+	if !errors.Is(err, job.ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+
+	// 2. Today's UTC calendar day is accepted
+	jToday, err := svc.CreateJob(context.Background(), claims, job.CreateJobRequest{
+		Title:       "Job Today Deadline",
+		Description: "Testing same-day deadline acceptance",
+		BudgetCents: 5000,
+		PayType:     job.PayTypeFixed,
+		Deadline:    &todayJD,
+	})
+	if err != nil {
+		t.Fatalf("expected today's deadline to be accepted, got err: %v", err)
+	}
+	if jToday.Deadline == nil || !jToday.Deadline.Equal(todayCal) {
+		t.Fatalf("expected deadline %v, got %v", todayCal, jToday.Deadline)
+	}
+
+	// 3. Tomorrow's UTC calendar day is accepted
+	jTomorrow, err := svc.CreateJob(context.Background(), claims, job.CreateJobRequest{
+		Title:       "Job Tomorrow Deadline",
+		Description: "Testing future deadline acceptance",
+		BudgetCents: 5000,
+		PayType:     job.PayTypeFixed,
+		Deadline:    &tomorrowJD,
+	})
+	if err != nil {
+		t.Fatalf("expected tomorrow's deadline to be accepted, got err: %v", err)
+	}
+	if jTomorrow.Deadline == nil || !jTomorrow.Deadline.Equal(tomorrowCal) {
+		t.Fatalf("expected deadline %v, got %v", tomorrowCal, jTomorrow.Deadline)
+	}
+}
+
+func TestService_UpdateJob_DeadlineValidation(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+	claims := verifiedJobClaims("poster")
+
+	created, err := svc.CreateJob(context.Background(), claims, job.CreateJobRequest{
+		Title:       "Job For Update",
+		Description: "Testing update deadline validation",
+		BudgetCents: 5000,
+		PayType:     job.PayTypeFixed,
+	})
+	if err != nil {
+		t.Fatalf("failed to create job: %v", err)
+	}
+
+	todayCal := job.CalendarDayUTC(time.Now().UTC())
+	todayJD := job.JobDate(todayCal)
+	yesterdayCal := todayCal.AddDate(0, 0, -1)
+	yesterdayJD := job.JobDate(yesterdayCal)
+	tomorrowCal := todayCal.AddDate(0, 0, 1)
+	tomorrowJD := job.JobDate(tomorrowCal)
+
+	// 1. Update with yesterday's UTC calendar day is rejected
+	_, err = svc.UpdateJob(context.Background(), claims, created.ID, job.UpdateJobRequest{
+		Deadline: &yesterdayJD,
+	})
+	if err == nil {
+		t.Fatal("expected error for yesterday's deadline update, got nil")
+	}
+	if !errors.Is(err, job.ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+
+	// 2. Update with today's UTC calendar day is accepted
+	updatedToday, err := svc.UpdateJob(context.Background(), claims, created.ID, job.UpdateJobRequest{
+		Deadline: &todayJD,
+	})
+	if err != nil {
+		t.Fatalf("expected today's deadline update to be accepted, got err: %v", err)
+	}
+	if updatedToday.Deadline == nil || !updatedToday.Deadline.Equal(todayCal) {
+		t.Fatalf("expected deadline %v, got %v", todayCal, updatedToday.Deadline)
+	}
+
+	// 3. Update with tomorrow's UTC calendar day is accepted
+	updatedTomorrow, err := svc.UpdateJob(context.Background(), claims, created.ID, job.UpdateJobRequest{
+		Deadline: &tomorrowJD,
+	})
+	if err != nil {
+		t.Fatalf("expected tomorrow's deadline update to be accepted, got err: %v", err)
+	}
+	if updatedTomorrow.Deadline == nil || !updatedTomorrow.Deadline.Equal(tomorrowCal) {
+		t.Fatalf("expected deadline %v, got %v", tomorrowCal, updatedTomorrow.Deadline)
+	}
+}
+
+func TestJobHandler_CreateJob_SameDayDeadlineAccepted(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+	h := job.NewHandler(svc, repo)
+
+	userUUID := uuid.New()
+	claims := verifiedJobClaims(userUUID.String())
+
+	r := h.Routes(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := auth.WithUserContext(req.Context(), claims)
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+
+	todayStr := time.Now().UTC().Format("2006-01-02")
+	body := `{"title":"Same Day Gig","description":"Need help today","budget_cents":5000,"pay_type":"fixed","deadline":"` + todayStr + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for today's deadline, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestService_UpdateJob_ClosedOrCancelledImmutable(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+	claims := verifiedJobClaims("usr_poster")
+
+	for _, initialStatus := range []string{job.StatusClosed, job.StatusCancelled} {
+		t.Run("status_"+initialStatus, func(t *testing.T) {
+			id := uuid.New()
+			repo.jobs[id] = &job.Job{
+				ID:          id,
+				CreatedBy:   "usr_poster",
+				Title:       "Original Title",
+				Description: "Original Description",
+				BudgetCents: 10000,
+				Status:      initialStatus,
+				PayType:     job.PayTypeFixed,
+			}
+
+			// 1. Attempting to update title
+			newTitle := "Mutated Title"
+			_, err := svc.UpdateJob(context.Background(), claims, id, job.UpdateJobRequest{
+				Title: &newTitle,
+			})
+			if !errors.Is(err, job.ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput when updating title on %s job, got: %v", initialStatus, err)
+			}
+
+			// 2. Attempting to update description
+			newDesc := "Mutated Description"
+			_, err = svc.UpdateJob(context.Background(), claims, id, job.UpdateJobRequest{
+				Description: &newDesc,
+			})
+			if !errors.Is(err, job.ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput when updating description on %s job, got: %v", initialStatus, err)
+			}
+
+			// 3. Attempting to update budget
+			newBudget := int64(20000)
+			_, err = svc.UpdateJob(context.Background(), claims, id, job.UpdateJobRequest{
+				BudgetCents: &newBudget,
+			})
+			if !errors.Is(err, job.ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput when updating budget on %s job, got: %v", initialStatus, err)
+			}
+
+			// 4. Attempting to reopen or change status
+			openStatus := job.StatusOpen
+			_, err = svc.UpdateJob(context.Background(), claims, id, job.UpdateJobRequest{
+				Status: &openStatus,
+			})
+			if !errors.Is(err, job.ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput when changing status on %s job, got: %v", initialStatus, err)
+			}
+		})
+	}
+}
+
+func TestService_JobDescriptionAndSkillBounds(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+	claims := &auth.UserClaims{
+		UserID:        "usr_employer_1",
+		Email:         "employer@univ.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	// 1. CreateJob with description exceeding 5000 chars
+	tooLongDesc := strings.Repeat("a", 5001)
+	_, err := svc.CreateJob(context.Background(), claims, job.CreateJobRequest{
+		Title:       "Valid Title",
+		Description: tooLongDesc,
+		BudgetCents: 10000,
+		PayType:     job.PayTypeFixed,
+	})
+	if !errors.Is(err, job.ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for description > 5000 chars, got: %v", err)
+	}
+
+	// 2. CreateJob with valid 5000-char description and > 25 skills with > 50 chars each
+	validLongDesc := strings.Repeat("b", 5000)
+	var manyLongSkills []string
+	for i := 0; i < 30; i++ {
+		// 60-character skill with unique prefix in first 50 chars
+		prefix := string(rune('a'+i)) + strings.Repeat("x", 48) + "-"
+		manyLongSkills = append(manyLongSkills, prefix+strings.Repeat("y", 10))
+	}
+	createdJob, err := svc.CreateJob(context.Background(), claims, job.CreateJobRequest{
+		Title:          "Valid Title With Skills",
+		Description:    validLongDesc,
+		BudgetCents:    10000,
+		PayType:        job.PayTypeFixed,
+		RequiredSkills: manyLongSkills,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating job with valid 5000-char description: %v", err)
+	}
+	if len(createdJob.Description) != 5000 {
+		t.Fatalf("expected description length 5000, got %d", len(createdJob.Description))
+	}
+	if len(createdJob.RequiredSkills) != 25 {
+		t.Fatalf("expected RequiredSkills capped at 25, got %d", len(createdJob.RequiredSkills))
+	}
+	for i, skill := range createdJob.RequiredSkills {
+		if len(skill) > 50 {
+			t.Fatalf("expected skill %d to be <= 50 chars, got %d chars (%s)", i, len(skill), skill)
+		}
+	}
+
+	// 3. UpdateJob with description exceeding 5000 chars
+	_, err = svc.UpdateJob(context.Background(), claims, createdJob.ID, job.UpdateJobRequest{
+		Description: &tooLongDesc,
+	})
+	if !errors.Is(err, job.ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for update description > 5000 chars, got: %v", err)
+	}
+
+	// 4. UpdateJob with valid description and skill capping
+	validUpdatedDesc := "Updated valid description"
+	updatedJob, err := svc.UpdateJob(context.Background(), claims, createdJob.ID, job.UpdateJobRequest{
+		Description:    &validUpdatedDesc,
+		RequiredSkills: &manyLongSkills,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error updating job: %v", err)
+	}
+	if updatedJob.Description != validUpdatedDesc {
+		t.Fatalf("expected updated description %q, got %q", validUpdatedDesc, updatedJob.Description)
+	}
+	if len(updatedJob.RequiredSkills) != 25 {
+		t.Fatalf("expected updated RequiredSkills capped at 25, got %d", len(updatedJob.RequiredSkills))
+	}
+	for i, skill := range updatedJob.RequiredSkills {
+		if len(skill) > 50 {
+			t.Fatalf("expected updated skill %d to be <= 50 chars, got %d chars (%s)", i, len(skill), skill)
+		}
+	}
+
+	// 5. Verify deduplication and trimming with whitespace, case variations, and post-truncation duplicates
+	dedupSkills := []string{"Go", "go", "  GO  ", "Python", strings.Repeat("k", 60), strings.Repeat("k", 55)}
+	jobWithDedup, err := svc.CreateJob(context.Background(), claims, job.CreateJobRequest{
+		Title:          "Dedup Skills Job",
+		Description:    "Valid description",
+		BudgetCents:    10000,
+		PayType:        job.PayTypeFixed,
+		RequiredSkills: dedupSkills,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating job with duplicate skills: %v", err)
+	}
+	expectedSkills := []string{"Go", "Python", strings.Repeat("k", 50)}
+	if len(jobWithDedup.RequiredSkills) != len(expectedSkills) {
+		t.Fatalf("expected %d deduplicated skills, got %d: %v", len(expectedSkills), len(jobWithDedup.RequiredSkills), jobWithDedup.RequiredSkills)
+	}
+	for i, exp := range expectedSkills {
+		if jobWithDedup.RequiredSkills[i] != exp {
+			t.Fatalf("expected skill %d to be %q, got %q", i, exp, jobWithDedup.RequiredSkills[i])
+		}
+	}
+}
+
+
+
+

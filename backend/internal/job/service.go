@@ -49,6 +49,9 @@ func (s *Service) CreateJob(ctx context.Context, claims *auth.UserClaims, req Cr
 	if desc == "" {
 		return nil, fmt.Errorf("%w: description is required", ErrInvalidInput)
 	}
+	if len(desc) > 5000 {
+		return nil, fmt.Errorf("%w: description cannot exceed 5000 characters", ErrInvalidInput)
+	}
 
 	if err := money.ValidateNonNegative(money.Cents(req.BudgetCents)); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
@@ -64,7 +67,7 @@ func (s *Service) CreateJob(ctx context.Context, claims *auth.UserClaims, req Cr
 		return nil, fmt.Errorf("%w: department cannot exceed 100 characters", ErrInvalidInput)
 	}
 
-	if req.Deadline != nil && req.Deadline.Time() != nil && req.Deadline.Time().Before(time.Now().UTC()) {
+	if req.Deadline != nil && req.Deadline.Time() != nil && CalendarDayUTC(*req.Deadline.Time()).Before(CalendarDayUTC(time.Now().UTC())) {
 		return nil, fmt.Errorf("%w: deadline must be in the future", ErrInvalidInput)
 	}
 
@@ -140,6 +143,10 @@ func (s *Service) UpdateJob(ctx context.Context, claims *auth.UserClaims, id uui
 		return nil, ErrForbidden
 	}
 
+	if job.Status == StatusClosed || job.Status == StatusCancelled {
+		return nil, fmt.Errorf("%w: closed or cancelled jobs cannot be modified", ErrInvalidInput)
+	}
+
 	if job.Status == StatusInProgress {
 		if req.BudgetCents != nil {
 			return nil, fmt.Errorf("%w: budget cannot be changed while the job is in progress", ErrInvalidInput)
@@ -178,6 +185,9 @@ func (s *Service) UpdateJob(ctx context.Context, claims *auth.UserClaims, id uui
 		if d == "" {
 			return nil, fmt.Errorf("%w: description cannot be empty", ErrInvalidInput)
 		}
+		if len(d) > 5000 {
+			return nil, fmt.Errorf("%w: description cannot exceed 5000 characters", ErrInvalidInput)
+		}
 		job.Description = d
 	}
 
@@ -209,7 +219,7 @@ func (s *Service) UpdateJob(ctx context.Context, claims *auth.UserClaims, id uui
 	}
 
 	if req.Deadline != nil {
-		if req.Deadline.Time() != nil && req.Deadline.Time().Before(time.Now().UTC()) {
+		if req.Deadline.Time() != nil && CalendarDayUTC(*req.Deadline.Time()).Before(CalendarDayUTC(time.Now().UTC())) {
 			return nil, fmt.Errorf("%w: deadline must be in the future", ErrInvalidInput)
 		}
 		job.Deadline = req.Deadline.Time()
@@ -296,9 +306,19 @@ func cleanSkills(skills []string) []string {
 	seen := make(map[string]bool)
 	for _, skill := range skills {
 		s := strings.TrimSpace(skill)
-		if s != "" && !seen[strings.ToLower(s)] {
-			seen[strings.ToLower(s)] = true
+		if s == "" {
+			continue
+		}
+		if len(s) > 50 {
+			s = s[:50]
+		}
+		key := strings.ToLower(s)
+		if !seen[key] {
+			seen[key] = true
 			cleaned = append(cleaned, s)
+			if len(cleaned) >= 25 {
+				break
+			}
 		}
 	}
 	return cleaned
