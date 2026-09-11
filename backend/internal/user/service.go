@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
@@ -71,20 +71,24 @@ func (s *Service) SyncUser(ctx context.Context, claims *auth.UserClaims, req Syn
 		Role:  role,
 	}
 
-	if err := s.repo.UpsertUser(ctx, u); err != nil {
+	existing, err := s.repo.GetProfile(ctx, claims.UserID)
+	if err != nil {
 		return nil, err
 	}
 
-	// Auto-provision empty profile if not existing
-	existing, err := s.repo.GetProfile(ctx, claims.UserID)
-	if err == nil && existing == nil {
-		_ = s.repo.UpsertProfile(ctx, &Profile{
+	var p *Profile
+	if existing == nil {
+		p = &Profile{
 			UserID:         claims.UserID,
 			FirstName:      req.FirstName,
 			LastName:       req.LastName,
 			Skills:         []string{},
 			PortfolioLinks: []string{},
-		})
+		}
+	}
+
+	if err := s.repo.ProvisionUser(ctx, u, p); err != nil {
+		return nil, err
 	}
 
 	return u, nil
@@ -148,32 +152,44 @@ func (s *Service) GetProfileByID(ctx context.Context, id string) (*Profile, erro
 
 // UpdateProfile updates the campus member's profile details.
 func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdateProfileRequest) (*Profile, error) {
-	firstName := strings.TrimSpace(req.FirstName)
-	if len(firstName) > 100 {
-		return nil, fmt.Errorf("%w: first name must not exceed 100 characters", ErrInvalidInput)
-	}
-
-	lastName := strings.TrimSpace(req.LastName)
-	if len(lastName) > 100 {
-		return nil, fmt.Errorf("%w: last name must not exceed 100 characters", ErrInvalidInput)
-	}
-
-	bio := strings.TrimSpace(req.Bio)
-	if len(bio) > 5000 {
-		return nil, fmt.Errorf("%w: bio must not exceed 5000 characters", ErrInvalidInput)
-	}
-
-	department := strings.TrimSpace(req.Department)
-	if len(department) > 100 {
-		return nil, fmt.Errorf("%w: department must not exceed 100 characters", ErrInvalidInput)
-	}
-
 	existing, err := s.repo.GetProfile(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	if existing == nil {
 		existing = &Profile{UserID: userID, Skills: []string{}, PortfolioLinks: []string{}}
+	}
+
+	firstName := existing.FirstName
+	if req.FirstName != nil {
+		firstName = strings.TrimSpace(*req.FirstName)
+		if len(firstName) > 100 {
+			return nil, fmt.Errorf("%w: first name must not exceed 100 characters", ErrInvalidInput)
+		}
+	}
+
+	lastName := existing.LastName
+	if req.LastName != nil {
+		lastName = strings.TrimSpace(*req.LastName)
+		if len(lastName) > 100 {
+			return nil, fmt.Errorf("%w: last name must not exceed 100 characters", ErrInvalidInput)
+		}
+	}
+
+	bio := existing.Bio
+	if req.Bio != nil {
+		bio = strings.TrimSpace(*req.Bio)
+		if len(bio) > 5000 {
+			return nil, fmt.Errorf("%w: bio must not exceed 5000 characters", ErrInvalidInput)
+		}
+	}
+
+	department := existing.Department
+	if req.Department != nil {
+		department = strings.TrimSpace(*req.Department)
+		if len(department) > 100 {
+			return nil, fmt.Errorf("%w: department must not exceed 100 characters", ErrInvalidInput)
+		}
 	}
 
 	graduationYear := existing.GraduationYear
@@ -185,7 +201,10 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 		graduationYear = y
 	}
 
-	skills := req.Skills
+	skills := existing.Skills
+	if req.Skills != nil {
+		skills = *req.Skills
+	}
 	if skills == nil {
 		skills = []string{}
 	}
@@ -195,7 +214,10 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 		}
 	}
 
-	links := req.PortfolioLinks
+	links := existing.PortfolioLinks
+	if req.PortfolioLinks != nil {
+		links = *req.PortfolioLinks
+	}
 	if links == nil {
 		links = []string{}
 	}
@@ -205,14 +227,20 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 		}
 	}
 
-	org := strings.TrimSpace(req.Organization)
-	if len(org) > 200 {
-		return nil, fmt.Errorf("%w: organization name must not exceed 200 characters", ErrInvalidInput)
+	org := existing.Organization
+	if req.Organization != nil {
+		org = strings.TrimSpace(*req.Organization)
+		if len(org) > 200 {
+			return nil, fmt.Errorf("%w: organization name must not exceed 200 characters", ErrInvalidInput)
+		}
 	}
 
-	orgWebsite := strings.TrimSpace(req.OrganizationWebsite)
-	if len(orgWebsite) > 255 {
-		return nil, fmt.Errorf("%w: organization website must not exceed 255 characters", ErrInvalidInput)
+	orgWebsite := existing.OrganizationWebsite
+	if req.OrganizationWebsite != nil {
+		orgWebsite = strings.TrimSpace(*req.OrganizationWebsite)
+		if len(orgWebsite) > 255 {
+			return nil, fmt.Errorf("%w: organization website must not exceed 255 characters", ErrInvalidInput)
+		}
 	}
 
 	p := &Profile{
@@ -310,40 +338,47 @@ func (s *Service) UploadResume(ctx context.Context, claims *auth.UserClaims, fil
 		contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	}
 
-	fullBody := bytes.NewReader(all)
-
 	if s.storage == nil {
 		return nil, ErrStorageNotConfigured
-	}
-
-	// Capture existing resume key if present to clean up after successful update
-	existingProfile, err := s.repo.GetProfile(ctx, claims.UserID)
-	if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrProfileNotFound) {
-		log.Printf("[WARN] Failed to lookup existing profile for user %s during resume upload: %v", claims.UserID, err)
-	}
-	var oldResumeKey string
-	if existingProfile != nil && existingProfile.ResumeKey != nil {
-		oldResumeKey = *existingProfile.ResumeKey
 	}
 
 	sanitizedFilename := filepath.Base(filename)
 	key := storage.GenerateResumeKey(claims.UserID, sanitizedFilename)
 
-	if err := s.storage.UploadResume(ctx, key, contentType, fullBody); err != nil {
-		return nil, fmt.Errorf("upload resume to storage: %w", err)
-	}
+	var updated *Profile
+	err = s.repo.WithProfileLock(ctx, claims.UserID, func(lockCtx context.Context) error {
+		// Capture existing resume key if present to clean up after successful update
+		existingProfile, err := s.repo.GetProfile(lockCtx, claims.UserID)
+		if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrProfileNotFound) {
+			slog.Warn("failed to lookup existing profile during resume upload", "user_id", claims.UserID, "err", err)
+		}
+		var oldResumeKey string
+		if existingProfile != nil && existingProfile.ResumeKey != nil {
+			oldResumeKey = *existingProfile.ResumeKey
+		}
 
-	if err := s.repo.UpdateResume(ctx, claims.UserID, key, sanitizedFilename, size); err != nil {
-		s.deleteResumeBestEffort(ctx, key, "db metadata update failed")
-		return nil, fmt.Errorf("update resume metadata: %w", err)
-	}
+		fullBody := bytes.NewReader(all)
+		if err := s.storage.UploadResume(lockCtx, key, contentType, fullBody); err != nil {
+			return fmt.Errorf("upload resume to storage: %w", err)
+		}
 
-	// Clean up previous resume object if replacing
-	if oldResumeKey != "" && oldResumeKey != key {
-		s.deleteResumeBestEffort(ctx, oldResumeKey, "replace previous object")
-	}
+		if err := s.repo.UpdateResume(lockCtx, claims.UserID, key, sanitizedFilename, size); err != nil {
+			s.deleteResumeBestEffort(lockCtx, key, "db metadata update failed")
+			return fmt.Errorf("update resume metadata: %w", err)
+		}
 
-	updated, err := s.repo.GetProfile(ctx, claims.UserID)
+		// Clean up previous resume object if replacing
+		if oldResumeKey != "" && oldResumeKey != key {
+			s.deleteResumeBestEffort(lockCtx, oldResumeKey, "replace previous object")
+		}
+
+		p, err := s.repo.GetProfile(lockCtx, claims.UserID)
+		if err != nil {
+			return err
+		}
+		updated = p
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +393,7 @@ func (s *Service) deleteResumeBestEffort(ctx context.Context, key, reason string
 	delCtx, cancel := context.WithTimeout(delCtx, 10*time.Second)
 	defer cancel()
 	if err := s.storage.DeleteResume(delCtx, key); err != nil {
-		log.Printf("[ERROR] compensating resume delete failed key=%s reason=%s err=%v", key, reason, err)
+		slog.Error("compensating resume delete failed", "key", key, "reason", reason, "err", err)
 	}
 }
 

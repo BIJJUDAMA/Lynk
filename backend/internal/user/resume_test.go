@@ -792,3 +792,95 @@ func TestService_UploadResume_DeletesOldResumeOnSuccess(t *testing.T) {
 		t.Errorf("expected old resume %q to be removed from uploads map", oldKey)
 	}
 }
+
+func TestService_UploadResume_CompensatingDeleteStorageErrorHandled(t *testing.T) {
+	repo := newMockUserRepository()
+	repo.errUpdateResume = errors.New("db failure")
+	s3Client := newMockStorageClient()
+	s3Client.errDelete = errors.New("storage network partition")
+	svc := user.NewService(repo, s3Client)
+
+	claims := &auth.UserClaims{
+		UserID:        uuid.New().String(),
+		Email:         "student@berkeley.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	pdfContent := []byte("%PDF-1.4 compensating delete test")
+	pdfBody := bytes.NewReader(pdfContent)
+	_, err := svc.UploadResume(context.Background(), claims, "cv.pdf", int64(len(pdfContent)), "application/pdf", pdfBody)
+	if err == nil {
+		t.Fatal("expected error from UploadResume due to DB failure")
+	}
+}
+
+type failFirstGetProfileRepo struct {
+	user.UserRepository
+	calls int
+}
+
+func (f *failFirstGetProfileRepo) GetProfile(ctx context.Context, userID string) (*user.Profile, error) {
+	f.calls++
+	if f.calls == 1 {
+		return nil, errors.New("db query timeout")
+	}
+	return f.UserRepository.GetProfile(ctx, userID)
+}
+
+func TestService_UploadResume_GetProfileWarningLogged(t *testing.T) {
+	baseRepo := newMockUserRepository()
+	repo := &failFirstGetProfileRepo{UserRepository: baseRepo}
+	s3Client := newMockStorageClient()
+	svc := user.NewService(repo, s3Client)
+
+	claims := &auth.UserClaims{
+		UserID:        uuid.New().String(),
+		Email:         "student@berkeley.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	pdfContent := []byte("%PDF-1.4 resume upload test")
+	pdfBody := bytes.NewReader(pdfContent)
+	profile, err := svc.UploadResume(context.Background(), claims, "cv.pdf", int64(len(pdfContent)), "application/pdf", pdfBody)
+	if err != nil {
+		t.Fatalf("unexpected error from UploadResume: %v", err)
+	}
+	if profile == nil {
+		t.Fatal("expected profile returned")
+	}
+	if repo.calls < 2 {
+		t.Fatalf("expected at least 2 calls to GetProfile, got %d", repo.calls)
+	}
+}
+
+func TestService_UploadResume_UsesProfileLock(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	svc := user.NewService(repo, s3Client)
+
+	claims := &auth.UserClaims{
+		UserID:        uuid.New().String(),
+		Email:         "student@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	pdfContent := []byte("%PDF-1.4 profile lock test resume")
+	pdfBody := bytes.NewReader(pdfContent)
+	_, err := svc.UploadResume(context.Background(), claims, "resume.pdf", int64(len(pdfContent)), "application/pdf", pdfBody)
+	if err != nil {
+		t.Fatalf("unexpected error uploading resume: %v", err)
+	}
+
+	repo.mu.RLock()
+	lockCalls := repo.lockCalls
+	repo.mu.RUnlock()
+
+	if lockCalls != 1 {
+		t.Fatalf("expected WithProfileLock to be called once, got %d", lockCalls)
+	}
+}
+
+
