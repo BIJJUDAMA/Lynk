@@ -107,7 +107,7 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 		if targetJob.Status != job.StatusOpen {
 			return nil, ErrJobNotOpen
 		}
-		if targetJob.Deadline != nil && time.Now().UTC().After(targetJob.Deadline.UTC()) {
+		if job.DeadlineCalendarDayPassed(targetJob.Deadline, time.Now().UTC()) {
 			return nil, fmt.Errorf("%w: job deadline has passed", ErrJobNotOpen)
 		}
 		if targetJob.CreatedBy == applicantID {

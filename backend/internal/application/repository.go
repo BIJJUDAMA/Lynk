@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	jobpkg "github.com/lynk/backend/internal/job"
 )
 
 // ApplicationRepository defines persistence operations for applications and atomic contract creation.
@@ -344,6 +345,15 @@ func rejectOtherApplicationsQuery() string {
 	`
 }
 
+const queryLockJobOnAccept = `
+		SELECT j.id, j.created_by, j.title, j.description, ROUND(j.budget * 100)::bigint, j.pay_type, j.department, j.status, j.deadline
+		FROM jobs j
+		WHERE j.id = (SELECT job_id FROM applications WHERE id = $1)
+		FOR UPDATE;
+	`
+
+func lockJobOnAcceptQuery() string { return queryLockJobOnAccept }
+
 // AcceptApplicationTx atomically executes the multi-table accept workflow:
 // 1. Sets application status -> 'accepted'
 // 2. Sets other pending applications for that job -> 'rejected'
@@ -357,16 +367,11 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	// 1. Lock the parent job row FIRST to serialize concurrent accepts on this job
-	lockJobQuery := `
-		SELECT j.id, j.created_by, j.title, j.description, ROUND(j.budget * 100)::bigint, j.pay_type, j.department, j.status
-		FROM jobs j
-		WHERE j.id = (SELECT job_id FROM applications WHERE id = $1)
-		FOR UPDATE;
-	`
 	var job JobSummary
-	err = tx.QueryRow(ctx, lockJobQuery, appID).Scan(
+	var deadline *time.Time
+	err = tx.QueryRow(ctx, lockJobOnAcceptQuery(), appID).Scan(
 		&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.BudgetCents,
-		&job.PayType, &job.Department, &job.Status,
+		&job.PayType, &job.Department, &job.Status, &deadline,
 	)
 	if err == pgx.ErrNoRows {
 		// ErrNoRows here means either: (a) no application with this ID exists, or
@@ -381,6 +386,9 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 		return nil, nil, fmt.Errorf("lock job: %w", err)
 	}
 	if job.Status != "open" {
+		return nil, nil, ErrJobNotOpen
+	}
+	if jobpkg.DeadlineCalendarDayPassed(deadline, time.Now().UTC()) {
 		return nil, nil, ErrJobNotOpen
 	}
 
