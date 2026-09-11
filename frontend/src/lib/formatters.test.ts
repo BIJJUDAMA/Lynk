@@ -83,6 +83,9 @@ test("isValidUrl validates web URLs with http/https protocols", () => {
   assert.equal(isValidUrl("https://github.com/student"), true);
   assert.equal(isValidUrl("http://portfolio.dev"), true);
   assert.equal(isValidUrl("ftp://file.server"), false);
+  assert.equal(isValidUrl("javascript:alert(1)"), false);
+  assert.equal(isValidUrl("data:text/html,test"), false);
+  assert.equal(isValidUrl("file:///etc/passwd"), false);
   assert.equal(isValidUrl("invalid-url"), false);
   assert.equal(isValidUrl(""), false);
 });

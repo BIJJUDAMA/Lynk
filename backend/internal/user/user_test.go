@@ -429,6 +429,88 @@ func TestUpdateProfile_Validation(t *testing.T) {
 	}
 }
 
+func TestUpdateProfile_RejectsInvalidURLScheme(t *testing.T) {
+	repo := newMockUserRepository()
+	svc := user.NewService(repo)
+	userID := "test-user-" + uuid.New().String()
+
+	// 1. Portfolio links with invalid schemes should be rejected
+	invalidPortfolioLinks := []string{
+		"javascript:alert(document.cookie)",
+		"data:text/html,<script>alert(1)</script>",
+		"ftp://files.stanford.edu/resume.pdf",
+		"file:///etc/passwd",
+		"not-a-valid-url",
+	}
+
+	for _, badLink := range invalidPortfolioLinks {
+		t.Run("rejects portfolio link: "+badLink, func(t *testing.T) {
+			_, err := svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{
+				PortfolioLinks: ptr([]string{badLink}),
+			})
+			if !errors.Is(err, user.ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput for link %q, got %v", badLink, err)
+			}
+		})
+	}
+
+	// 2. Organization website with invalid schemes should be rejected
+	invalidOrgWebsites := []string{
+		"javascript:alert(1)",
+		"data:text/plain,hello",
+		"ftp://org.stanford.edu",
+		"invalid-website",
+	}
+
+	for _, badWebsite := range invalidOrgWebsites {
+		t.Run("rejects organization website: "+badWebsite, func(t *testing.T) {
+			_, err := svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{
+				OrganizationWebsite: ptr(badWebsite),
+			})
+			if !errors.Is(err, user.ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput for org website %q, got %v", badWebsite, err)
+			}
+		})
+	}
+
+	// 3. Valid HTTP and HTTPS URLs should be accepted
+	validReq := user.UpdateProfileRequest{
+		PortfolioLinks:      ptr([]string{"http://portfolio.stanford.edu", "https://github.com/student"}),
+		OrganizationWebsite: ptr("https://acm.stanford.edu"),
+	}
+	p, err := svc.UpdateProfile(context.Background(), userID, validReq)
+	if err != nil {
+		t.Fatalf("expected valid URLs to be accepted, got: %v", err)
+	}
+	if len(p.PortfolioLinks) != 2 || p.OrganizationWebsite != "https://acm.stanford.edu" {
+		t.Fatalf("unexpected profile after valid update: %+v", p)
+	}
+
+	// 4. Organization website with http should be accepted
+	httpOrgReq := user.UpdateProfileRequest{
+		OrganizationWebsite: ptr("http://lab.stanford.edu"),
+	}
+	p, err = svc.UpdateProfile(context.Background(), userID, httpOrgReq)
+	if err != nil {
+		t.Fatalf("expected http org website to be accepted, got: %v", err)
+	}
+	if p.OrganizationWebsite != "http://lab.stanford.edu" {
+		t.Fatalf("unexpected organization website: %s", p.OrganizationWebsite)
+	}
+
+	// 5. Empty organization website should clear it without error
+	emptyOrgReq := user.UpdateProfileRequest{
+		OrganizationWebsite: ptr(""),
+	}
+	p, err = svc.UpdateProfile(context.Background(), userID, emptyOrgReq)
+	if err != nil {
+		t.Fatalf("expected empty org website to be accepted, got: %v", err)
+	}
+	if p.OrganizationWebsite != "" {
+		t.Fatalf("expected cleared organization website, got: %s", p.OrganizationWebsite)
+	}
+}
+
 func TestHandler_Routes(t *testing.T) {
 	repo := newMockUserRepository()
 	svc := user.NewService(repo)
