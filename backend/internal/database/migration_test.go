@@ -124,6 +124,43 @@ func TestMigration000003_DownSQL_Structure(t *testing.T) {
 	}
 }
 
+func TestRunMigrations_AppliesInitOnEmptyDatabase(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := database.NewPool(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	var versionType string
+	err = pool.QueryRow(ctx, `
+		SELECT data_type FROM information_schema.columns
+		WHERE table_schema='public' AND table_name='schema_migrations' AND column_name='version'`).Scan(&versionType)
+	if err == nil && (versionType == "bigint" || versionType == "integer") {
+		t.Fatal("TEST_DATABASE_URL is golang-migrate managed; CI must leave lynk_db to the app migrator")
+	}
+
+	var usersExists bool
+	if qerr := pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = 'users'
+		)`).Scan(&usersExists); qerr != nil {
+		t.Fatalf("check users table: %v", qerr)
+	}
+	if usersExists && (versionType == "character varying" || versionType == "varchar") {
+		t.Skip("schema already VARCHAR-migrated by another test in this package")
+	}
+
+	if err := database.RunMigrations(ctx, pool, filepath.Join("..", "..", "migrations")); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+}
+
 func TestRunMigrations_000003_Integration(t *testing.T) {
 	dbURL := os.Getenv("TEST_DATABASE_URL")
 	if dbURL == "" {

@@ -12,8 +12,6 @@ import (
 )
 
 func RunMigrations(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
-	// If golang-migrate already owns schema_migrations (bigint version), the schema
-	// is applied externally — do not attempt VARCHAR(filename) bookkeeping.
 	var versionType string
 	err := pool.QueryRow(ctx, `
 		SELECT data_type
@@ -22,6 +20,9 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool, migrationsDir string
 		  AND table_name = 'schema_migrations'
 		  AND column_name = 'version'
 	`).Scan(&versionType)
+	// Safety: if an operator applied golang-migrate to this database, do not
+	// reinterpret bigint versions as filenames. Production API docker still
+	// uses this VARCHAR runner on an empty schema.
 	if err == nil && (versionType == "bigint" || versionType == "integer") {
 		return nil
 	}
