@@ -132,6 +132,17 @@ func (s *S3Client) DeleteResume(ctx context.Context, key string) error {
 	return nil
 }
 
+// CheckBucket verifies if the configured bucket exists without mutating or creating it.
+func (s *S3Client) CheckBucket(ctx context.Context) error {
+	if s == nil || s.client == nil {
+		return fmt.Errorf("s3 client is not initialized")
+	}
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(s.bucket),
+	})
+	return err
+}
+
 // EnsureBucket verifies if the configured bucket exists, and creates it if it does not.
 func (s *S3Client) EnsureBucket(ctx context.Context) error {
 	if s == nil || s.client == nil {
@@ -152,3 +163,4 @@ func (s *S3Client) EnsureBucket(ctx context.Context) error {
 	}
 	return nil
 }
+

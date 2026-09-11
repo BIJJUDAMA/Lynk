@@ -278,4 +278,16 @@ func TestS3Client_ImplementsClient(t *testing.T) {
 	var _ Client = (*S3Client)(nil)
 }
 
+func TestS3Client_CheckBucketDoesNotCreate(t *testing.T) {
+	var _ interface {
+		CheckBucket(context.Context) error
+	} = (*S3Client)(nil)
+}
 
+func TestS3Client_CheckBucketMethodExists(t *testing.T) {
+	client := &S3Client{bucket: "resumes"}
+	err := client.CheckBucket(context.Background())
+	if err == nil {
+		t.Fatalf("expected error on uninitialized client, got nil")
+	}
+}
