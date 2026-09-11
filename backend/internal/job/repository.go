@@ -18,6 +18,8 @@ type JobRepository interface {
 	DeleteJob(ctx context.Context, id uuid.UUID) error
 	ListJobs(ctx context.Context, filter JobFilter) ([]*Job, error)
 	HasActiveContractForJob(ctx context.Context, jobID uuid.UUID) (bool, error)
+	HasApplicationsForJob(ctx context.Context, jobID uuid.UUID) (bool, error)
+	HasAnyContractForJob(ctx context.Context, jobID uuid.UUID) (bool, error)
 }
 
 // Repository implements JobRepository backed by PostgreSQL with pgxpool.Pool.
@@ -331,6 +333,24 @@ func (r *Repository) HasActiveContractForJob(ctx context.Context, jobID uuid.UUI
 			WHERE job_id = $1 AND status IN ('draft', 'active')
 		);
 	`
+	var exists bool
+	if err := r.db.QueryRow(ctx, query, jobID).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func (r *Repository) HasApplicationsForJob(ctx context.Context, jobID uuid.UUID) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM applications WHERE job_id = $1);`
+	var exists bool
+	if err := r.db.QueryRow(ctx, query, jobID).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func (r *Repository) HasAnyContractForJob(ctx context.Context, jobID uuid.UUID) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM contracts WHERE job_id = $1);`
 	var exists bool
 	if err := r.db.QueryRow(ctx, query, jobID).Scan(&exists); err != nil {
 		return false, err

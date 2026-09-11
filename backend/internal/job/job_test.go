@@ -18,13 +18,17 @@ import (
 )
 
 type mockJobRepository struct {
-	mu   sync.RWMutex
-	jobs map[uuid.UUID]*job.Job
+	mu             sync.RWMutex
+	jobs           map[uuid.UUID]*job.Job
+	hasApps        map[uuid.UUID]bool
+	hasAnyContract map[uuid.UUID]bool
 }
 
 func newMockJobRepository() *mockJobRepository {
 	return &mockJobRepository{
-		jobs: make(map[uuid.UUID]*job.Job),
+		jobs:           make(map[uuid.UUID]*job.Job),
+		hasApps:        make(map[uuid.UUID]bool),
+		hasAnyContract: make(map[uuid.UUID]bool),
 	}
 }
 
@@ -103,6 +107,18 @@ func (m *mockJobRepository) ListJobs(ctx context.Context, filter job.JobFilter) 
 
 func (m *mockJobRepository) HasActiveContractForJob(ctx context.Context, jobID uuid.UUID) (bool, error) {
 	return false, nil
+}
+
+func (m *mockJobRepository) HasApplicationsForJob(ctx context.Context, jobID uuid.UUID) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.hasApps[jobID], nil
+}
+
+func (m *mockJobRepository) HasAnyContractForJob(ctx context.Context, jobID uuid.UUID) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.hasAnyContract[jobID], nil
 }
 
 func TestJob_CreateJob_VerifiedMemberSuccess(t *testing.T) {
@@ -449,6 +465,26 @@ func TestService_UpdateJob_StateTransitions(t *testing.T) {
 	}
 }
 
+func TestService_UpdateJob_FreezesCommercialFieldsWhenApplicationsExist(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+	id := uuid.New()
+	open := &job.Job{
+		ID: id, CreatedBy: "poster", Title: "T", Description: "desc",
+		BudgetCents: 10000, Status: job.StatusOpen, PayType: job.PayTypeFixed,
+	}
+	repo.jobs[id] = open
+	repo.hasApps[id] = true
+	newBudget := int64(99900)
+	_, err := svc.UpdateJob(context.Background(), verifiedJobClaims("poster"), id, job.UpdateJobRequest{BudgetCents: &newBudget})
+	if err == nil {
+		t.Fatal("expected freeze when applications exist")
+	}
+	if !errors.Is(err, job.ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
 func TestService_UpdateJob_FreezesBudgetWhenInProgress(t *testing.T) {
 	repo := newMockJobRepository()
 	svc := job.NewService(repo)
@@ -476,6 +512,53 @@ func TestJobHandlerRoutes_NilAuthDoesNotExposeWrites(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized && rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 401/403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestService_DeleteJob_BlockedWhenApplicationsExist(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+	id := uuid.New()
+	repo.jobs[id] = &job.Job{ID: id, CreatedBy: "poster", Title: "T", Description: "d", Status: job.StatusOpen}
+	repo.hasApps[id] = true
+	err := svc.DeleteJob(context.Background(), verifiedJobClaims("poster"), id)
+	if !errors.Is(err, job.ErrJobHasDependents) {
+		t.Fatalf("expected ErrJobHasDependents, got %v", err)
+	}
+}
+
+func TestService_DeleteJob_BlockedWhenContractsExist(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+	id := uuid.New()
+	repo.jobs[id] = &job.Job{ID: id, CreatedBy: "poster", Title: "T", Description: "d", Status: job.StatusOpen}
+	repo.hasAnyContract[id] = true
+	err := svc.DeleteJob(context.Background(), verifiedJobClaims("poster"), id)
+	if !errors.Is(err, job.ErrJobHasDependents) {
+		t.Fatalf("expected ErrJobHasDependents, got %v", err)
+	}
+}
+
+func TestHandler_DeleteJob_ConflictWhenDependents(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+	h := job.NewHandler(svc, repo)
+	id := uuid.New()
+	poster := uuid.New().String()
+	repo.jobs[id] = &job.Job{ID: id, CreatedBy: poster, Title: "T", Description: "d", Status: job.StatusOpen}
+	repo.hasApps[id] = true
+	claims := verifiedJobClaims(poster)
+	r := h.Routes(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := auth.WithUserContext(req.Context(), claims)
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	req := httptest.NewRequest(http.MethodDelete, "/jobs/"+id.String(), nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
