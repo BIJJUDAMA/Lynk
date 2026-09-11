@@ -13,10 +13,11 @@ import (
 )
 
 var (
-	ErrJobNotFound  = errors.New("job not found")
-	ErrForbidden    = errors.New("forbidden: insufficient permissions")
-	ErrInvalidInput = errors.New("invalid input")
-	ErrUnauthorized = errors.New("unauthorized: missing or invalid credentials")
+	ErrJobNotFound      = errors.New("job not found")
+	ErrForbidden        = errors.New("forbidden: insufficient permissions")
+	ErrInvalidInput     = errors.New("invalid input")
+	ErrUnauthorized     = errors.New("unauthorized: missing or invalid credentials")
+	ErrJobHasDependents = errors.New("job cannot be deleted while applications or contracts exist")
 )
 
 // Service provides business logic and validation for jobs.
@@ -151,6 +152,16 @@ func (s *Service) UpdateJob(ctx context.Context, claims *auth.UserClaims, id uui
 		}
 	}
 
+	if req.BudgetCents != nil || req.PayType != nil || req.Deadline != nil {
+		hasApps, err := s.repo.HasApplicationsForJob(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if hasApps {
+			return nil, fmt.Errorf("%w: budget, pay_type, and deadline cannot change after applications exist", ErrInvalidInput)
+		}
+	}
+
 	if req.Title != nil {
 		t := strings.TrimSpace(*req.Title)
 		if t == "" {
@@ -260,6 +271,18 @@ func (s *Service) DeleteJob(ctx context.Context, claims *auth.UserClaims, id uui
 
 	if job.CreatedBy != callerID {
 		return ErrForbidden
+	}
+
+	hasApps, err := s.repo.HasApplicationsForJob(ctx, id)
+	if err != nil {
+		return err
+	}
+	hasContracts, err := s.repo.HasAnyContractForJob(ctx, id)
+	if err != nil {
+		return err
+	}
+	if hasApps || hasContracts {
+		return ErrJobHasDependents
 	}
 
 	return s.repo.DeleteJob(ctx, id)
