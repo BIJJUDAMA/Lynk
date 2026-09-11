@@ -56,6 +56,12 @@ services:
       - minio_data:/data
     networks:
       - lynk-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   api:
     build:
@@ -85,9 +91,8 @@ services:
         condition: service_healthy
       supertokens:
         condition: service_healthy
-      # MinIO RELEASE image may not include curl. API startup retries EnsureBucket then exits.
       minio:
-        condition: service_started
+        condition: service_healthy
     networks:
       - lynk-net
     healthcheck:
