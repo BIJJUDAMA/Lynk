@@ -69,10 +69,12 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	filter := JobFilter{
 		Search:     strings.TrimSpace(q.Get("search")),
 		Department: strings.TrimSpace(q.Get("department")),
-		Skill:      strings.TrimSpace(q.Get("skill")),
 		PayType:    strings.ToLower(strings.TrimSpace(q.Get("pay_type"))),
 		Status:     strings.ToLower(strings.TrimSpace(q.Get("status"))),
 	}
+	single, many := ParseSkillQuery(q["skill"])
+	filter.Skill = single
+	filter.Skills = many
 
 	if minStr := strings.TrimSpace(q.Get("min_budget_cents")); minStr != "" {
 		if val, err := strconv.ParseInt(minStr, 10, 64); err == nil {
@@ -317,6 +319,10 @@ func (h *Handler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, ErrForbidden) {
 			httputil.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "Only the job creator can delete this opportunity", nil)
+			return
+		}
+		if errors.Is(err, ErrJobHasDependents) {
+			httputil.WriteError(w, r, http.StatusConflict, "JOB_HAS_DEPENDENTS", err.Error(), err)
 			return
 		}
 		httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete job", err)
