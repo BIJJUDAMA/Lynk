@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	jobpkg "github.com/lynk/backend/internal/job"
 )
 
 // ApplicationRepository defines persistence operations for applications and atomic contract creation.
@@ -386,9 +385,6 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 		return nil, nil, fmt.Errorf("lock job: %w", err)
 	}
 	if job.Status != "open" {
-		return nil, nil, ErrJobNotOpen
-	}
-	if jobpkg.DeadlineCalendarDayPassed(deadline, time.Now().UTC()) {
 		return nil, nil, ErrJobNotOpen
 	}
 

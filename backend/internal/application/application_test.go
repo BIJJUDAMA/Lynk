@@ -1022,6 +1022,113 @@ func TestApplication_AcceptApplication_AtomicWorkflow(t *testing.T) {
 	})
 }
 
+func TestApplication_AcceptApplication_PermittedAfterDeadlinePassed(t *testing.T) {
+	repo := newMockApplicationRepo()
+	jobID := uuid.New()
+	creatorID := uuid.New().String()
+	past := time.Now().UTC().Add(-72 * time.Hour)
+
+	targetJob := &job.Job{
+		ID:          jobID,
+		CreatedBy:   creatorID,
+		Title:       "Past Deadline Job",
+		Description: "Reviewing applicants after deadline expired",
+		BudgetCents: 150000,
+		PayType:     job.PayTypeFixed,
+		Department:  "Engineering",
+		Status:      job.StatusOpen,
+		Deadline:    &past,
+	}
+	repo.jobs[jobID] = targetJob
+
+	applicantID := uuid.New().String()
+	app := &Application{
+		ID:          uuid.New(),
+		JobID:       jobID,
+		ApplicantID: applicantID,
+		CoverLetter: "Submitted before deadline, accepted after deadline passed",
+		Status:      StatusPending,
+	}
+	_ = repo.CreateApplication(context.Background(), app)
+	repo.users[applicantID] = &user.User{ID: applicantID, Email: "applicant@stanford.edu", Role: "member"}
+	repo.profiles[applicantID] = &user.Profile{
+		UserID:    applicantID,
+		FirstName: "Jane",
+		LastName:  "Doe",
+	}
+
+	service := NewService(repo, repo, repo)
+	creatorClaims := &auth.UserClaims{
+		UserID:        creatorID,
+		Email:         "employer@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	// 1. Service layer direct test: UpdateApplicationStatus succeeds even after deadline has passed
+	details, contract, err := service.UpdateApplicationStatus(
+		context.Background(),
+		creatorClaims,
+		app.ID,
+		UpdateApplicationStatusRequest{Status: StatusAccepted},
+	)
+	if err != nil {
+		t.Fatalf("expected application acceptance to succeed after deadline passed, got: %v", err)
+	}
+	if details == nil || details.Status != StatusAccepted {
+		t.Fatalf("expected application status 'accepted', got %+v", details)
+	}
+	if contract == nil || contract.Status != ContractStatusActive {
+		t.Fatalf("expected active contract, got %+v", contract)
+	}
+	if targetJob.Status != job.StatusInProgress {
+		t.Fatalf("expected job status 'in_progress', got %s", targetJob.Status)
+	}
+
+	// 2. HTTP Handler layer test
+	jobID2 := uuid.New()
+	targetJob2 := &job.Job{
+		ID:          jobID2,
+		CreatedBy:   creatorID,
+		Title:       "Past Deadline Job 2",
+		Description: "Reviewing via HTTP handler after deadline passed",
+		BudgetCents: 80000,
+		PayType:     job.PayTypeFixed,
+		Department:  "Design",
+		Status:      job.StatusOpen,
+		Deadline:    &past,
+	}
+	repo.jobs[jobID2] = targetJob2
+
+	appID2 := uuid.New()
+	app2 := &Application{
+		ID:          appID2,
+		JobID:       jobID2,
+		ApplicantID: applicantID,
+		CoverLetter: "Candidate applied in time",
+		Status:      StatusPending,
+	}
+	_ = repo.CreateApplication(context.Background(), app2)
+
+	handler := NewHandler(service, repo)
+	router := handler.Routes(httpx.RequireAuthFromContext())
+
+	payload, _ := json.Marshal(UpdateApplicationStatusRequest{Status: "accepted"})
+	req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/applications/%s/status", appID2), bytes.NewReader(payload))
+	req = withAuthContext(req, creatorClaims)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200 OK when accepting after deadline passed, got %d. Body: %s", rec.Code, rec.Body.String())
+	}
+	env := parseEnvelope(t, rec.Body.Bytes())
+	if !env.Success {
+		t.Fatalf("expected success=true, got %+v", env.Error)
+	}
+}
+
 func TestApplication_RejectApplication(t *testing.T) {
 	repo := newMockApplicationRepo()
 	service := NewService(repo, repo, repo)
