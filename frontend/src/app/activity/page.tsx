@@ -594,7 +594,7 @@ function ActivityContent() {
                         </span>
 
                         <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                          • {formatBudget(contract.agreed_budget_cents, "fixed")}
+                          • {formatBudget(contract.agreed_budget_cents, contract.job?.pay_type ?? "fixed")}
                         </span>
                       </div>
 
