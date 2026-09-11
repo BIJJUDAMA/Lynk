@@ -10,6 +10,7 @@ import (
 	"github.com/lynk/backend/internal/auth"
 	"github.com/lynk/backend/internal/httpx"
 	"github.com/lynk/backend/internal/httputil"
+	"github.com/lynk/backend/internal/middleware"
 	"github.com/lynk/backend/internal/storage"
 )
 
@@ -59,9 +60,15 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 	r.Get("/profile/{id}", h.GetProfileByID)
 
 	if h.s3Client != nil {
-		r.Post("/profile/resume", h.UploadResume(h.s3Client))
-		r.Get("/profile/resume", h.GetMyResumeURL(h.s3Client))
-		r.Get("/profile/{id}/resume", h.GetMemberResumeURL(h.s3Client))
+		r.Group(func(vr chi.Router) {
+			vr.Use(middleware.RequireVerifiedEmail())
+			vr.Post("/profile/resume", h.UploadResume(h.s3Client))
+			vr.Get("/profile/resume", h.GetMyResumeURL(h.s3Client))
+			vr.Get("/profile/{id}/resume", h.GetMemberResumeURL(h.s3Client))
+			vr.Post("/profile/student/resume", h.UploadResume(h.s3Client))
+			vr.Get("/profile/student/resume", h.GetMyResumeURL(h.s3Client))
+			vr.Get("/profile/student/{id}/resume", h.GetMemberResumeURL(h.s3Client))
+		})
 	}
 
 	// Backwards compatibility aliases
@@ -70,11 +77,6 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 	r.Get("/profile/student/{id}", h.GetProfileByID)
 	r.Get("/profile/employer", h.GetMyProfile)
 	r.Put("/profile/employer", h.UpdateMyProfile)
-	if h.s3Client != nil {
-		r.Post("/profile/student/resume", h.UploadResume(h.s3Client))
-		r.Get("/profile/student/resume", h.GetMyResumeURL(h.s3Client))
-		r.Get("/profile/student/{id}/resume", h.GetMemberResumeURL(h.s3Client))
-	}
 
 	return r
 }
@@ -97,9 +99,15 @@ func (h *Handler) ProfileRoutes(authMiddleware func(http.Handler) http.Handler) 
 	r.Get("/{id}", h.GetProfileByID)
 
 	if h.s3Client != nil {
-		r.Post("/resume", h.UploadResume(h.s3Client))
-		r.Get("/resume", h.GetMyResumeURL(h.s3Client))
-		r.Get("/{id}/resume", h.GetMemberResumeURL(h.s3Client))
+		r.Group(func(vr chi.Router) {
+			vr.Use(middleware.RequireVerifiedEmail())
+			vr.Post("/resume", h.UploadResume(h.s3Client))
+			vr.Get("/resume", h.GetMyResumeURL(h.s3Client))
+			vr.Get("/{id}/resume", h.GetMemberResumeURL(h.s3Client))
+			vr.Post("/student/resume", h.UploadResume(h.s3Client))
+			vr.Get("/student/resume", h.GetMyResumeURL(h.s3Client))
+			vr.Get("/student/{id}/resume", h.GetMemberResumeURL(h.s3Client))
+		})
 	}
 
 	// Backwards compatibility aliases
@@ -108,11 +116,6 @@ func (h *Handler) ProfileRoutes(authMiddleware func(http.Handler) http.Handler) 
 	r.Get("/student/{id}", h.GetProfileByID)
 	r.Get("/employer", h.GetMyProfile)
 	r.Put("/employer", h.UpdateMyProfile)
-	if h.s3Client != nil {
-		r.Post("/student/resume", h.UploadResume(h.s3Client))
-		r.Get("/student/resume", h.GetMyResumeURL(h.s3Client))
-		r.Get("/student/{id}/resume", h.GetMemberResumeURL(h.s3Client))
-	}
 
 	return r
 }

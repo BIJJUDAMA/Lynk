@@ -21,22 +21,27 @@ func NewPGResumeAccessChecker(db *pgxpool.Pool) *PGResumeAccessChecker {
 	return &PGResumeAccessChecker{db: db}
 }
 
-// JobOwnerMayDownloadApplicantResume returns true when ownerID posted a job that applicantUserID applied to.
-func (c *PGResumeAccessChecker) JobOwnerMayDownloadApplicantResume(ctx context.Context, ownerID, applicantUserID string) (bool, error) {
-	if c == nil || c.db == nil {
-		return false, nil
-	}
-	const q = `
+func jobOwnerResumeAccessQuery() string {
+	return `
 		SELECT EXISTS (
 			SELECT 1
 			FROM jobs j
 			INNER JOIN applications a ON a.job_id = j.id
 			WHERE j.created_by = $1
 			  AND a.applicant_id = $2
+			  AND a.status IN ('pending', 'accepted')
+			  AND j.status IN ('open', 'in_progress')
 		);
 	`
+}
+
+// JobOwnerMayDownloadApplicantResume returns true when ownerID posted a job that applicantUserID applied to.
+func (c *PGResumeAccessChecker) JobOwnerMayDownloadApplicantResume(ctx context.Context, ownerID, applicantUserID string) (bool, error) {
+	if c == nil || c.db == nil {
+		return false, nil
+	}
 	var ok bool
-	if err := c.db.QueryRow(ctx, q, ownerID, applicantUserID).Scan(&ok); err != nil {
+	if err := c.db.QueryRow(ctx, jobOwnerResumeAccessQuery(), ownerID, applicantUserID).Scan(&ok); err != nil {
 		return false, err
 	}
 	return ok, nil
