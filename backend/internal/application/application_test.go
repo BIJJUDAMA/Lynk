@@ -349,6 +349,29 @@ func TestService_ApplyToJob_RejectsPastDeadline(t *testing.T) {
 	}
 }
 
+func TestService_ApplyToJob_AllowsNoonOnDeadlineDay(t *testing.T) {
+	deadline := time.Date(2099, 1, 15, 0, 0, 0, 0, time.UTC)
+	jobRow := &job.Job{ID: uuid.New(), Status: job.StatusOpen, Deadline: &deadline, CreatedBy: "p", Title: "t", Description: "d"}
+	appSvc := NewService(newMockApplicationRepo(), &stubJobReader{job: jobRow}, nil)
+	claims := &auth.UserClaims{UserID: "a", EmailVerified: true}
+	_, err := appSvc.ApplyToJob(context.Background(), claims, jobRow.ID, ApplyRequest{CoverLetter: "this is a sufficiently long cover letter"})
+	if err != nil {
+		t.Fatalf("expected apply on deadline calendar day, got %v", err)
+	}
+}
+
+func TestService_ApplyToJob_AllowsSameCalendarDayAfterMidnightInstant(t *testing.T) {
+	now := time.Now().UTC()
+	deadline := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	jobRow := &job.Job{ID: uuid.New(), Status: job.StatusOpen, Deadline: &deadline, CreatedBy: "p", Title: "t", Description: "d"}
+	appSvc := NewService(newMockApplicationRepo(), &stubJobReader{job: jobRow}, nil)
+	claims := &auth.UserClaims{UserID: "a", EmailVerified: true}
+	_, err := appSvc.ApplyToJob(context.Background(), claims, jobRow.ID, ApplyRequest{CoverLetter: "this is a sufficiently long cover letter"})
+	if err != nil {
+		t.Fatalf("same calendar day after midnight must allow apply, got %v", err)
+	}
+}
+
 func TestService_ApplyToJob_RejectsAlienResumeKey(t *testing.T) {
 	svc := NewService(newMockApplicationRepo(), &mockJobLookup{}, nil)
 	claims := &auth.UserClaims{UserID: "usr_alice", EmailVerified: true}

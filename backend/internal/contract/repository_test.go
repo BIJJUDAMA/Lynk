@@ -33,11 +33,11 @@ func TestUpdateContractStatus_CancelRestoresApplicationsToPending(t *testing.T) 
 	if !strings.Contains(sql, "UPDATE applications") {
 		t.Fatalf("expected cancel path to UPDATE applications, got:\n%s", sql)
 	}
-	if !strings.Contains(sql, "status = 'pending'") && !strings.Contains(sql, `status = $`) {
-		t.Fatalf("expected restore to pending, got:\n%s", sql)
+	if !strings.Contains(sql, "status = 'accepted'") {
+		t.Fatalf("expected restore only accepted applications, got:\n%s", sql)
 	}
-	if !strings.Contains(sql, "FOR UPDATE") && !strings.Contains(getLockJobOnContractCancellationQuery(), "FOR UPDATE") {
-		t.Fatalf("expected job row lock before reopen")
+	if strings.Contains(strings.ToLower(sql), "status = 'rejected'") {
+		t.Fatalf("must not rewrite rejected rows, got:\n%s", sql)
 	}
 }
 

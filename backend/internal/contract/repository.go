@@ -216,7 +216,8 @@ func getLockJobOnContractCancellationQuery() string {
 const queryRestoreApplicationsOnContractCancellation = `
 	UPDATE applications
 	SET status = 'pending', updated_at = NOW()
-	WHERE job_id = (SELECT job_id FROM contracts WHERE id = $1);
+	WHERE job_id = (SELECT job_id FROM contracts WHERE id = $1)
+	  AND status = 'accepted';
 `
 
 func getRestoreApplicationsOnContractCancellationQuery() string {
