@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"slices"
 )
 
 type contextKey string
@@ -28,12 +29,7 @@ func (c *UserClaims) HasRole(role string) bool {
 	if c == nil {
 		return false
 	}
-	for _, r := range c.Roles {
-		if r == role {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.Roles, role)
 }
 
 func WithUserContext(ctx context.Context, claims *UserClaims) context.Context {

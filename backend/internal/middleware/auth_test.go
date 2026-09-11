@@ -770,4 +770,181 @@ func TestSessionMiddleware_RejectsSessionWhenEmailCannotBeResolved(t *testing.T)
 	}
 }
 
+func TestSessionMiddleware_StaleUnverifiedToken_SynchronizesWhenFreshlyVerified(t *testing.T) {
+	payload := map[string]interface{}{
+		"email":         "stale@stanford.edu",
+		"emailVerified": false,
+		"roles":         []interface{}{"member"},
+	}
+	mergeCalled := false
+	var mergedUpdate map[string]interface{}
+
+	container := &sessmodels.TypeSessionContainer{
+		GetUserID: func() string { return "user_stale_verified" },
+		GetUserIDWithContext: func(userContext supertokens.UserContext) string { return "user_stale_verified" },
+		GetTenantId: func() string { return "public" },
+		GetTenantIdWithContext: func(userContext supertokens.UserContext) string { return "public" },
+		GetAccessTokenPayload: func() map[string]interface{} {
+			return payload
+		},
+		GetAccessTokenPayloadWithContext: func(userContext supertokens.UserContext) map[string]interface{} {
+			return payload
+		},
+		MergeIntoAccessTokenPayload: func(accessTokenPayloadUpdate map[string]interface{}) error {
+			mergeCalled = true
+			mergedUpdate = accessTokenPayloadUpdate
+			for k, v := range accessTokenPayloadUpdate {
+				payload[k] = v
+			}
+			return nil
+		},
+		AssertClaimsWithContext: func(claimValidators []claims.SessionClaimValidator, userContext supertokens.UserContext) error {
+			return nil
+		},
+		AttachToRequestResponseWithContext: func(info sessmodels.RequestResponseInfo, userContext supertokens.UserContext) error {
+			return nil
+		},
+	}
+
+	emailVerificationCalled := false
+	err := initSuperTokensForMiddlewareTest(
+		func() (sessmodels.SessionContainer, error) {
+			return container, nil
+		},
+		func(userID string) (*epmodels.User, error) {
+			return &epmodels.User{
+				ID:    userID,
+				Email: "stale@stanford.edu",
+			}, nil
+		},
+		func(userID, email string) (bool, error) {
+			emailVerificationCalled = true
+			if userID == "user_stale_verified" {
+				return true, nil
+			}
+			return false, nil
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("failed to init supertokens: %v", err)
+	}
+
+	var capturedClaims *auth.UserClaims
+	handler := middleware.SessionMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, err := auth.GetUserContext(r.Context())
+		if err != nil {
+			t.Fatalf("failed to get user context: %v", err)
+		}
+		capturedClaims = claims
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/api/v1/profile/me", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !emailVerificationCalled {
+		t.Fatal("expected emailverification.IsEmailVerified to be queried when payload isVerified is false")
+	}
+	if capturedClaims == nil {
+		t.Fatal("expected captured claims, got nil")
+	}
+	if !capturedClaims.EmailVerified {
+		t.Fatalf("expected EmailVerified to be synchronized to true, got false")
+	}
+	if !mergeCalled {
+		t.Fatal("expected MergeIntoAccessTokenPayload to be called")
+	}
+	if mergedUpdate["emailVerified"] != true {
+		t.Fatalf("expected merged emailVerified to be true, got %v", mergedUpdate["emailVerified"])
+	}
+}
+
+func TestSessionMiddleware_StaleUnverifiedToken_RemainsUnverifiedWhenNotFreshlyVerified(t *testing.T) {
+	payload := map[string]interface{}{
+		"email":         "stale@stanford.edu",
+		"emailVerified": false,
+		"roles":         []interface{}{"member"},
+	}
+	mergeCalled := false
+
+	container := &sessmodels.TypeSessionContainer{
+		GetUserID: func() string { return "user_stale_unverified" },
+		GetUserIDWithContext: func(userContext supertokens.UserContext) string { return "user_stale_unverified" },
+		GetTenantId: func() string { return "public" },
+		GetTenantIdWithContext: func(userContext supertokens.UserContext) string { return "public" },
+		GetAccessTokenPayload: func() map[string]interface{} {
+			return payload
+		},
+		GetAccessTokenPayloadWithContext: func(userContext supertokens.UserContext) map[string]interface{} {
+			return payload
+		},
+		MergeIntoAccessTokenPayload: func(accessTokenPayloadUpdate map[string]interface{}) error {
+			mergeCalled = true
+			return nil
+		},
+		AssertClaimsWithContext: func(claimValidators []claims.SessionClaimValidator, userContext supertokens.UserContext) error {
+			return nil
+		},
+		AttachToRequestResponseWithContext: func(info sessmodels.RequestResponseInfo, userContext supertokens.UserContext) error {
+			return nil
+		},
+	}
+
+	emailVerificationCalled := false
+	err := initSuperTokensForMiddlewareTest(
+		func() (sessmodels.SessionContainer, error) {
+			return container, nil
+		},
+		func(userID string) (*epmodels.User, error) {
+			return &epmodels.User{
+				ID:    userID,
+				Email: "stale@stanford.edu",
+			}, nil
+		},
+		func(userID, email string) (bool, error) {
+			emailVerificationCalled = true
+			return false, nil
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("failed to init supertokens: %v", err)
+	}
+
+	var capturedClaims *auth.UserClaims
+	handler := middleware.SessionMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, err := auth.GetUserContext(r.Context())
+		if err != nil {
+			t.Fatalf("failed to get user context: %v", err)
+		}
+		capturedClaims = claims
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/api/v1/profile/me", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !emailVerificationCalled {
+		t.Fatal("expected emailverification.IsEmailVerified to be queried when payload isVerified is false")
+	}
+	if capturedClaims == nil {
+		t.Fatal("expected captured claims, got nil")
+	}
+	if capturedClaims.EmailVerified {
+		t.Fatalf("expected EmailVerified to remain false, got true")
+	}
+	if mergeCalled {
+		t.Fatal("expected MergeIntoAccessTokenPayload NOT to be called when user is still unverified")
+	}
+}
+
 

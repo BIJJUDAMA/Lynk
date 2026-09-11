@@ -103,6 +103,16 @@ func SessionMiddleware() func(http.Handler) http.Handler {
 				payload := sessionContainer.GetAccessTokenPayload()
 				email, isVerified, roles, complete := ParseSessionPayload(payload)
 				if complete {
+					if !isVerified {
+						if freshVerified, err := emailverification.IsEmailVerified(userID, nil); err == nil && freshVerified {
+							isVerified = true
+							if sessionContainer.MergeIntoAccessTokenPayload != nil {
+								_ = sessionContainer.MergeIntoAccessTokenPayload(map[string]interface{}{
+									"emailVerified": true,
+								})
+							}
+						}
+					}
 					claims := &auth.UserClaims{
 						UserID:        userID,
 						Email:         email,
