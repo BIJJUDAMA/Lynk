@@ -5,3 +5,24 @@ export async function refreshSessionAfterEmailVerification(session: {
     await session.attemptRefreshingSession();
   }
 }
+
+export async function syncStaleEmailVerification(
+  claimed: boolean | undefined,
+  checkVerification: () => Promise<{ isVerified?: boolean } | null | undefined>,
+  attemptRefresh: () => Promise<boolean | void>
+): Promise<boolean> {
+  let emailVerified = claimed ?? false;
+  if (!claimed) {
+    try {
+      const isVerifiedRes = await checkVerification();
+      if (isVerifiedRes?.isVerified) {
+        emailVerified = true;
+        await attemptRefresh().catch(() => false);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return emailVerified;
+}
+
