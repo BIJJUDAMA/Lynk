@@ -241,12 +241,12 @@ func BuildRouter(
 				r.Group(func(vr chi.Router) {
 					vr.Use(middleware.RequireVerifiedEmail())
 					if s3Client != nil {
-						vr.Get("/resume", userHandler.GetMyResumeURL(s3Client))
-						vr.Get("/{id}/resume", userHandler.GetMemberResumeURL(s3Client))
-						vr.Post("/resume", userHandler.UploadResume(s3Client))
-						vr.Post("/student/resume", userHandler.UploadResume(s3Client))
-						vr.Get("/student/resume", userHandler.GetMyResumeURL(s3Client))
-						vr.Get("/student/{id}/resume", userHandler.GetStudentResumeURL(s3Client))
+						vr.Get("/resume", userHandler.GetMyResumeURL())
+						vr.Get("/{id}/resume", userHandler.GetMemberResumeURL())
+						vr.Post("/resume", userHandler.UploadResume())
+						vr.Post("/student/resume", userHandler.UploadResume())
+						vr.Get("/student/resume", userHandler.GetMyResumeURL())
+						vr.Get("/student/{id}/resume", userHandler.GetStudentResumeURL())
 					}
 				})
 
@@ -334,6 +334,29 @@ func BuildRouter(
 	})
 
 	return r
+}
+
+// Server socket timeouts configured to comfortably exceed application context deadlines
+// (specifically the 90s dynamic timeout for resume uploads) to prevent TCP socket drops (F-05).
+const (
+	ServerReadHeaderTimeout = 5 * time.Second
+	ServerReadTimeout       = 95 * time.Second  // Comfortably exceeds 90s dynamic request timeout for resume uploads
+	ServerWriteTimeout      = 100 * time.Second // Comfortably exceeds 90s dynamic timeout to prevent TCP drops
+	ServerIdleTimeout       = 60 * time.Second
+)
+
+// NewServer constructs the http.Server with socket-level timeouts configured
+// to comfortably exceed application context deadlines (specifically the 90s
+// dynamic timeout for resume uploads) to prevent TCP socket drops (F-05).
+func NewServer(cfg Config, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              fmt.Sprintf(":%s", cfg.Port),
+		Handler:           handler,
+		ReadHeaderTimeout: ServerReadHeaderTimeout,
+		ReadTimeout:       ServerReadTimeout,  // Comfortably exceeds 90s dynamic request timeout for resume uploads
+		WriteTimeout:      ServerWriteTimeout, // Comfortably exceeds 90s dynamic timeout to prevent TCP drops
+		IdleTimeout:       ServerIdleTimeout,
+	}
 }
 
 func main() {
@@ -453,14 +476,9 @@ func main() {
 	)
 
 	// 7. Start HTTP Server with Graceful Shutdown
-	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%s", cfg.Port),
-		Handler:           router,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       60 * time.Second, // Allow 5MB uploads over slower networks
-		WriteTimeout:      35 * time.Second, // Exceeds chimiddleware.Timeout (30s) to prevent TCP drops
-		IdleTimeout:       60 * time.Second,
-	}
+	// Uses NewServer where ReadTimeout (95s) and WriteTimeout (100s) comfortably exceed
+	// the 90s dynamic request timeout for resume uploads to prevent TCP socket drops (F-05).
+	srv := NewServer(cfg, router)
 
 	serverErrors := make(chan error, 1)
 	go func() {

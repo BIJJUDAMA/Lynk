@@ -698,5 +698,59 @@ func TestBuildRouter_RequestTimeoutAppliedToContext(t *testing.T) {
 	}
 }
 
+func TestNewServer_SocketTimeoutsExceedDynamicUploadTimeout(t *testing.T) {
+	cfg := DefaultTestConfig()
+	srv := NewServer(cfg, http.NewServeMux())
 
+	// Verify constant definitions
+	if ServerReadTimeout != 95*time.Second {
+		t.Errorf("expected ServerReadTimeout constant to be 95s, got %v", ServerReadTimeout)
+	}
+	if ServerWriteTimeout != 100*time.Second {
+		t.Errorf("expected ServerWriteTimeout constant to be 100s, got %v", ServerWriteTimeout)
+	}
+	if ServerReadHeaderTimeout != 5*time.Second {
+		t.Errorf("expected ServerReadHeaderTimeout constant to be 5s, got %v", ServerReadHeaderTimeout)
+	}
+	if ServerIdleTimeout != 60*time.Second {
+		t.Errorf("expected ServerIdleTimeout constant to be 60s, got %v", ServerIdleTimeout)
+	}
 
+	// Dynamic request timeout for resume uploads is 90s.
+	resumeReq := httptest.NewRequest(http.MethodPost, "/api/v1/profile/resume", nil)
+	resumeTimeout := requestTimeout(resumeReq)
+	if resumeTimeout != 90*time.Second {
+		t.Fatalf("expected resume upload request timeout to be 90s, got %v", resumeTimeout)
+	}
+
+	// Server socket ReadTimeout must be 95s and must exceed the 90s upload request timeout
+	// so slow/large client uploads are not forcibly aborted at the TCP socket layer.
+	if srv.ReadTimeout != 95*time.Second {
+		t.Errorf("expected ReadTimeout to be 95s, got %v", srv.ReadTimeout)
+	}
+	if srv.ReadTimeout <= resumeTimeout {
+		t.Errorf("ReadTimeout (%v) must exceed dynamic resume upload timeout (%v)", srv.ReadTimeout, resumeTimeout)
+	}
+
+	// Server socket WriteTimeout must be 100s and must comfortably exceed the 90s upload request timeout
+	// to prevent kernel-level TCP socket drops while the response is written.
+	if srv.WriteTimeout != 100*time.Second {
+		t.Errorf("expected WriteTimeout to be 100s, got %v", srv.WriteTimeout)
+	}
+	if srv.WriteTimeout <= resumeTimeout {
+		t.Errorf("WriteTimeout (%v) must exceed dynamic resume upload timeout (%v)", srv.WriteTimeout, resumeTimeout)
+	}
+
+	// WriteTimeout must exceed ReadTimeout to allow handler processing after read completion
+	if srv.WriteTimeout <= srv.ReadTimeout {
+		t.Errorf("WriteTimeout (%v) must exceed ReadTimeout (%v)", srv.WriteTimeout, srv.ReadTimeout)
+	}
+
+	// ReadHeaderTimeout and IdleTimeout verification
+	if srv.ReadHeaderTimeout != 5*time.Second {
+		t.Errorf("expected ReadHeaderTimeout to be 5s, got %v", srv.ReadHeaderTimeout)
+	}
+	if srv.IdleTimeout != 60*time.Second {
+		t.Errorf("expected IdleTimeout to be 60s, got %v", srv.IdleTimeout)
+	}
+}
