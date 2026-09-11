@@ -17,6 +17,8 @@ type UserRepository interface {
 	GetProfileByID(ctx context.Context, id string) (*Profile, error)
 	UpsertProfile(ctx context.Context, p *Profile) error
 	UpdateResume(ctx context.Context, userID string, key, filename string, size int64) error
+	ProvisionUser(ctx context.Context, u *User, profile *Profile) error
+	WithProfileLock(ctx context.Context, userID string, fn func(context.Context) error) error
 }
 
 // Repository implements UserRepository using pgxpool.Pool against PostgreSQL.
@@ -206,3 +208,89 @@ func (r *Repository) UpdateResume(ctx context.Context, userID string, key, filen
 	}
 	return nil
 }
+
+// ProvisionUser idempotently upserts the user row and an optional profile row within a single database transaction.
+func (r *Repository) ProvisionUser(ctx context.Context, u *User, profile *Profile) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	userQuery := `
+		INSERT INTO users (id, email, role, created_at, updated_at)
+		VALUES ($1, $2, $3, NOW(), NOW())
+		ON CONFLICT (id) DO UPDATE
+		SET email = EXCLUDED.email, role = EXCLUDED.role, updated_at = NOW()
+		RETURNING id, email, role, created_at, updated_at;
+	`
+	if err := tx.QueryRow(ctx, userQuery, u.ID, u.Email, u.Role).Scan(
+		&u.ID, &u.Email, &u.Role, &u.CreatedAt, &u.UpdatedAt,
+	); err != nil {
+		return err
+	}
+
+	if profile != nil {
+		if profile.Skills == nil {
+			profile.Skills = []string{}
+		}
+		if profile.PortfolioLinks == nil {
+			profile.PortfolioLinks = []string{}
+		}
+		linksJSON, err := json.Marshal(profile.PortfolioLinks)
+		if err != nil {
+			return err
+		}
+
+		profileQuery := `
+			INSERT INTO profiles (user_id, first_name, last_name, bio, department, graduation_year, skills, portfolio_links, organization, organization_website, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+			ON CONFLICT (user_id) DO UPDATE
+			SET first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, bio = EXCLUDED.bio,
+			    department = EXCLUDED.department, graduation_year = EXCLUDED.graduation_year,
+			    skills = EXCLUDED.skills, portfolio_links = EXCLUDED.portfolio_links,
+			    organization = EXCLUDED.organization, organization_website = EXCLUDED.organization_website,
+			    updated_at = NOW()
+			RETURNING id, user_id, first_name, last_name, bio, department, graduation_year, skills,
+			          portfolio_links, resume_key, resume_filename, resume_byte_size, organization, organization_website, updated_at;
+		`
+		var returnedLinks []byte
+		if err := tx.QueryRow(ctx, profileQuery, profile.UserID, profile.FirstName, profile.LastName, profile.Bio, profile.Department, profile.GraduationYear, profile.Skills, linksJSON, profile.Organization, profile.OrganizationWebsite).Scan(
+			&profile.ID, &profile.UserID, &profile.FirstName, &profile.LastName, &profile.Bio, &profile.Department,
+			&profile.GraduationYear, &profile.Skills, &returnedLinks, &profile.ResumeKey, &profile.ResumeFilename,
+			&profile.ResumeByteSize, &profile.Organization, &profile.OrganizationWebsite, &profile.UpdatedAt,
+		); err != nil {
+			return err
+		}
+		if len(returnedLinks) > 0 {
+			_ = json.Unmarshal(returnedLinks, &profile.PortfolioLinks)
+		}
+		if profile.Skills == nil {
+			profile.Skills = []string{}
+		}
+		if profile.PortfolioLinks == nil {
+			profile.PortfolioLinks = []string{}
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) WithProfileLock(ctx context.Context, userID string, fn func(context.Context) error) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Advisory lock serializes execution per user without locking the profiles table row
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('profile_lock:' || $1))`, userID); err != nil {
+		return err
+	}
+	if err := fn(ctx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+

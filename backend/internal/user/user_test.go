@@ -23,12 +23,16 @@ type mockUserRepository struct {
 	users    map[string]*user.User
 	profiles map[string]*user.Profile // keyed by user_id
 
+	lockCalls          int
+	errWithProfileLock error
+
 	errUpsertUser     error
 	errGetUser        error
 	errGetProfile     error
 	errGetProfileByID error
 	errUpsertProfile  error
 	errUpdateResume   error
+	errProvisionUser  error
 }
 
 func newMockUserRepository() *mockUserRepository {
@@ -136,6 +140,61 @@ func (m *mockUserRepository) UpdateResume(ctx context.Context, userID string, ke
 	pCopy := *p
 	m.profiles[userID] = &pCopy
 	return nil
+}
+
+func (m *mockUserRepository) ProvisionUser(ctx context.Context, u *user.User, profile *user.Profile) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.errProvisionUser != nil {
+		return m.errProvisionUser
+	}
+	if m.errUpsertUser != nil {
+		return m.errUpsertUser
+	}
+	if profile != nil && m.errUpsertProfile != nil {
+		return m.errUpsertProfile
+	}
+	now := time.Now()
+	if existing, ok := m.users[u.ID]; ok {
+		u.CreatedAt = existing.CreatedAt
+	} else if u.CreatedAt.IsZero() {
+		u.CreatedAt = now
+	}
+	u.UpdatedAt = now
+	userCopy := *u
+	m.users[u.ID] = &userCopy
+
+	if profile != nil {
+		if profile.ID == uuid.Nil {
+			profile.ID = uuid.New()
+		}
+		profile.UpdatedAt = now
+		pCopy := *profile
+		m.profiles[profile.UserID] = &pCopy
+	}
+	return nil
+}
+
+func (m *mockUserRepository) WithProfileLock(ctx context.Context, userID string, fn func(context.Context) error) error {
+	m.mu.Lock()
+	m.lockCalls++
+	err := m.errWithProfileLock
+	m.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return fn(ctx)
+}
+
+func TestService_SyncUser_SurfacesProfileProvisionError(t *testing.T) {
+	repo := newMockUserRepository()
+	repo.errUpsertProfile = errors.New("profile write failed")
+	svc := user.NewService(repo)
+	claims := &auth.UserClaims{UserID: "u1", Email: "a@stanford.edu", EmailVerified: true, Roles: []string{"member"}}
+	_, err := svc.SyncUser(context.Background(), claims, user.SyncUserRequest{})
+	if err == nil {
+		t.Fatal("expected profile provision error")
+	}
 }
 
 func TestSyncUser_Success(t *testing.T) {
@@ -246,6 +305,26 @@ func TestGetMe_Success(t *testing.T) {
 	}
 }
 
+func TestService_UpdateProfile_OmitsFirstNamePreservesExisting(t *testing.T) {
+	repo := newMockUserRepository()
+	svc := user.NewService(repo)
+	userID := "usr_1"
+	_ = repo.UpsertProfile(context.Background(), &user.Profile{
+		UserID: userID, FirstName: "Ada", LastName: "Lovelace", GraduationYear: 2026,
+		Skills: []string{"Go"}, PortfolioLinks: []string{},
+	})
+	updated, err := svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{})
+	if err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+	if updated.FirstName != "Ada" || updated.LastName != "Lovelace" {
+		t.Fatalf("omit must preserve names, got %+v", updated)
+	}
+	if len(updated.Skills) != 1 || updated.Skills[0] != "Go" {
+		t.Fatalf("omit must preserve skills, got %+v", updated.Skills)
+	}
+}
+
 func TestService_UpdateProfile_OmitsGraduationYearPreservesExisting(t *testing.T) {
 	repo := newMockUserRepository()
 	svc := user.NewService(repo)
@@ -262,12 +341,12 @@ func TestService_UpdateProfile_OmitsGraduationYearPreservesExisting(t *testing.T
 	})
 
 	updated, err := svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{
-		FirstName:      "Ada",
-		LastName:       "Lovelace",
-		Bio:            "Updated bio",
+		FirstName:      ptr("Ada"),
+		LastName:       ptr("Lovelace"),
+		Bio:            ptr("Updated bio"),
 		GraduationYear: nil,
-		Skills:         []string{"go"},
-		PortfolioLinks: []string{},
+		Skills:         ptr([]string{"go"}),
+		PortfolioLinks: ptr([]string{}),
 	})
 	if err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
@@ -286,11 +365,11 @@ func TestService_UpdateProfile_ExplicitGraduationYearUpdates(t *testing.T) {
 
 	year := 2028
 	updated, err := svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{
-		FirstName:      "X",
-		LastName:       "Y",
+		FirstName:      ptr("X"),
+		LastName:       ptr("Y"),
 		GraduationYear: &year,
-		Skills:         []string{},
-		PortfolioLinks: []string{},
+		Skills:         ptr([]string{}),
+		PortfolioLinks: ptr([]string{}),
 	})
 	if err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
@@ -308,15 +387,15 @@ func TestUpdateProfile_Validation(t *testing.T) {
 	// 1. Valid update
 	year2025 := 2025
 	req := user.UpdateProfileRequest{
-		FirstName:           "Alex",
-		LastName:            "Rivera",
-		Bio:                 "CS Senior at Stanford interested in distributed systems",
-		Department:          "Computer Science",
+		FirstName:           ptr("Alex"),
+		LastName:            ptr("Rivera"),
+		Bio:                 ptr("CS Senior at Stanford interested in distributed systems"),
+		Department:          ptr("Computer Science"),
 		GraduationYear:      &year2025,
-		Skills:              []string{"Go", "React", "Docker"},
-		PortfolioLinks:      []string{"https://github.com/alexr"},
-		Organization:        "Stanford ACM",
-		OrganizationWebsite: "https://acm.stanford.edu",
+		Skills:              ptr([]string{"Go", "React", "Docker"}),
+		PortfolioLinks:      ptr([]string{"https://github.com/alexr"}),
+		Organization:        ptr("Stanford ACM"),
+		OrganizationWebsite: ptr("https://acm.stanford.edu"),
 	}
 
 	p, err := svc.UpdateProfile(context.Background(), userID, req)
@@ -330,7 +409,7 @@ func TestUpdateProfile_Validation(t *testing.T) {
 
 	// 2. Invalid first name
 	longName := strings.Repeat("A", 101)
-	_, err = svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{FirstName: longName})
+	_, err = svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{FirstName: ptr(longName)})
 	if !errors.Is(err, user.ErrInvalidInput) {
 		t.Errorf("expected ErrInvalidInput, got %v", err)
 	}
@@ -344,7 +423,7 @@ func TestUpdateProfile_Validation(t *testing.T) {
 
 	// 4. Organization website length exceeds 255
 	longWebsite := "https://" + strings.Repeat("a", 250) + ".edu" // length > 255
-	_, err = svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{OrganizationWebsite: longWebsite})
+	_, err = svc.UpdateProfile(context.Background(), userID, user.UpdateProfileRequest{OrganizationWebsite: ptr(longWebsite)})
 	if !errors.Is(err, user.ErrInvalidInput) {
 		t.Errorf("expected ErrInvalidInput for organization website > 255 chars, got %v", err)
 	}
@@ -380,8 +459,8 @@ func TestHandler_Routes(t *testing.T) {
 
 	// 2. PUT /profile/me
 	body, _ := json.Marshal(user.UpdateProfileRequest{
-		FirstName: "Sarah",
-		LastName:  "Chen",
+		FirstName: ptr("Sarah"),
+		LastName:  ptr("Chen"),
 	})
 	req = httptest.NewRequest("PUT", "/profile/me", bytes.NewReader(body))
 	rec = httptest.NewRecorder()
@@ -436,5 +515,9 @@ func TestRepository_GetProfileByID_SARGableQueryBranching(t *testing.T) {
 	if argsNonUUID[0] != nonUUID {
 		t.Errorf("expected argument to be %s, got %v", nonUUID, argsNonUUID[0])
 	}
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }
 
