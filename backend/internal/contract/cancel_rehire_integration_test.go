@@ -65,6 +65,13 @@ func TestCancelThenRehire_Integration(t *testing.T) {
 	if _, err := ctrRepo.UpdateContractStatus(ctx, c1.ID, StatusCancelled); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
+	var app1Status string
+	if err := pool.QueryRow(ctx, `SELECT status FROM applications WHERE id = $1`, app1).Scan(&app1Status); err != nil {
+		t.Fatalf("app1 status lookup: %v", err)
+	}
+	if app1Status != "rejected" {
+		t.Fatalf("expected app1 rejected after cancel, got %s", app1Status)
+	}
 	var restored string
 	if err := pool.QueryRow(ctx, `SELECT status FROM applications WHERE id = $1`, app2).Scan(&restored); err != nil {
 		t.Fatalf("restore lookup: %v", err)

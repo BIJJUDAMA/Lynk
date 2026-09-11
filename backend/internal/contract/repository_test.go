@@ -33,11 +33,14 @@ func TestUpdateContractStatus_CancelRestoresApplicationsToPending(t *testing.T) 
 	if !strings.Contains(sql, "UPDATE applications") {
 		t.Fatalf("expected cancel path to UPDATE applications, got:\n%s", sql)
 	}
-	if !strings.Contains(sql, "status = 'accepted'") {
-		t.Fatalf("expected restore only accepted applications, got:\n%s", sql)
+	if !strings.Contains(sql, "WHEN status = 'accepted' THEN 'rejected'") {
+		t.Fatalf("expected accepted application to be transitioned to rejected, got:\n%s", sql)
 	}
-	if strings.Contains(strings.ToLower(sql), "status = 'rejected'") {
-		t.Fatalf("must not rewrite rejected rows, got:\n%s", sql)
+	if !strings.Contains(sql, "WHEN status = 'rejected' THEN 'pending'") {
+		t.Fatalf("expected rejected candidate applications to be restored to pending, got:\n%s", sql)
+	}
+	if !strings.Contains(sql, "WHERE job_id = (SELECT job_id FROM contracts WHERE id = $1)") {
+		t.Fatalf("expected where clause scoping by contract job_id, got:\n%s", sql)
 	}
 }
 
@@ -58,6 +61,67 @@ func TestRepository_ReopenJobQueryStructure(t *testing.T) {
 	}
 	if !strings.Contains(query, "status = 'in_progress'") {
 		t.Fatalf("expected reopen job query to only reopen in_progress jobs, got:\n%s", query)
+	}
+}
+
+func TestRepository_LockJobQueryStructure(t *testing.T) {
+	query := getLockJobOnContractCancellationQuery()
+
+	if !strings.Contains(query, "SELECT j.id") {
+		t.Fatalf("expected lock job query to select j.id, got:\n%s", query)
+	}
+	if !strings.Contains(query, "FROM jobs j") {
+		t.Fatalf("expected lock job query to query jobs table, got:\n%s", query)
+	}
+	if !strings.Contains(query, "WHERE j.id = (SELECT job_id FROM contracts WHERE id = $1)") {
+		t.Fatalf("expected lock job query to locate parent job id, got:\n%s", query)
+	}
+	if !strings.Contains(query, "FOR UPDATE") {
+		t.Fatalf("expected lock job query to acquire exclusive lock with FOR UPDATE, got:\n%s", query)
+	}
+}
+
+func TestRepository_LockOrderOnCancellationPrecedesContractMutation(t *testing.T) {
+	content, err := os.ReadFile("repository.go")
+	if err != nil {
+		t.Fatalf("failed to read repository.go: %v", err)
+	}
+	src := string(content)
+
+	fnStart := strings.Index(src, "func (r *Repository) UpdateContractStatus(")
+	if fnStart == -1 {
+		t.Fatalf("UpdateContractStatus function not found in repository.go")
+	}
+	fnBody := src[fnStart:]
+	fnEnd := strings.Index(fnBody, "\nfunc ")
+	if fnEnd != -1 {
+		fnBody = fnBody[:fnEnd]
+	}
+
+	lockPos := strings.Index(fnBody, "queryLockJobOnContractCancellation")
+	updatePos := strings.Index(fnBody, "UPDATE contracts")
+
+	if lockPos == -1 {
+		t.Fatalf("expected queryLockJobOnContractCancellation to be called in UpdateContractStatus")
+	}
+	if updatePos == -1 {
+		t.Fatalf("expected UPDATE contracts to be called in UpdateContractStatus")
+	}
+	if lockPos >= updatePos {
+		t.Fatalf("lock ordering violation: queryLockJobOnContractCancellation (pos %d) must precede UPDATE contracts (pos %d) to prevent cyclic deadlocks", lockPos, updatePos)
+	}
+
+	// Verify redundant lock query was removed from the switch-case
+	casePos := strings.Index(fnBody, "case StatusCancelled:")
+	if casePos != -1 {
+		caseBody := fnBody[casePos:]
+		commitPos := strings.Index(caseBody, "tx.Commit")
+		if commitPos != -1 {
+			caseBody = caseBody[:commitPos]
+		}
+		if strings.Contains(caseBody, "queryLockJobOnContractCancellation") {
+			t.Fatalf("redundant queryLockJobOnContractCancellation found in case StatusCancelled block")
+		}
 	}
 }
 

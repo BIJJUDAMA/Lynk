@@ -215,9 +215,13 @@ func getLockJobOnContractCancellationQuery() string {
 
 const queryRestoreApplicationsOnContractCancellation = `
 	UPDATE applications
-	SET status = 'pending', updated_at = NOW()
-	WHERE job_id = (SELECT job_id FROM contracts WHERE id = $1)
-	  AND status = 'accepted';
+	SET status = CASE 
+			WHEN status = 'accepted' THEN 'rejected' 
+			WHEN status = 'rejected' THEN 'pending' 
+			ELSE status 
+		END,
+		updated_at = NOW()
+	WHERE job_id = (SELECT job_id FROM contracts WHERE id = $1);
 `
 
 func getRestoreApplicationsOnContractCancellationQuery() string {
@@ -231,6 +235,13 @@ func (r *Repository) UpdateContractStatus(ctx context.Context, id uuid.UUID, tar
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Standardize lock order: always lock parent job before mutating contracts
+	if targetStatus == StatusCancelled {
+		if _, err := tx.Exec(ctx, queryLockJobOnContractCancellation, id); err != nil {
+			return nil, fmt.Errorf("lock job on contract cancellation: %w", err)
+		}
+	}
 
 	query := `
 		UPDATE contracts
@@ -272,9 +283,6 @@ func (r *Repository) UpdateContractStatus(ctx context.Context, id uuid.UUID, tar
 			return nil, fmt.Errorf("close job: %w", err)
 		}
 	case StatusCancelled:
-		if _, err := tx.Exec(ctx, queryLockJobOnContractCancellation, id); err != nil {
-			return nil, fmt.Errorf("lock job on contract cancellation: %w", err)
-		}
 		if _, err := tx.Exec(ctx, queryReopenJobOnContractCancellation, id); err != nil {
 			return nil, fmt.Errorf("reopen job on contract cancellation: %w", err)
 		}
