@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createDebounced, syncSearchDraftFromParent } from "@/lib/job-filters";
 import {
   Search,
   SlidersHorizontal,
@@ -65,6 +66,31 @@ export function JobFilterBar({
   isLoading,
 }: JobFilterBarProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [searchDraft, setSearchDraft] = useState(filters.search);
+  const onFilterChangeRef = useRef(onFilterChange);
+  onFilterChangeRef.current = onFilterChange;
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+  const searchDebounced = useRef<
+    ReturnType<typeof createDebounced<(value: string) => void>> | undefined
+  >(undefined);
+
+  useEffect(() => {
+    const next = syncSearchDraftFromParent(filters.search, searchDraft);
+    if (next.cancelPending) {
+      searchDebounced.current?.cancel();
+    }
+    setSearchDraft(next.draft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- typing against empty parent must not cancel
+  }, [filters.search]);
+
+  useEffect(() => {
+    const run = createDebounced((value: string) => {
+      onFilterChangeRef.current({ ...filtersRef.current, search: value });
+    }, 350);
+    searchDebounced.current = run;
+    return () => run.cancel();
+  }, []);
 
   // Check if any filter is active
   const hasActiveFilters = Boolean(
@@ -96,6 +122,18 @@ export function JobFilterBar({
     });
   };
 
+  const clearSearch = () => {
+    searchDebounced.current?.cancel();
+    setSearchDraft("");
+    updateField("search", "");
+  };
+
+  const handleReset = () => {
+    searchDebounced.current?.cancel();
+    setSearchDraft("");
+    onReset();
+  };
+
   return (
     <div className="rounded-[10px] border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 sm:p-6">
       {/* Search Input & Quick Controls */}
@@ -107,15 +145,19 @@ export function JobFilterBar({
           </div>
           <input
             type="text"
-            value={filters.search}
-            onChange={(e) => updateField("search", e.target.value)}
+            value={searchDraft}
+            onChange={(e) => {
+              const v = e.target.value;
+              setSearchDraft(v);
+              searchDebounced.current?.(v);
+            }}
             placeholder="Search gigs by title, keywords, or role..."
             className="w-full rounded-[10px] border border-slate-200 bg-slate-50/50 py-2.5 pl-10 pr-10 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white dark:focus:bg-slate-900"
           />
-          {filters.search && (
+          {searchDraft && (
             <button
               type="button"
-              onClick={() => updateField("search", "")}
+              onClick={clearSearch}
               className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
             >
               <X className="h-4 w-4" />
@@ -173,7 +215,7 @@ export function JobFilterBar({
           {hasActiveFilters && (
             <button
               type="button"
-              onClick={onReset}
+              onClick={handleReset}
               title="Reset all filters"
               className="inline-flex items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:text-white"
             >
@@ -344,7 +386,7 @@ export function JobFilterBar({
                 Keyword: &ldquo;{filters.search}&rdquo;
                 <button
                   type="button"
-                  onClick={() => updateField("search", "")}
+                  onClick={clearSearch}
                   className="hover:text-slate-900"
                 >
                   <X className="h-3 w-3" />
