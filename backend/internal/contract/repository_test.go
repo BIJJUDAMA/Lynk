@@ -174,8 +174,8 @@ func TestRepository_UpdateContractStatus_ClosesJob_Integration(t *testing.T) {
 
 	// 3. Insert test job (initial status 'in_progress')
 	_, err = pool.Exec(ctx, `
-		INSERT INTO jobs (id, created_by, title, description, budget, pay_type, department, status)
-		VALUES ($1, $2, 'Test Job for Completion', 'Test description', 500.00, 'fixed', 'CS', 'in_progress');
+		INSERT INTO jobs (id, created_by, title, description, department, status)
+		VALUES ($1, $2, 'Test Job for Completion', 'Test description', 'CS', 'in_progress');
 	`, jobID, clientUserID)
 	if err != nil {
 		t.Fatalf("failed to insert test job: %v", err)
@@ -192,8 +192,8 @@ func TestRepository_UpdateContractStatus_ClosesJob_Integration(t *testing.T) {
 
 	// 5. Insert test contract (initial status 'active')
 	_, err = pool.Exec(ctx, `
-		INSERT INTO contracts (id, job_id, application_id, client_id, freelancer_id, agreed_budget, status, started_at)
-		VALUES ($1, $2, $3, $4, $5, 500.00, 'active', NOW());
+		INSERT INTO contracts (id, job_id, application_id, client_id, freelancer_id, status, started_at)
+		VALUES ($1, $2, $3, $4, $5, 'active', NOW());
 	`, contractID, jobID, appID, clientUserID, freelancerUserID)
 	if err != nil {
 		t.Fatalf("failed to insert test contract: %v", err)
@@ -279,8 +279,8 @@ func TestRepository_UpdateContractStatus_ReopensJob_Integration(t *testing.T) {
 
 	// 3. Insert test job (initial status 'in_progress')
 	_, err = pool.Exec(ctx, `
-		INSERT INTO jobs (id, created_by, title, description, budget, pay_type, department, status)
-		VALUES ($1, $2, 'Test Job for Reopen', 'Test description', 500.00, 'fixed', 'CS', 'in_progress');
+		INSERT INTO jobs (id, created_by, title, description, department, status)
+		VALUES ($1, $2, 'Test Job for Reopen', 'Test description', 'CS', 'in_progress');
 	`, jobID, clientUserID)
 	if err != nil {
 		t.Fatalf("failed to insert test job: %v", err)
@@ -297,8 +297,8 @@ func TestRepository_UpdateContractStatus_ReopensJob_Integration(t *testing.T) {
 
 	// 5. Insert test contract (initial status 'active')
 	_, err = pool.Exec(ctx, `
-		INSERT INTO contracts (id, job_id, application_id, client_id, freelancer_id, agreed_budget, status, started_at)
-		VALUES ($1, $2, $3, $4, $5, 500.00, 'active', NOW());
+		INSERT INTO contracts (id, job_id, application_id, client_id, freelancer_id, status, started_at)
+		VALUES ($1, $2, $3, $4, $5, 'active', NOW());
 	`, contractID, jobID, appID, clientUserID, freelancerUserID)
 	if err != nil {
 		t.Fatalf("failed to insert test contract: %v", err)

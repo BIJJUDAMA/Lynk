@@ -1,7 +1,7 @@
 # Lynk Documentation Suite & Architecture Hub
 
 > **Authoritative Technical Documentation Hub**  
-> **Platform:** Lynk - High-Trust University Freelance & Campus Gig Marketplace  
+> **Platform:** Lynk - High-Trust Campus Opportunity Discovery & Student Networking Platform  
 > **Repository:** Monorepo (`frontend/`, `backend/`, `docs/`, `docker-compose.yml`)  
 > **Status:** MVP Implementation Baseline (Production-Ready Architecture)  
 > **Identity & Access Management (IAM):** Self-Hosted SuperTokens Core 9.3 (`:3567`)  
@@ -11,20 +11,20 @@
 
 ## 1. Executive Summary & Core Thesis
 
-**Lynk** is an institutional campus freelance and gig marketplace engineered to eliminate friction and distrust between university students, student founders, faculty, campus laboratories, and student organizations.
+**Lynk** is an institutional campus opportunity discovery and student networking platform engineered to connect verified university students, student founders, faculty, campus laboratories, and student organizations. Operating as a pure discovery-first network with zero payment handling (similar to a specialized LinkedIn or Facebook directory for university campuses), Lynk facilitates peer collaboration, deliverable agreements, and verified reputation building.
 
-Traditional freelance platforms (e.g., Upwork, Fiverr) fail campus ecosystems because they:
-1. Impose prohibitive 10-20% fee structures on low-margin student tasks.
+Traditional platforms fail campus ecosystems because they:
+1. Impose financial payment processing overhead and commercial transaction friction on academic and peer collaborations.
 2. Segregate participants into rigid, adversarial "employer" and "freelancer" account silos.
-3. Lack institutional identity verification, exposing students to payment fraud and identity scraping.
+3. Lack institutional identity verification, exposing students to identity fraud and unverified external actors.
 4. Fail to capture academic context (departments, majors, graduation cohorts, and campus reputation).
 
 ### The Unified Campus Member Model
 Lynk completely replaces the fragmented dual-account paradigm with the **Unified Campus Member** model:
 - **Single Identity, Dual Capabilities:** Every authenticated member in the platform possesses a single account backed by a mandatory institutional `.edu` email address.
-- **Fluid Role Switching:** Any member can simultaneously post opportunities (as a client/organizer) and apply to gigs (as a contributor/student).
+- **Fluid Role Switching:** Any member can simultaneously post opportunities (as an organizer/poster) and apply to opportunities (as a contributor/student).
 - **Academic Context:** Profiles feature major, department, graduation year, verified skills, and campus club affiliations alongside professional portfolios.
-- **Trust Through Invariants:** Gigs and proposals are backed by signed deliverable contracts, strict relational constraints, and peer reviews tied to completed contracts.
+- **Trust Through Invariants:** Opportunities and proposals are backed by deliverable collaboration contracts, strict relational constraints, and peer reviews tied to completed contracts.
 
 ```
        +-------------------------------------------------------------+
@@ -34,10 +34,10 @@ Lynk completely replaces the fragmented dual-account paradigm with the **Unified
                        /                             \
                       /                               \
                      v                                 v
-        [ Client / Organizer ]              [ Contributor / Student ]
-        - Create job postings               - Browse campus gigs
+        [ Organizer / Poster ]              [ Contributor / Student ]
+        - Create opportunity postings       - Browse campus opportunities
         - Review proposals                  - Submit applications
-        - Fund & execute contracts          - Upload verified resume
+        - Coordinate & execute contracts    - Upload verified resume
         - Review student deliverable        - Receive peer rating & review
 ```
 
@@ -52,7 +52,7 @@ Lynk completely replaces the fragmented dual-account paradigm with the **Unified
 | **Frontend Auth Client** | `supertokens-web-js` 0.16.0 | Handles session tokens (`sAccessToken`, `sRefreshToken`), direct login, and email verification. |
 | **Backend Stack** | Go 1.25, Chi Router v5.3, `pgx/v5` 5.5, AWS SDK Go v2 (S3) | **Dockerised (`lynk-api`) at `http://localhost:8080`**. Layered architecture: Handler -> Service -> Repository. |
 | **Database** | PostgreSQL 16 Alpine (`lynk-postgres` on port `5432`) | Two logical databases: `lynk_db` (application schema) and `supertokens_db` (auth engine state). |
-| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000010`) | Immutable forward migrations applied automatically on startup or via `make migrate-up`. |
+| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000011`) | Immutable forward migrations applied automatically on startup or via `make migrate-up`. |
 | **Identity & Access (IAM)** | Self-hosted SuperTokens Core 9.3 (`lynk-supertokens` on port `3567`) | Recipes: `EmailPassword`, `Session`, `EmailVerification`. Direct HTTP integration with Go API. |
 | **Object Storage** | MinIO S3 (`lynk-minio` on port `9000` API, `9001` Web Console) | Dedicated exclusively to the `resumes` bucket. Stores PDF/DOCX resumes with pre-signed retrieval URLs. |
 | **Local Network** | Docker Compose bridge network (`lynk-net`) | Internal container DNS: `postgres:5432`, `supertokens:3567`, `minio:9000`, `api:8080`. |
@@ -117,7 +117,7 @@ The documentation suite is structured into dedicated modular domains under [`arc
 | Document | Relative Path | Core Subject Matter | Primary Target Audience |
 | :--- | :--- | :--- | :--- |
 | **System Architecture & Monorepo Topology** | [`architecture/system-architecture.md`](architecture/system-architecture.md) | High-level system topology, container boundaries, layered Go architecture, dynamic socket timeouts, evolutionary roadmap (Phases 1-4). | All Engineers, Architects, Technical Leads |
-| **Database Schema, Relational Constraints & ERD** | [`architecture/database-schema-erd.md`](architecture/database-schema-erd.md) | Mermaid ERD, table-by-table column specs, foreign keys (`ON DELETE RESTRICT`), indexes, state machines, lock ordering discipline, migration registry (000001-000010). | Backend Engineers, Database Admins, System Architects |
+| **Database Schema, Relational Constraints & ERD** | [`architecture/database-schema-erd.md`](architecture/database-schema-erd.md) | Mermaid ERD, table-by-table column specs, foreign keys (`ON DELETE RESTRICT`), indexes, state machines, lock ordering discipline, migration registry (000001-000011). | Backend Engineers, Database Admins, System Architects |
 | **Complete REST API Specifications** | [`architecture/api-specifications.md`](architecture/api-specifications.md) | Exhaustive documentation of all 24 HTTP endpoints across 6 domains: Auth, Profile, Jobs, Applications, Contracts, Reviews. Status codes, request/response JSON schemas, and error shapes. | Frontend Engineers, Backend Engineers, Integrators |
 | **OpenAPI 3.1.0 Contract** | [`architecture/openapi.yaml`](architecture/openapi.yaml) | Machine-readable OpenAPI 3.1.0 specification defining components, schemas, parameters, security schemes (`sessionCookie`, `bearerAuth`), and response envelopes. | API Tooling, Frontend Codegen, QA Engineers |
 | **Security, Threat Model & IAM Architecture** | [`architecture/security-and-iam.md`](architecture/security-and-iam.md) | Self-hosted SuperTokens Core configuration, institutional `.edu` email gate, CORS/CSRF defenses, 1MB body limit DoS prevention, dynamic socket timeouts (F-05), password hashing, and threat mitigation. | Security Auditors, DevOps, Backend Engineers |

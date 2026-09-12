@@ -88,12 +88,12 @@ func (r *Repository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*App
 	query := `
 		SELECT 
 			a.id, a.job_id, a.applicant_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
-			j.id, j.created_by, j.title, j.description, ROUND(j.budget * 100)::bigint, j.pay_type, j.department, j.status,
+			j.id, j.created_by, j.title, j.description, j.department, j.status,
 			u.id, COALESCE(u.email, ''),
 			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.bio, ''),
 			COALESCE(p.department, ''), COALESCE(p.graduation_year, 0), COALESCE(p.skills, '{}'),
 			p.resume_key, p.resume_filename,
-			c.id, ROUND(c.agreed_budget * 100)::bigint, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at
+			c.id, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at
 		FROM applications a
 		JOIN jobs j ON a.job_id = j.id
 		JOIN users u ON a.applicant_id = u.id
@@ -106,7 +106,6 @@ func (r *Repository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*App
 		job                  JobSummary
 		applicant            ApplicantSummary
 		contractID           *uuid.UUID
-		contractAgreedBudgetCents *int64
 		contractStatus       *string
 		contractStartedAt    *time.Time
 		contractCompletedAt  *time.Time
@@ -118,12 +117,12 @@ func (r *Repository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*App
 		&details.ID, &details.JobID, &details.ApplicantID,
 		&details.CoverLetter, &details.ResumeKey, &details.Status,
 		&details.CreatedAt, &details.UpdatedAt,
-		&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.BudgetCents, &job.PayType, &job.Department, &job.Status,
+		&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Department, &job.Status,
 		&applicant.ID, &applicant.Email,
 		&applicant.FirstName, &applicant.LastName, &applicant.Bio,
 		&applicant.Department, &applicant.GraduationYear, &applicant.Skills,
 		&applicant.ResumeKey, &applicant.ResumeFilename,
-		&contractID, &contractAgreedBudgetCents, &contractStatus,
+		&contractID, &contractStatus,
 		&contractStartedAt, &contractCompletedAt, &contractCreatedAt, &contractUpdatedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -139,14 +138,13 @@ func (r *Repository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*App
 	}
 	details.Applicant = &applicant
 
-	if contractID != nil && contractAgreedBudgetCents != nil && contractStatus != nil {
+	if contractID != nil && contractStatus != nil {
 		details.Contract = &Contract{
-			ID:                *contractID,
-			JobID:             details.JobID,
-			ApplicationID:     details.ID,
-			ClientID:          job.CreatedBy,
-			FreelancerID:      details.ApplicantID,
-			AgreedBudgetCents: *contractAgreedBudgetCents,
+			ID:            *contractID,
+			JobID:         details.JobID,
+			ApplicationID: details.ID,
+			ClientID:      job.CreatedBy,
+			FreelancerID:  details.ApplicantID,
 			Status:        *contractStatus,
 			StartedAt:     contractStartedAt,
 			CompletedAt:   contractCompletedAt,
@@ -163,12 +161,12 @@ func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID,
 	query := `
 		SELECT 
 			a.id, a.job_id, a.applicant_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
-			j.id, j.created_by, j.title, j.description, ROUND(j.budget * 100)::bigint, j.pay_type, j.department, j.status,
+			j.id, j.created_by, j.title, j.description, j.department, j.status,
 			u.id, COALESCE(u.email, ''),
 			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.bio, ''),
 			COALESCE(p.department, ''), COALESCE(p.graduation_year, 0), COALESCE(p.skills, '{}'),
 			p.resume_key, p.resume_filename,
-			c.id, ROUND(c.agreed_budget * 100)::bigint, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at
+			c.id, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at
 		FROM applications a
 		JOIN jobs j ON a.job_id = j.id
 		JOIN users u ON a.applicant_id = u.id
@@ -191,7 +189,6 @@ func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID,
 			job                  JobSummary
 			applicant            ApplicantSummary
 			contractID           *uuid.UUID
-			contractAgreedBudgetCents *int64
 			contractStatus       *string
 			contractStartedAt    *time.Time
 			contractCompletedAt  *time.Time
@@ -203,12 +200,12 @@ func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID,
 			&details.ID, &details.JobID, &details.ApplicantID,
 			&details.CoverLetter, &details.ResumeKey, &details.Status,
 			&details.CreatedAt, &details.UpdatedAt,
-			&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.BudgetCents, &job.PayType, &job.Department, &job.Status,
+			&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Department, &job.Status,
 			&applicant.ID, &applicant.Email,
 			&applicant.FirstName, &applicant.LastName, &applicant.Bio,
 			&applicant.Department, &applicant.GraduationYear, &applicant.Skills,
 			&applicant.ResumeKey, &applicant.ResumeFilename,
-			&contractID, &contractAgreedBudgetCents, &contractStatus,
+			&contractID, &contractStatus,
 			&contractStartedAt, &contractCompletedAt, &contractCreatedAt, &contractUpdatedAt,
 		)
 		if err != nil {
@@ -221,14 +218,13 @@ func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID,
 		}
 		details.Applicant = &applicant
 
-		if contractID != nil && contractAgreedBudgetCents != nil && contractStatus != nil {
+		if contractID != nil && contractStatus != nil {
 			details.Contract = &Contract{
-				ID:                *contractID,
-				JobID:             details.JobID,
-				ApplicationID:     details.ID,
-				ClientID:          job.CreatedBy,
-				FreelancerID:      details.ApplicantID,
-				AgreedBudgetCents: *contractAgreedBudgetCents,
+				ID:            *contractID,
+				JobID:         details.JobID,
+				ApplicationID: details.ID,
+				ClientID:      job.CreatedBy,
+				FreelancerID:  details.ApplicantID,
 				Status:        *contractStatus,
 				StartedAt:     contractStartedAt,
 				CompletedAt:   contractCompletedAt,
@@ -252,12 +248,12 @@ func (r *Repository) ListApplicationsByApplicant(ctx context.Context, applicantI
 	query := `
 		SELECT 
 			a.id, a.job_id, a.applicant_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
-			j.id, j.created_by, j.title, j.description, ROUND(j.budget * 100)::bigint, j.pay_type, j.department, j.status,
+			j.id, j.created_by, j.title, j.description, j.department, j.status,
 			u.id, COALESCE(u.email, ''),
 			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.bio, ''),
 			COALESCE(p.department, ''), COALESCE(p.graduation_year, 0), COALESCE(p.skills, '{}'),
 			p.resume_key, p.resume_filename,
-			c.id, ROUND(c.agreed_budget * 100)::bigint, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at
+			c.id, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at
 		FROM applications a
 		JOIN jobs j ON a.job_id = j.id
 		JOIN users u ON a.applicant_id = u.id
@@ -280,7 +276,6 @@ func (r *Repository) ListApplicationsByApplicant(ctx context.Context, applicantI
 			job                  JobSummary
 			applicant            ApplicantSummary
 			contractID           *uuid.UUID
-			contractAgreedBudgetCents *int64
 			contractStatus       *string
 			contractStartedAt    *time.Time
 			contractCompletedAt  *time.Time
@@ -292,12 +287,12 @@ func (r *Repository) ListApplicationsByApplicant(ctx context.Context, applicantI
 			&details.ID, &details.JobID, &details.ApplicantID,
 			&details.CoverLetter, &details.ResumeKey, &details.Status,
 			&details.CreatedAt, &details.UpdatedAt,
-			&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.BudgetCents, &job.PayType, &job.Department, &job.Status,
+			&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Department, &job.Status,
 			&applicant.ID, &applicant.Email,
 			&applicant.FirstName, &applicant.LastName, &applicant.Bio,
 			&applicant.Department, &applicant.GraduationYear, &applicant.Skills,
 			&applicant.ResumeKey, &applicant.ResumeFilename,
-			&contractID, &contractAgreedBudgetCents, &contractStatus,
+			&contractID, &contractStatus,
 			&contractStartedAt, &contractCompletedAt, &contractCreatedAt, &contractUpdatedAt,
 		)
 		if err != nil {
@@ -310,14 +305,13 @@ func (r *Repository) ListApplicationsByApplicant(ctx context.Context, applicantI
 		}
 		details.Applicant = &applicant
 
-		if contractID != nil && contractAgreedBudgetCents != nil && contractStatus != nil {
+		if contractID != nil && contractStatus != nil {
 			details.Contract = &Contract{
-				ID:                *contractID,
-				JobID:             details.JobID,
-				ApplicationID:     details.ID,
-				ClientID:          job.CreatedBy,
-				FreelancerID:      details.ApplicantID,
-				AgreedBudgetCents: *contractAgreedBudgetCents,
+				ID:            *contractID,
+				JobID:         details.JobID,
+				ApplicationID: details.ID,
+				ClientID:      job.CreatedBy,
+				FreelancerID:  details.ApplicantID,
 				Status:        *contractStatus,
 				StartedAt:     contractStartedAt,
 				CompletedAt:   contractCompletedAt,
@@ -345,7 +339,7 @@ func rejectOtherApplicationsQuery() string {
 }
 
 const queryLockJobOnAccept = `
-		SELECT j.id, j.created_by, j.title, j.description, ROUND(j.budget * 100)::bigint, j.pay_type, j.department, j.status, j.deadline
+		SELECT j.id, j.created_by, j.title, j.description, j.department, j.status, j.deadline
 		FROM jobs j
 		WHERE j.id = (SELECT job_id FROM applications WHERE id = $1)
 		FOR UPDATE;
@@ -357,7 +351,7 @@ func lockJobOnAcceptQuery() string { return queryLockJobOnAccept }
 // 1. Sets application status -> 'accepted'
 // 2. Sets other pending applications for that job -> 'rejected'
 // 3. Sets job status -> 'in_progress'
-// 4. Inserts a new row into contracts (status 'active', agreed_budget = job.budget, started_at = NOW())
+// 4. Inserts a new row into contracts (status 'active', started_at = NOW())
 func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (*ApplicationWithDetails, *Contract, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -369,8 +363,8 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 	var job JobSummary
 	var deadline *time.Time
 	err = tx.QueryRow(ctx, lockJobOnAcceptQuery(), appID).Scan(
-		&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.BudgetCents,
-		&job.PayType, &job.Department, &job.Status, &deadline,
+		&job.ID, &job.CreatedBy, &job.Title, &job.Description,
+		&job.Department, &job.Status, &deadline,
 	)
 	if err == pgx.ErrNoRows {
 		// ErrNoRows here means either: (a) no application with this ID exists, or
@@ -445,17 +439,17 @@ func (r *Repository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID) (
 	contractID := uuid.New()
 	insertContractQuery := `
 		INSERT INTO contracts (
-			id, job_id, application_id, client_id, freelancer_id, agreed_budget, status, started_at, created_at, updated_at
+			id, job_id, application_id, client_id, freelancer_id, status, started_at, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6::numeric / 100, 'active', NOW(), NOW(), NOW())
-		RETURNING id, job_id, application_id, client_id, freelancer_id, ROUND(agreed_budget * 100)::bigint, status, started_at, completed_at, created_at, updated_at;
+		VALUES ($1, $2, $3, $4, $5, 'active', NOW(), NOW(), NOW())
+		RETURNING id, job_id, application_id, client_id, freelancer_id, status, started_at, completed_at, created_at, updated_at;
 	`
 	var contract Contract
 	err = tx.QueryRow(ctx, insertContractQuery,
-		contractID, app.JobID, app.ID, job.CreatedBy, app.ApplicantID, job.BudgetCents,
+		contractID, app.JobID, app.ID, job.CreatedBy, app.ApplicantID,
 	).Scan(
 		&contract.ID, &contract.JobID, &contract.ApplicationID, &contract.ClientID,
-		&contract.FreelancerID, &contract.AgreedBudgetCents, &contract.Status,
+		&contract.FreelancerID, &contract.Status,
 		&contract.StartedAt, &contract.CompletedAt, &contract.CreatedAt, &contract.UpdatedAt,
 	)
 	if err != nil {

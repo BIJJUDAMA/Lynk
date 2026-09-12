@@ -69,23 +69,12 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	filter := JobFilter{
 		Search:     strings.TrimSpace(q.Get("search")),
 		Department: strings.TrimSpace(q.Get("department")),
-		PayType:    strings.ToLower(strings.TrimSpace(q.Get("pay_type"))),
 		Status:     strings.ToLower(strings.TrimSpace(q.Get("status"))),
 	}
 	single, many := ParseSkillQuery(q["skill"])
 	filter.Skill = single
 	filter.Skills = many
 
-	if minStr := strings.TrimSpace(q.Get("min_budget_cents")); minStr != "" {
-		if val, err := strconv.ParseInt(minStr, 10, 64); err == nil {
-			filter.MinBudgetCents = &val
-		}
-	}
-	if maxStr := strings.TrimSpace(q.Get("max_budget_cents")); maxStr != "" {
-		if val, err := strconv.ParseInt(maxStr, 10, 64); err == nil {
-			filter.MaxBudgetCents = &val
-		}
-	}
 	if limitStr := strings.TrimSpace(q.Get("limit")); limitStr != "" {
 		if val, err := strconv.Atoi(limitStr); err == nil {
 			filter.Limit = val
@@ -162,17 +151,6 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, r, http.StatusBadRequest, "EMPTY_BODY", "Request body cannot be empty", io.EOF)
 		return
 	}
-	var probe map[string]json.RawMessage
-	if err := json.Unmarshal(body, &probe); err != nil {
-		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body", err)
-		return
-	}
-	if _, ok := probe["budget"]; ok {
-		if _, ok2 := probe["budget_cents"]; !ok2 {
-			httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "budget_cents (integer) is required; floating-point budget is not accepted", nil)
-			return
-		}
-	}
 	var req CreateJobRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body", err)
@@ -241,19 +219,6 @@ func (h *Handler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to read request body", err)
 		return
-	}
-	if len(body) > 0 {
-		var probe map[string]json.RawMessage
-		if err := json.Unmarshal(body, &probe); err != nil {
-			httputil.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "Failed to parse request body", err)
-			return
-		}
-		if _, ok := probe["budget"]; ok {
-			if _, ok2 := probe["budget_cents"]; !ok2 {
-				httputil.WriteError(w, r, http.StatusBadRequest, "BAD_REQUEST", "budget_cents (integer) is required; floating-point budget is not accepted", nil)
-				return
-			}
-		}
 	}
 	var req UpdateJobRequest
 	if len(body) > 0 {

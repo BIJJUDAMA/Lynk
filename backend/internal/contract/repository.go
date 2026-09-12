@@ -54,14 +54,14 @@ func (r *Repository) CreateContract(ctx context.Context, contract *Contract) err
 
 	query := `
 		INSERT INTO contracts (
-			id, job_id, application_id, client_id, freelancer_id, agreed_budget, status, started_at, completed_at, created_at, updated_at
+			id, job_id, application_id, client_id, freelancer_id, status, started_at, completed_at, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6::numeric / 100, $7, $8, $9, NOW(), NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
 		RETURNING created_at, updated_at;
 	`
 	return r.db.QueryRow(ctx, query,
 		contract.ID, contract.JobID, contract.ApplicationID, contract.ClientID,
-		contract.FreelancerID, contract.AgreedBudgetCents, contract.Status,
+		contract.FreelancerID, contract.Status,
 		contract.StartedAt, contract.CompletedAt,
 	).Scan(&contract.CreatedAt, &contract.UpdatedAt)
 }
@@ -71,8 +71,8 @@ func (r *Repository) GetContractByID(ctx context.Context, id uuid.UUID) (*Contra
 	query := `
 		SELECT 
 			c.id, c.job_id, c.application_id, c.client_id, c.freelancer_id,
-			ROUND(c.agreed_budget * 100)::bigint, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at,
-			j.id, j.created_by, j.title, j.description, ROUND(j.budget * 100)::bigint, j.pay_type, j.department, j.status,
+			c.status, c.started_at, c.completed_at, c.created_at, c.updated_at,
+			j.id, j.created_by, j.title, j.description, j.department, j.status,
 			uc.id, COALESCE(uc.email, ''),
 			COALESCE(pc.first_name, ''), COALESCE(pc.last_name, ''),
 			COALESCE(pc.department, ''), COALESCE(pc.graduation_year, 0),
@@ -97,9 +97,9 @@ func (r *Repository) GetContractByID(ctx context.Context, id uuid.UUID) (*Contra
 
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&details.ID, &details.JobID, &details.ApplicationID, &details.ClientID, &details.FreelancerID,
-		&details.AgreedBudgetCents, &details.Status, &details.StartedAt, &details.CompletedAt,
+		&details.Status, &details.StartedAt, &details.CompletedAt,
 		&details.CreatedAt, &details.UpdatedAt,
-		&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.BudgetCents, &job.PayType, &job.Department, &job.Status,
+		&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Department, &job.Status,
 		&client.ID, &client.Email, &client.FirstName, &client.LastName, &client.Department, &client.GraduationYear,
 		&freelancer.ID, &freelancer.Email, &freelancer.FirstName, &freelancer.LastName, &freelancer.Department, &freelancer.GraduationYear,
 	)
@@ -122,8 +122,8 @@ func (r *Repository) ListContractsByUserID(ctx context.Context, userID string, l
 	query := `
 		SELECT 
 			c.id, c.job_id, c.application_id, c.client_id, c.freelancer_id,
-			ROUND(c.agreed_budget * 100)::bigint, c.status, c.started_at, c.completed_at, c.created_at, c.updated_at,
-			j.id, j.created_by, j.title, j.description, ROUND(j.budget * 100)::bigint, j.pay_type, j.department, j.status,
+			c.status, c.started_at, c.completed_at, c.created_at, c.updated_at,
+			j.id, j.created_by, j.title, j.description, j.department, j.status,
 			uc.id, COALESCE(uc.email, ''),
 			COALESCE(pc.first_name, ''), COALESCE(pc.last_name, ''),
 			COALESCE(pc.department, ''), COALESCE(pc.graduation_year, 0),
@@ -158,9 +158,9 @@ func (r *Repository) ListContractsByUserID(ctx context.Context, userID string, l
 
 		err := rows.Scan(
 			&details.ID, &details.JobID, &details.ApplicationID, &details.ClientID, &details.FreelancerID,
-			&details.AgreedBudgetCents, &details.Status, &details.StartedAt, &details.CompletedAt,
+			&details.Status, &details.StartedAt, &details.CompletedAt,
 			&details.CreatedAt, &details.UpdatedAt,
-			&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.BudgetCents, &job.PayType, &job.Department, &job.Status,
+			&job.ID, &job.CreatedBy, &job.Title, &job.Description, &job.Department, &job.Status,
 			&client.ID, &client.Email, &client.FirstName, &client.LastName, &client.Department, &client.GraduationYear,
 			&freelancer.ID, &freelancer.Email, &freelancer.FirstName, &freelancer.LastName, &freelancer.Department, &freelancer.GraduationYear,
 		)

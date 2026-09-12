@@ -1,24 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  centsFromDollarInput,
   createDebounced,
-  dollarsFromBudgetQueryParam,
   syncSearchDraftFromParent,
 } from "./job-filters.ts";
-
-test("dollarsFromBudgetQueryParam treats _cents as integer cents", () => {
-  assert.equal(dollarsFromBudgetQueryParam("50000", null), "500");
-  assert.equal(dollarsFromBudgetQueryParam("50000", "999"), "500");
-  assert.equal(dollarsFromBudgetQueryParam(null, "250"), "250");
-  assert.equal(dollarsFromBudgetQueryParam("", "250"), "250");
-  assert.equal(dollarsFromBudgetQueryParam(null, null), "");
-});
-
-test("round-trip cents URL does not inflate 100x", () => {
-  const dollars = dollarsFromBudgetQueryParam("50000", null);
-  assert.equal(centsFromDollarInput(dollars), 50000);
-});
 
 test("createDebounced collapses rapid calls to the last invocation", async () => {
   const calls: string[] = [];

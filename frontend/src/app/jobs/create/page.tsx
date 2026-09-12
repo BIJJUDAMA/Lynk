@@ -5,10 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Briefcase,
-  DollarSign,
-  Calendar,
-  GraduationCap,
-  Sparkles,
   Plus,
   X,
   AlertCircle,
@@ -16,18 +12,15 @@ import {
   Eye,
   Edit3,
   Loader2,
-  CheckCircle2,
   ShieldAlert,
-  ShieldCheck,
   Lock,
 } from "lucide-react";
-import { JobPayType, CreateJobRequest } from "@/types/api";
+import { CreateJobRequest } from "@/types/api";
 import { createJob, ApiClientError } from "@/lib/api";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   COMMON_DEPARTMENTS,
   POPULAR_SKILLS,
-  formatBudget,
 } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 
@@ -42,8 +35,6 @@ export default function CreateJobPage() {
   const [departmentSelection, setDepartmentSelection] = useState("");
   const [customDepartment, setCustomDepartment] = useState("");
   const [description, setDescription] = useState("");
-  const [payType, setPayType] = useState<JobPayType>("fixed");
-  const [budget, setBudget] = useState("");
   const [deadline, setDeadline] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
@@ -119,15 +110,6 @@ export default function CreateJobPage() {
       errors.description = "Job description must not exceed 5000 characters.";
     }
 
-    const budgetNum = Number(budget);
-    if (budget === "" || isNaN(budgetNum)) {
-      errors.budget = "Please enter a valid budget amount.";
-    } else if (budgetNum < 0) {
-      errors.budget = "Budget cannot be negative.";
-    } else if (budgetNum > 100000) {
-      errors.budget = "Budget exceeds maximum allowed ($100,000).";
-    }
-
     if (skills.length === 0) {
       errors.skills = "Add at least one required skill or course tag.";
     }
@@ -159,8 +141,6 @@ export default function CreateJobPage() {
       title: title.trim(),
       department: resolvedDept,
       description: description.trim(),
-      pay_type: payType,
-      budget_cents: Math.round(Number(budget) * 100),
       required_skills: skills,
       deadline: deadline ? deadline : undefined,
     };
@@ -345,10 +325,6 @@ export default function CreateJobPage() {
             </h2>
 
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-              <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                {budget ? formatBudget(Math.round(Number(budget) * 100), payType) : "$0.00"}
-              </span>
-              <span>•</span>
               <span>Deadline: {deadline || "Flexible"}</span>
               <span>•</span>
               <span>Posted by: {user?.name || user?.email}</span>
@@ -469,64 +445,23 @@ export default function CreateJobPage() {
               )}
             </div>
 
-            {/* Budget & Pay Type */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div>
-                <label className="block text-xs font-medium text-foreground">
-                  Compensation Type
-                </label>
-                <select
-                  value={payType}
-                  onChange={(e) => setPayType(e.target.value as JobPayType)}
-                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
-                >
-                  <option value="fixed">Fixed Price</option>
-                  <option value="hourly">Hourly Rate</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-foreground">
-                  Budget (USD) <span className="text-red-500">*</span>
-                </label>
-                <div className="relative mt-1.5">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-xs text-muted-foreground">
-                    $
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={budget}
-                    onChange={(e) => setBudget(e.target.value)}
-                    placeholder={payType === "hourly" ? "25" : "500"}
-                    className="w-full rounded-lg border border-border bg-background pl-7 pr-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
-                  />
-                </div>
-                {formErrors.budget && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-                    {formErrors.budget}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-foreground">
-                  Target Deadline (Optional)
-                </label>
-                <input
-                  type="date"
-                  min={todayDateString}
-                  value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
-                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
-                />
-                {formErrors.deadline && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-                    {formErrors.deadline}
-                  </p>
-                )}
-              </div>
+            {/* Target Deadline */}
+            <div>
+              <label className="block text-xs font-medium text-foreground">
+                Target Deadline (Optional)
+              </label>
+              <input
+                type="date"
+                min={todayDateString}
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+              />
+              {formErrors.deadline && (
+                <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                  {formErrors.deadline}
+                </p>
+              )}
             </div>
 
             {/* Description */}

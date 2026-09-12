@@ -575,12 +575,7 @@ export async function listJobs(
     } else if (filters.skills && filters.skills.length > 0) {
       queryParams.skill = filters.skills.join(",");
     }
-    if (filters.pay_type) queryParams.pay_type = filters.pay_type;
     if (filters.status) queryParams.status = filters.status;
-    if (filters.min_budget_cents !== undefined)
-      queryParams.min_budget_cents = filters.min_budget_cents;
-    if (filters.max_budget_cents !== undefined)
-      queryParams.max_budget_cents = filters.max_budget_cents;
     if (filters.limit !== undefined) queryParams.limit = filters.limit;
     if (filters.offset !== undefined) queryParams.offset = filters.offset;
   }

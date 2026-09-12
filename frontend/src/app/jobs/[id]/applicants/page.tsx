@@ -14,14 +14,12 @@ import {
   GraduationCap,
   Calendar,
   Clock,
-  DollarSign,
   Download,
   ExternalLink,
   Loader2,
   ShieldCheck,
   AlertTriangle,
   RotateCcw,
-  Sparkles,
   Lock,
   Mail,
 } from "lucide-react";
@@ -40,7 +38,6 @@ import {
 import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
-  formatBudget,
   formatJobDate,
   getStatusBadgeClasses,
   getApplicationStatusBadgeClasses,
@@ -438,11 +435,6 @@ export default function JobApplicantsPage() {
             </h1>
 
             <div className="mt-3 flex flex-wrap items-center gap-y-2 gap-x-6 text-xs text-slate-600 dark:text-slate-400">
-              <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-white">
-                <DollarSign className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <span>{formatBudget(job.budget_cents, job.pay_type)}</span>
-              </div>
-
               {job.deadline && (
                 <div className="flex items-center gap-1.5">
                   <Calendar className="h-4 w-4 text-slate-400" />
@@ -883,8 +875,7 @@ export default function JobApplicantsPage() {
               </div>
               <ul className="mt-2 space-y-1.5 pl-5 list-disc text-[11px] leading-relaxed">
                 <li>
-                  An <strong>Active Contract</strong> will be generated immediately for{" "}
-                  <strong>{formatBudget(job.budget_cents, job.pay_type)}</strong>.
+                  An <strong>Active Contract</strong> will be generated immediately.
                 </li>
                 <li>
                   This job will transition to <strong>In Progress</strong> and close to new applicants.

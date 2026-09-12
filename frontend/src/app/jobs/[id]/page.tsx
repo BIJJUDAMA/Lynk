@@ -7,9 +7,7 @@ import {
   ArrowLeft,
   Calendar,
   Clock,
-  DollarSign,
   GraduationCap,
-  Globe,
   ShieldCheck,
   ShieldAlert,
   Briefcase,
@@ -34,7 +32,6 @@ import {
 import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
-  formatBudget,
   formatJobDate,
   getStatusBadgeClasses,
 } from "@/components/jobs/JobCard";
@@ -317,23 +314,8 @@ export default function JobDetailPage() {
           </div>
         </div>
 
-        {/* Right Sidebar: Compensation & Proposal Action */}
+        {/* Right Sidebar: Proposal Action */}
         <div className="space-y-6">
-          {/* Compensation Card */}
-          <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Compensation
-            </h3>
-            <div className="mt-2 text-2xl font-bold text-foreground">
-              {formatBudget(job.budget_cents, job.pay_type)}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {job.pay_type === "hourly"
-                ? "Paid upon contract deliverable approval."
-                : "Fixed project price paid upon contract deliverable approval."}
-            </p>
-          </div>
-
           {/* Action Card: Apply or Manage */}
           <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
             {isCreator ? (

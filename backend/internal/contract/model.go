@@ -34,7 +34,6 @@ type Contract struct {
 	ApplicationID uuid.UUID  `json:"application_id"`
 	ClientID      string     `json:"client_id"`
 	FreelancerID  string     `json:"freelancer_id"`
-	AgreedBudgetCents int64  `json:"agreed_budget_cents"`
 	Status        string     `json:"status"` // draft, active, completed, cancelled
 	StartedAt     *time.Time `json:"started_at,omitempty"`
 	CompletedAt   *time.Time `json:"completed_at,omitempty"`
@@ -48,8 +47,6 @@ type JobSummary struct {
 	CreatedBy   string    `json:"created_by"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
-	BudgetCents int64     `json:"budget_cents"`
-	PayType     string    `json:"pay_type"`
 	Department  string    `json:"department"`
 	Status      string    `json:"status"`
 }

@@ -34,8 +34,8 @@ func TestCancelThenRehire_Integration(t *testing.T) {
 	}
 	jobID := uuid.New()
 	if _, err := pool.Exec(ctx, `
-		INSERT INTO jobs (id, created_by, title, description, budget, pay_type, required_skills, department, status)
-		VALUES ($1, $2, 'Gig', 'desc', 50, 'fixed', '{}', 'CS', 'open')`, jobID, poster); err != nil {
+		INSERT INTO jobs (id, created_by, title, description, required_skills, department, status)
+		VALUES ($1, $2, 'Gig', 'desc', '{}', 'CS', 'open')`, jobID, poster); err != nil {
 		t.Fatalf("job: %v", err)
 	}
 	app1, app2 := uuid.New(), uuid.New()

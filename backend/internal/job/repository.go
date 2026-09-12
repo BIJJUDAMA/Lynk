@@ -54,12 +54,12 @@ func (r *Repository) CreateJob(ctx context.Context, job *Job) error {
 		job.Status = StatusOpen
 	}
 	query := `
-		INSERT INTO jobs (id, created_by, title, description, budget, pay_type, required_skills, department, deadline, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5::numeric / 100, $6, $7, $8, $9, $10, NOW(), NOW())
+		INSERT INTO jobs (id, created_by, title, description, required_skills, department, deadline, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
 		RETURNING created_at, updated_at;
 	`
 	return r.db.QueryRow(ctx, query,
-		job.ID, job.CreatedBy, job.Title, job.Description, job.BudgetCents, job.PayType,
+		job.ID, job.CreatedBy, job.Title, job.Description,
 		job.RequiredSkills, job.Department, job.Deadline, job.Status,
 	).Scan(&job.CreatedAt, &job.UpdatedAt)
 }
@@ -68,7 +68,7 @@ func (r *Repository) CreateJob(ctx context.Context, job *Job) error {
 func (r *Repository) GetJobByID(ctx context.Context, id uuid.UUID) (*Job, error) {
 	query := `
 		SELECT 
-			j.id, j.created_by, j.title, j.description, ROUND(j.budget * 100)::bigint, j.pay_type, 
+			j.id, j.created_by, j.title, j.description, 
 			j.required_skills, j.department, j.deadline, j.status, j.created_at, j.updated_at,
 			u.id, COALESCE(u.email, ''), 
 			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.department, ''),
@@ -90,7 +90,7 @@ func (r *Repository) GetJobByID(ctx context.Context, id uuid.UUID) (*Job, error)
 	)
 
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&j.ID, &j.CreatedBy, &j.Title, &j.Description, &j.BudgetCents, &j.PayType,
+		&j.ID, &j.CreatedBy, &j.Title, &j.Description,
 		&j.RequiredSkills, &j.Department, &j.Deadline, &j.Status, &j.CreatedAt, &j.UpdatedAt,
 		&creatorID, &creatorEmail, &firstName, &lastName, &dept, &org, &orgWebsite,
 	)
@@ -127,13 +127,13 @@ func (r *Repository) UpdateJob(ctx context.Context, job *Job) error {
 	}
 	query := `
 		UPDATE jobs
-		SET title = $1, description = $2, budget = $3::numeric / 100, pay_type = $4,
-		    required_skills = $5, department = $6, deadline = $7, status = $8, updated_at = NOW()
-		WHERE id = $9
+		SET title = $1, description = $2,
+		    required_skills = $3, department = $4, deadline = $5, status = $6, updated_at = NOW()
+		WHERE id = $7
 		RETURNING updated_at;
 	`
 	return r.db.QueryRow(ctx, query,
-		job.Title, job.Description, job.BudgetCents, job.PayType,
+		job.Title, job.Description,
 		job.RequiredSkills, job.Department, job.Deadline, job.Status, job.ID,
 	).Scan(&job.UpdatedAt)
 }
@@ -192,27 +192,6 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 		argIdx++
 	}
 
-	// Min budget (cents)
-	if filter.MinBudgetCents != nil {
-		conditions = append(conditions, fmt.Sprintf("j.budget >= $%d::numeric / 100", argIdx))
-		args = append(args, *filter.MinBudgetCents)
-		argIdx++
-	}
-
-	// Max budget (cents)
-	if filter.MaxBudgetCents != nil {
-		conditions = append(conditions, fmt.Sprintf("j.budget <= $%d::numeric / 100", argIdx))
-		args = append(args, *filter.MaxBudgetCents)
-		argIdx++
-	}
-
-	// Pay type
-	if filter.PayType != "" {
-		conditions = append(conditions, fmt.Sprintf("j.pay_type = $%d", argIdx))
-		args = append(args, filter.PayType)
-		argIdx++
-	}
-
 	// CreatedBy filter
 	if filter.CreatedBy != nil {
 		conditions = append(conditions, fmt.Sprintf("j.created_by = $%d", argIdx))
@@ -244,7 +223,7 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 
 	query := fmt.Sprintf(`
 		SELECT 
-			j.id, j.created_by, j.title, j.description, ROUND(j.budget * 100)::bigint, j.pay_type, 
+			j.id, j.created_by, j.title, j.description, 
 			j.required_skills, j.department, j.deadline, j.status, j.created_at, j.updated_at,
 			u.id, COALESCE(u.email, ''), 
 			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.department, ''),
@@ -278,7 +257,7 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 			orgWebsite   string
 		)
 		err := rows.Scan(
-			&j.ID, &j.CreatedBy, &j.Title, &j.Description, &j.BudgetCents, &j.PayType,
+			&j.ID, &j.CreatedBy, &j.Title, &j.Description,
 			&j.RequiredSkills, &j.Department, &j.Deadline, &j.Status, &j.CreatedAt, &j.UpdatedAt,
 			&creatorID, &creatorEmail, &firstName, &lastName, &dept, &org, &orgWebsite,
 		)

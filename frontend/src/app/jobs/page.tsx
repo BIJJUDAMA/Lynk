@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   PlusCircle,
 } from "lucide-react";
-import { Job, JobStatus, JobPayType } from "@/types/api";
+import { Job, JobStatus } from "@/types/api";
 import { listJobs } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -22,10 +22,6 @@ import {
   JobFilterBar,
   JobFilterValues,
 } from "@/components/jobs/JobFilterBar";
-import {
-  centsFromDollarInput,
-  dollarsFromBudgetQueryParam,
-} from "@/lib/job-filters";
 
 function JobSearchContent() {
   const searchParams = useSearchParams();
@@ -37,23 +33,11 @@ function JobSearchContent() {
   const initialSearch = searchParams.get("search") || "";
   const initialDept = searchParams.get("department") || "";
   const initialSkill = searchParams.get("skill") || "";
-  const initialPayType = (searchParams.get("pay_type") as JobPayType) || "";
-  const initialMinBudget = dollarsFromBudgetQueryParam(
-    searchParams.get("min_budget_cents"),
-    searchParams.get("min_budget")
-  );
-  const initialMaxBudget = dollarsFromBudgetQueryParam(
-    searchParams.get("max_budget_cents"),
-    searchParams.get("max_budget")
-  );
 
   const [filters, setFilters] = useState<JobFilterValues>({
     search: initialSearch,
     department: initialDept,
     skill: initialSkill,
-    pay_type: initialPayType,
-    min_budget: initialMinBudget,
-    max_budget: initialMaxBudget,
     status: "open",
   });
 
@@ -71,9 +55,6 @@ function JobSearchContent() {
             search: filters.search.trim() || undefined,
             department: filters.department.trim() || undefined,
             skill: filters.skill.trim() || undefined,
-            pay_type: (filters.pay_type as JobPayType) || undefined,
-            min_budget_cents: centsFromDollarInput(filters.min_budget),
-            max_budget_cents: centsFromDollarInput(filters.max_budget),
             status: (filters.status as JobStatus) || undefined,
           },
           client
@@ -98,9 +79,6 @@ function JobSearchContent() {
       search: "",
       department: "",
       skill: "",
-      pay_type: "",
-      min_budget: "",
-      max_budget: "",
       status: "open",
     });
   };

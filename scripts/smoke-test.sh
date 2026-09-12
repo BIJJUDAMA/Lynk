@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Lynk Platform — End-to-End Integration Smoke Test Suite (Bash)
+# Lynk Platform -- End-to-End Integration Smoke Test Suite (Bash)
 #
 # Exercises the complete MVP lifecycle against running local infrastructure:
 #   1. Infrastructure Health Checks (Go API, SuperTokens Core, MinIO S3)
@@ -661,8 +661,6 @@ JOB_PAYLOAD=$(cat <<EOF
 {
   "title": "Campus Marketplace Go & Next.js Engineer",
   "description": "Looking for an energetic student engineer to develop high-trust freelance marketplace features with Go, Chi, PostgreSQL, and Next.js.",
-  "budget_cents": 95000,
-  "pay_type": "fixed",
   "required_skills": ["Go", "PostgreSQL", "Docker", "Next.js"],
   "department": "Computer Science"
 }
@@ -696,13 +694,13 @@ log_pass "Job discovered via public search & filter query"
 log_substep "Retrieving single job detail (GET /api/v1/jobs/${JOB_ID})..."
 JOB_DETAIL_RESP=$(http_request "GET" "/api/v1/jobs/${JOB_ID}" "" "" "200")
 DETAIL_ID=$(json_extract "$JOB_DETAIL_RESP" ".data.id")
-DETAIL_BUDGET=$(json_extract "$JOB_DETAIL_RESP" ".data.budget_cents")
+DETAIL_TITLE=$(json_extract "$JOB_DETAIL_RESP" ".data.title")
 
 if [ "$DETAIL_ID" != "$JOB_ID" ]; then
     log_fail "Job detail ID mismatch: expected $JOB_ID, got '$DETAIL_ID'"
     exit 1
 fi
-log_pass "Job details retrieved successfully: Budget Cents $DETAIL_BUDGET"
+log_pass "Job details retrieved successfully: Title '$DETAIL_TITLE'"
 
 # ------------------------------------------------------------------------------
 # STEP 9: Campus Email Verification Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)
@@ -716,7 +714,7 @@ GATE_JOB_RESP=$(curl -s -S -w "\n%{http_code}" \
     -H "Cookie: sAccessToken=${UNVERIFIED_STUDENT_TOKEN}" \
     -H "st-auth-mode: header" \
     -H "Content-Type: application/json" \
-    -d '{"title":"Unauthorized Opportunity","description":"Should be blocked","budget_cents":10000,"pay_type":"fixed","required_skills":["Go"],"department":"Computer Science"}' 2>/dev/null || echo -e "\n000")
+    -d '{"title":"Unauthorized Opportunity","description":"Should be blocked","required_skills":["Go"],"department":"Computer Science"}' 2>/dev/null || echo -e "\n000")
 
 GATE_JOB_CODE=$(echo "$GATE_JOB_RESP" | tail -n1)
 GATE_JOB_BODY=$(echo "$GATE_JOB_RESP" | sed '$d')
@@ -868,13 +866,12 @@ log_step "12" "Contract State Machine Progression (active -> completed)"
 log_substep "Inspecting active contract detail (GET /api/v1/contracts/${CONTRACT_ID})..."
 CONTRACT_GET_RESP=$(http_request "GET" "/api/v1/contracts/${CONTRACT_ID}" "$EMPLOYER_TOKEN" "" "200")
 INITIAL_STATUS=$(json_extract "$CONTRACT_GET_RESP" ".data.status")
-AGREED_BUDGET=$(json_extract "$CONTRACT_GET_RESP" ".data.agreed_budget_cents")
 
 if [ "$INITIAL_STATUS" != "active" ]; then
     log_fail "Expected initial contract status 'active', got '$INITIAL_STATUS'"
     exit 1
 fi
-log_pass "Contract verified in active state (Agreed Budget Cents: $AGREED_BUDGET)"
+log_pass "Contract verified in active state (Contract ID: $CONTRACT_ID)"
 
 # SEC-06 Assertion: Freelancer attempting to mark contract completed must receive 403 Forbidden
 log_substep "Asserting freelancer cannot mark contract completed (SEC-06)..."

@@ -3,7 +3,7 @@
 > **Authoritative Database Specification**  
 > **Database Engine:** PostgreSQL 16 Alpine (`lynk-postgres` on port `5432`)  
 > **Databases:** `lynk_db` (application data) & `supertokens_db` (IAM data)  
-> **Schema Migrations:** Raw SQL (`backend/migrations/000001` through `000010`)  
+> **Schema Migrations:** Raw SQL (`backend/migrations/000001` through `000011`)  
 > **User Identity Type:** `VARCHAR(64)` (SuperTokens Core user identity format)
 
 ---
@@ -56,8 +56,6 @@ erDiagram
         VARCHAR(64) created_by FK "References users(id) ON DELETE CASCADE"
         VARCHAR(255) title "Opportunity headline"
         TEXT description "Detailed task scope (max 5,000 chars)"
-        DECIMAL(10_2) budget "Compensation amount (> 0)"
-        VARCHAR(32) pay_type "Payment structure: fixed or hourly"
         TEXT_ARRAY required_skills "Up to 25 skills (max 50 chars each)"
         VARCHAR(128) department "Target academic department"
         VARCHAR(32) status "Status: open, closed, completed, cancelled"
@@ -83,7 +81,6 @@ erDiagram
         UUID application_id FK "References applications(id) ON DELETE RESTRICT"
         VARCHAR(64) client_id FK "References users(id) ON DELETE RESTRICT"
         VARCHAR(64) freelancer_id FK "References users(id) ON DELETE RESTRICT"
-        DECIMAL(10_2) amount "Agreed contract budget"
         VARCHAR(32) status "Status: active, completed, cancelled"
         TIMESTAMPTZ created_at "Contract formation timestamp"
         TIMESTAMPTZ updated_at "Last update timestamp"
@@ -149,8 +146,6 @@ CREATE TABLE jobs (
     created_by VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
-    budget DECIMAL(10,2) NOT NULL CHECK (budget > 0),
-    pay_type VARCHAR(32) NOT NULL DEFAULT 'fixed' CHECK (pay_type IN ('fixed', 'hourly')),
     required_skills TEXT[] NOT NULL DEFAULT '{}',
     department VARCHAR(128) NOT NULL DEFAULT '',
     status VARCHAR(32) NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed', 'completed', 'cancelled')),
@@ -185,7 +180,6 @@ CREATE TABLE contracts (
     application_id UUID NOT NULL REFERENCES applications(id) ON DELETE RESTRICT,
     client_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     freelancer_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    amount DECIMAL(10,2) NOT NULL CHECK (amount > 0),
     status VARCHAR(32) NOT NULL DEFAULT 'active' CHECK (status IN ('draft', 'active', 'completed', 'cancelled')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -302,7 +296,7 @@ When an employer cancels an active contract:
 
 ---
 
-## 6. Raw SQL Migration Registry (000001-000010)
+## 6. Raw SQL Migration Registry (000001-000011)
 
 | Migration File | Purpose & Changes | Breaking? | Reversible? | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -316,3 +310,4 @@ When an employer cancels an active contract:
 | `000008_drop_redundant_indexes` | Removes duplicate redundant B-tree indexes that overlapped with compound unique constraints. | No | Yes | Reduces write amplification on inserts. |
 | `000009_foreign_key_indexes_and_restrict` | Adds unconditional foreign key indexes on `contracts` and `reviews`. Sets `applications.job_id` to `ON DELETE RESTRICT`. | No | Yes | Eliminates sequential table scans and protects application audit logs. |
 | `000010_seed_test_campus_members` | Seeds initial campus member test accounts and unified profiles in `lynk_db` and synchronizes credentials and roles to `supertokens_db` via `dblink`. | No | Yes | Provisions poster, applicant, and unverified test accounts for local development and CI testing. |
+| `000011_remove_monetary_fields` | Drops monetary columns: `budget` and `pay_type` from `jobs`, and `agreed_budget` from `contracts`. | Yes | Yes | Fully decouples platform from monetary handling into pure campus discovery and deliverable collaboration. |

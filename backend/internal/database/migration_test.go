@@ -434,3 +434,43 @@ func TestMigration000010_DownSQL_Structure(t *testing.T) {
 	}
 }
 
+func TestMigration000011_UpSQL_Structure(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000011_remove_monetary_fields.up.sql"))
+	if err != nil {
+		t.Fatalf("failed to read 000011 up migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	expectedFragments := []string{
+		"ALTER TABLE jobs DROP COLUMN IF EXISTS budget;",
+		"ALTER TABLE jobs DROP COLUMN IF EXISTS pay_type;",
+		"ALTER TABLE contracts DROP COLUMN IF EXISTS agreed_budget;",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(content, fragment) {
+			t.Errorf("000011 up migration missing fragment: %s", fragment)
+		}
+	}
+}
+
+func TestMigration000011_DownSQL_Structure(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000011_remove_monetary_fields.down.sql"))
+	if err != nil {
+		t.Fatalf("failed to read 000011 down migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	expectedFragments := []string{
+		"ALTER TABLE jobs ADD COLUMN IF NOT EXISTS budget NUMERIC(10, 2) NOT NULL DEFAULT 0.00 CHECK (budget >= 0);",
+		"ALTER TABLE jobs ADD COLUMN IF NOT EXISTS pay_type VARCHAR(50) NOT NULL DEFAULT 'fixed' CHECK (pay_type IN ('fixed', 'hourly'));",
+		"ALTER TABLE contracts ADD COLUMN IF NOT EXISTS agreed_budget NUMERIC(10, 2) NOT NULL DEFAULT 0.00 CHECK (agreed_budget >= 0);",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(content, fragment) {
+			t.Errorf("000011 down migration missing fragment: %s", fragment)
+		}
+	}
+}
+

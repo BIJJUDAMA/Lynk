@@ -234,10 +234,8 @@ Lists open campus opportunities with optional multi-criteria query parameters.
 
 - **Query Parameters:**
   - `search` (string): Keyword matching across title and description (trigram-accelerated).
-  - `department` (string): Exact academic department filter.
+  - `department` (string): Academic department filter.
   - `skills` (string): Comma-separated required skill tags.
-  - `min_budget` / `max_budget` (number): Budget range filter.
-  - `pay_type` (string): `fixed` or `hourly`.
   - `status` (string): Filter by status (`open`, `closed`, `completed`, `cancelled`). Default: `open`.
   - `page` / `limit` (integer): Pagination controls (default limit: 20, max: 100).
 - **Response `200 OK`:**
@@ -249,8 +247,6 @@ Lists open campus opportunities with optional multi-criteria query parameters.
         "created_by": "st_usr_9a4f21e0",
         "title": "Full-Stack Engineer for Autonomous Lab Drone System",
         "description": "Building telemetry dashboard in Next.js with Go backend.",
-        "budget": 750.00,
-        "pay_type": "fixed",
         "required_skills": ["Go", "Next.js", "Tailwind CSS"],
         "department": "Aeronautics & Astronautics",
         "status": "open",
@@ -266,7 +262,7 @@ Lists open campus opportunities with optional multi-criteria query parameters.
 
 ### 4.2 Create Job Opportunity
 `POST /jobs`
-Publishes a new campus opportunity. Gated behind institutional email verification.
+Publishes a new campus opportunity. Gated behind institutional email verification. Emphasizes opportunity discovery, academic department context, required skills, and task deadline.
 
 - **Auth Required:** Yes (Must have `email_verified: true`)
 - **Request Body:**
@@ -274,8 +270,6 @@ Publishes a new campus opportunity. Gated behind institutional email verificatio
   {
     "title": "Computer Vision Pipeline for Cell Morphology",
     "description": "Develop Python/OpenCV analysis pipeline for biology research lab.",
-    "budget": 1200.00,
-    "pay_type": "fixed",
     "required_skills": ["Python", "OpenCV", "Machine Learning"],
     "department": "Bioengineering",
     "deadline": "2026-09-30T23:59:59Z"
@@ -286,7 +280,7 @@ Publishes a new campus opportunity. Gated behind institutional email verificatio
   - `description`: Up to 5,000 characters (strictly capped).
   - `required_skills`: Capped at 25 skills, each skill truncated to 50 characters, deduplicated case-insensitively.
   - `deadline`: Normalized to UTC calendar day (`CalendarDayUTC`). Same-day deadlines are accepted; strictly past calendar days rejected.
-  - `budget`: Must be strictly positive (`> 0.00`).
+  - `department`: Optional academic department string (up to 128 characters).
 - **Response `201 Created`:** Returns created Job JSON object.
 
 ### 4.3 Get Job Details
@@ -368,8 +362,7 @@ Accepts a candidate application, transitions job to `closed`, automatically mark
   ```json
   {
     "contract_id": "3a9c7b2e-4f18-4e9b-b0cf-1a2b3c4d5e6f",
-    "status": "active",
-    "amount": 1200.00
+    "status": "active"
   }
   ```
 
@@ -394,7 +387,7 @@ Returns all contracts where the authenticated caller is either the client or the
 
 ### 6.2 Get Contract Details
 `GET /contracts/{id}`
-Retrieves deliverables, compensation amount, and participants for a specific contract.
+Retrieves deliverables, timeline status, and participants for a specific contract.
 
 - **Auth Required:** Yes (Caller must be client or freelancer on the contract)
 - **Response `200 OK`:** Returns Contract JSON object.

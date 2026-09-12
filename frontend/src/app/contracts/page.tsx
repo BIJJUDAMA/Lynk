@@ -11,21 +11,16 @@ import {
   Briefcase,
   GraduationCap,
   ArrowRight,
-  ExternalLink,
-  ShieldCheck,
   AlertCircle,
   RotateCcw,
   Calendar,
   Layers,
-  Sparkles,
   Building2,
-  DollarSign,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { listContracts } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
 import {
-  formatBudget,
   formatJobDate,
   getContractStatusBadgeClasses,
 } from "@/lib/formatters";
@@ -467,17 +462,6 @@ export default function ContractsPage() {
                             • {contract.freelancer?.department || contract.student?.department}
                           </span>
                         )}
-                      </div>
-
-                      {/* Agreed Budget */}
-                      <div className="flex items-center gap-1.5 font-medium text-slate-900 dark:text-white">
-                        <DollarSign className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                        <span>
-                          {formatBudget(
-                            contract.agreed_budget_cents,
-                            contract.job?.pay_type || "fixed"
-                          )}
-                        </span>
                       </div>
 
                       {/* Started / Created Date */}

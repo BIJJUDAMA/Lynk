@@ -217,7 +217,7 @@ paths:
   /jobs:
     get:
       summary: Search and list campus opportunities
-      description: Filter jobs by department, skills, budget, and search keywords.
+      description: Filter jobs by department, skills, and search keywords.
       security: []
       parameters:
         - name: search
@@ -235,22 +235,6 @@ paths:
           required: false
           schema:
             type: string
-        - name: min_budget
-          in: query
-          required: false
-          schema:
-            type: number
-        - name: max_budget
-          in: query
-          required: false
-          schema:
-            type: number
-        - name: pay_type
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [fixed, hourly]
         - name: status
           in: query
           required: false
@@ -467,9 +451,6 @@ paths:
                   status:
                     type: string
                     example: active
-                  amount:
-                    type: number
-                    example: 750.00
 
   /applications/{id}/reject:
     post:
@@ -836,11 +817,6 @@ components:
           type: string
         description:
           type: string
-        budget:
-          type: number
-        pay_type:
-          type: string
-          enum: [fixed, hourly]
         required_skills:
           type: array
           items:
@@ -866,8 +842,6 @@ components:
       required:
         - title
         - description
-        - budget
-        - pay_type
       properties:
         title:
           type: string
@@ -876,12 +850,6 @@ components:
         description:
           type: string
           maxLength: 5000
-        budget:
-          type: number
-          minimum: 0.01
-        pay_type:
-          type: string
-          enum: [fixed, hourly]
         required_skills:
           type: array
           items:
@@ -903,12 +871,6 @@ components:
         description:
           type: string
           maxLength: 5000
-        budget:
-          type: number
-          minimum: 0.01
-        pay_type:
-          type: string
-          enum: [fixed, hourly]
         required_skills:
           type: array
           items:
@@ -990,8 +952,6 @@ components:
           type: string
         freelancer_id:
           type: string
-        amount:
-          type: number
         status:
           type: string
           enum: [active, completed, cancelled]

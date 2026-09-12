@@ -25,8 +25,6 @@ export interface ApiResponse<T> {
 
 export type UserRole = "member" | "admin";
 
-export type JobPayType = "fixed" | "hourly";
-
 export type JobStatus = "open" | "in_progress" | "closed" | "cancelled";
 
 export type ApplicationStatus = "pending" | "accepted" | "rejected";
@@ -138,8 +136,6 @@ export interface Job {
   created_by: string; // UUID of posting member
   title: string;
   description: string;
-  budget_cents: number;
-  pay_type: JobPayType;
   required_skills: string[];
   department: string;
   deadline?: string | null;
@@ -155,8 +151,6 @@ export interface JobSummary {
   created_by: string;
   title: string;
   description: string;
-  budget_cents: number;
-  pay_type: JobPayType;
   department: string;
   status: JobStatus;
 }
@@ -164,8 +158,6 @@ export interface JobSummary {
 export interface CreateJobRequest {
   title: string;
   description: string;
-  budget_cents: number;
-  pay_type: JobPayType;
   required_skills: string[];
   department: string;
   deadline?: string | null;
@@ -174,8 +166,6 @@ export interface CreateJobRequest {
 export interface UpdateJobRequest {
   title?: string;
   description?: string;
-  budget_cents?: number;
-  pay_type?: JobPayType;
   required_skills?: string[];
   department?: string;
   deadline?: string | null;
@@ -187,9 +177,6 @@ export interface JobFilter {
   department?: string;
   skill?: string;
   skills?: string[];
-  min_budget_cents?: number;
-  max_budget_cents?: number;
-  pay_type?: JobPayType;
   status?: JobStatus;
   created_by?: string;
   limit?: number;
@@ -263,7 +250,6 @@ export interface Contract {
   application_id: string;
   client_id: string;
   freelancer_id: string;
-  agreed_budget_cents: number;
   status: ContractStatus;
   started_at?: string | null;
   completed_at?: string | null;

@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  formatBudget,
   formatJobDate,
   getStatusBadgeClasses,
   COMMON_DEPARTMENTS,
@@ -11,12 +10,6 @@ import {
   getContractStatusBadgeClasses,
   isValidUrl,
 } from "./formatters.ts";
-
-test("formatBudget correctly formats fixed and hourly rates from cents", () => {
-  assert.equal(formatBudget(50000, "fixed"), "$500.00 Fixed");
-  assert.equal(formatBudget(2500, "hourly"), "$25.00/hr");
-  assert.equal(formatBudget(125000, "fixed"), "$1,250.00 Fixed");
-});
 
 test("formatJobDate formats ISO date strings and handles null/undefined", () => {
   assert.equal(formatJobDate(null), "Flexible");

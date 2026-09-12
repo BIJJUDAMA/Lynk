@@ -7,22 +7,16 @@ import {
   SlidersHorizontal,
   X,
   RotateCcw,
-  DollarSign,
-  GraduationCap,
-  Sparkles,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import { JobPayType, JobStatus } from "@/types/api";
+import { JobStatus } from "@/types/api";
 import { cn } from "@/lib/utils";
 
 export interface JobFilterValues {
   search: string;
   department: string;
   skill: string;
-  pay_type: "" | JobPayType;
-  min_budget: string;
-  max_budget: string;
   status: "" | JobStatus;
 }
 
@@ -97,9 +91,6 @@ export function JobFilterBar({
     filters.search ||
       filters.department ||
       filters.skill ||
-      filters.pay_type ||
-      filters.min_budget ||
-      filters.max_budget ||
       (filters.status && filters.status !== "open")
   );
 
@@ -107,8 +98,6 @@ export function JobFilterBar({
     Boolean(filters.search),
     Boolean(filters.department),
     Boolean(filters.skill),
-    Boolean(filters.pay_type),
-    Boolean(filters.min_budget || filters.max_budget),
     Boolean(filters.status && filters.status !== "open"),
   ].filter(Boolean).length;
 
@@ -229,7 +218,7 @@ export function JobFilterBar({
       {/* Advanced Filter Drawer */}
       {showAdvanced && (
         <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800/80">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="max-w-md">
             {/* Skill Filter Input */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -242,93 +231,6 @@ export function JobFilterBar({
                 placeholder="e.g. React, Python, Figma"
                 className="mt-1.5 w-full rounded-[10px] border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
               />
-            </div>
-
-            {/* Pay Type */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Compensation Type
-              </label>
-              <div className="mt-1.5 flex rounded-[10px] border border-slate-200 bg-slate-100/70 p-0.5 dark:border-slate-700 dark:bg-slate-800">
-                <button
-                  type="button"
-                  onClick={() => updateField("pay_type", "")}
-                  className={cn(
-                    "flex-1 rounded-[10px] py-1.5 text-center text-xs font-medium transition",
-                    filters.pay_type === ""
-                      ? "bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white"
-                      : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-                  )}
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateField("pay_type", "fixed")}
-                  className={cn(
-                    "flex-1 rounded-[10px] py-1.5 text-center text-xs font-medium transition",
-                    filters.pay_type === "fixed"
-                      ? "bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white"
-                      : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-                  )}
-                >
-                  Fixed
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateField("pay_type", "hourly")}
-                  className={cn(
-                    "flex-1 rounded-[10px] py-1.5 text-center text-xs font-medium transition",
-                    filters.pay_type === "hourly"
-                      ? "bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white"
-                      : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-                  )}
-                >
-                  Hourly
-                </button>
-              </div>
-            </div>
-
-            {/* Min Budget */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Min Budget ($)
-              </label>
-              <div className="relative mt-1.5">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5">
-                  <span className="text-xs text-slate-400">$</span>
-                </div>
-                <input
-                  type="number"
-                  min="0"
-                  step="10"
-                  value={filters.min_budget}
-                  onChange={(e) => updateField("min_budget", e.target.value)}
-                  placeholder="0"
-                  className="w-full rounded-[10px] border border-slate-200 bg-slate-50/50 py-2 pl-6 pr-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
-                />
-              </div>
-            </div>
-
-            {/* Max Budget */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Max Budget ($)
-              </label>
-              <div className="relative mt-1.5">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5">
-                  <span className="text-xs text-slate-400">$</span>
-                </div>
-                <input
-                  type="number"
-                  min="0"
-                  step="50"
-                  value={filters.max_budget}
-                  onChange={(e) => updateField("max_budget", e.target.value)}
-                  placeholder="No max"
-                  className="w-full rounded-[10px] border border-slate-200 bg-slate-50/50 py-2 pl-6 pr-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
-                />
-              </div>
             </div>
           </div>
 
@@ -413,35 +315,6 @@ export function JobFilterBar({
                 <button
                   type="button"
                   onClick={() => updateField("skill", "")}
-                  className="hover:text-slate-900"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            )}
-
-            {filters.pay_type && (
-              <span className="inline-flex items-center gap-1 rounded-[10px] bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                Type: {filters.pay_type}
-                <button
-                  type="button"
-                  onClick={() => updateField("pay_type", "")}
-                  className="hover:text-slate-900"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            )}
-
-            {(filters.min_budget || filters.max_budget) && (
-              <span className="inline-flex items-center gap-1 rounded-[10px] bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                Budget: ${filters.min_budget || "0"} - ${filters.max_budget || "∞"}
-                <button
-                  type="button"
-                  onClick={() => {
-                    updateField("min_budget", "");
-                    updateField("max_budget", "");
-                  }}
                   className="hover:text-slate-900"
                 >
                   <X className="h-3 w-3" />

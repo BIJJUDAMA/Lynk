@@ -7,7 +7,6 @@ import {
   FileCheck,
   ArrowLeft,
   Calendar,
-  DollarSign,
   Briefcase,
   GraduationCap,
   Building2,
@@ -21,8 +20,6 @@ import {
   RotateCcw,
   Loader2,
   ExternalLink,
-  MessageSquare,
-  Sparkles,
   Info,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -35,7 +32,6 @@ import {
 } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
 import {
-  formatBudget,
   formatJobDate,
   getContractStatusBadgeClasses,
 } from "@/lib/formatters";
@@ -316,19 +312,6 @@ export default function ContractDetailPage() {
                   </Link>
                 </div>
               )}
-            </div>
-
-            {/* Agreed Budget Display */}
-            <div className="rounded-[10px] border border-emerald-200/80 bg-emerald-50/50 p-4 text-right sm:min-w-[180px] dark:border-emerald-900/40 dark:bg-emerald-950/20">
-              <span className="text-xs font-medium uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                Agreed Budget
-              </span>
-              <p className="mt-1 text-2xl font-bold text-emerald-800 dark:text-emerald-300">
-                {formatBudget(contract.agreed_budget_cents, contract.job?.pay_type || "fixed")}
-              </p>
-              <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80">
-                Binding agreement
-              </span>
             </div>
           </div>
 

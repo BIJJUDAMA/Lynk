@@ -170,7 +170,6 @@ func (m *mockApplicationRepo) AcceptApplicationTx(ctx context.Context, appID uui
 		ApplicationID: app.ID,
 		ClientID:      targetJob.CreatedBy,
 		FreelancerID:  app.ApplicantID,
-		AgreedBudgetCents: targetJob.BudgetCents,
 		Status:        ContractStatusActive,
 		StartedAt:     &now,
 		CreatedAt:     now,
@@ -237,8 +236,6 @@ func (m *mockApplicationRepo) buildDetails(app *Application) *ApplicationWithDet
 			CreatedBy:   j.CreatedBy,
 			Title:       j.Title,
 			Description: j.Description,
-			BudgetCents: j.BudgetCents,
-			PayType:     j.PayType,
 			Department:  j.Department,
 			Status:      j.Status,
 		}
@@ -319,7 +316,6 @@ func (m *mockJobLookup) GetJobByID(ctx context.Context, id uuid.UUID) (*job.Job,
 		ID:        id,
 		CreatedBy: "usr_employer",
 		Title:     "Dev",
-		BudgetCents:    10000,
 		Status:    job.StatusOpen,
 	}, nil
 }
@@ -503,7 +499,6 @@ func TestApplication_InstitutionalEmailGate(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: creatorID,
 		Title:     "Backend Engineer Needed",
-		BudgetCents:    50000,
 		Status:    job.StatusOpen,
 	}
 
@@ -590,7 +585,6 @@ func TestApplication_ResourceOwnershipEnforcement(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: creatorID,
 		Title:     "Frontend Developer",
-		BudgetCents:    30000,
 		Status:    job.StatusOpen,
 	}
 
@@ -671,7 +665,6 @@ func TestApplication_ResumeAutoAttachment(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: uuid.New().String(),
 		Title:     "ML Engineer",
-		BudgetCents:    100000,
 		Status:    job.StatusOpen,
 	}
 
@@ -720,7 +713,6 @@ func TestApplication_ResumeAutoAttachment(t *testing.T) {
 			ID:        job2ID,
 			CreatedBy: uuid.New().String(),
 			Title:     "Data Analyst",
-			BudgetCents:    60000,
 			Status:    job.StatusOpen,
 		}
 
@@ -760,7 +752,6 @@ func TestApplication_DuplicatePrevention(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: uuid.New().String(),
 		Title:     "Tutor",
-		BudgetCents:    20000,
 		Status:    job.StatusOpen,
 	}
 
@@ -835,7 +826,6 @@ func TestApplication_JobStatusChecks(t *testing.T) {
 			ID:        inProgressJobID,
 			CreatedBy: uuid.New().String(),
 			Title:     "Active Job",
-			BudgetCents:    40000,
 			Status:    job.StatusInProgress,
 		}
 
@@ -869,8 +859,6 @@ func TestApplication_AcceptApplication_AtomicWorkflow(t *testing.T) {
 		CreatedBy:   creatorID,
 		Title:       "Full-Stack Web App",
 		Description: "Develop MVP frontend and backend",
-		BudgetCents:      120000,
-		PayType:     job.PayTypeFixed,
 		Department:  "Computer Science",
 		Status:      job.StatusOpen,
 	}
@@ -986,15 +974,12 @@ func TestApplication_AcceptApplication_AtomicWorkflow(t *testing.T) {
 			t.Fatalf("expected app3 status 'rejected', got '%s'", savedApp3.Status)
 		}
 
-		// 4. Invariant: Contract generated in 'active' status with agreed_budget = job.budget
+		// 4. Invariant: Contract generated in 'active' status
 		if acceptedDetails.Contract == nil {
 			t.Fatalf("expected contract to be present in response")
 		}
 		if acceptedDetails.Contract.Status != ContractStatusActive {
 			t.Fatalf("expected contract status 'active', got '%s'", acceptedDetails.Contract.Status)
-		}
-		if acceptedDetails.Contract.AgreedBudgetCents != targetJob.BudgetCents {
-			t.Fatalf("expected agreed_budget_cents %d, got %d", targetJob.BudgetCents, acceptedDetails.Contract.AgreedBudgetCents)
 		}
 		if acceptedDetails.Contract.StartedAt == nil {
 			t.Fatalf("expected started_at timestamp on contract")
@@ -1033,8 +1018,6 @@ func TestApplication_AcceptApplication_PermittedAfterDeadlinePassed(t *testing.T
 		CreatedBy:   creatorID,
 		Title:       "Past Deadline Job",
 		Description: "Reviewing applicants after deadline expired",
-		BudgetCents: 150000,
-		PayType:     job.PayTypeFixed,
 		Department:  "Engineering",
 		Status:      job.StatusOpen,
 		Deadline:    &past,
@@ -1092,8 +1075,6 @@ func TestApplication_AcceptApplication_PermittedAfterDeadlinePassed(t *testing.T
 		CreatedBy:   creatorID,
 		Title:       "Past Deadline Job 2",
 		Description: "Reviewing via HTTP handler after deadline passed",
-		BudgetCents: 80000,
-		PayType:     job.PayTypeFixed,
 		Department:  "Design",
 		Status:      job.StatusOpen,
 		Deadline:    &past,
@@ -1141,7 +1122,6 @@ func TestApplication_RejectApplication(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: creatorID,
 		Title:     "Graphic Designer",
-		BudgetCents:    25000,
 		Status:    job.StatusOpen,
 	}
 	repo.jobs[jobID] = targetJob
@@ -1204,7 +1184,6 @@ func TestApplication_ListJobApplications(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: creatorID,
 		Title:     "Campus Ambassador",
-		BudgetCents:    15000,
 		Status:    job.StatusOpen,
 	}
 
@@ -1295,7 +1274,6 @@ func TestApplication_GetMyApplications(t *testing.T) {
 		ID:        job1ID,
 		CreatedBy: uuid.New().String(),
 		Title:     "Job 1",
-		BudgetCents:    10000,
 		Status:    job.StatusOpen,
 	}
 
@@ -1347,7 +1325,6 @@ func TestApplication_GetApplicationByID(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: creatorID,
 		Title:     "Lab Assistant",
-		BudgetCents:    35000,
 		Status:    job.StatusOpen,
 	}
 
@@ -1422,7 +1399,6 @@ func TestApplication_WithAuthMiddleware(t *testing.T) {
 		ID:        jobID,
 		CreatedBy: uuid.New().String(),
 		Title:     "Campus Tour Guide",
-		BudgetCents:    8000,
 		Status:    job.StatusOpen,
 	}
 
@@ -1506,7 +1482,6 @@ func TestHandler_ListJobApplications_HonorsLimitOffset(t *testing.T) {
 		CreatedBy:   "poster",
 		Title:       "Test Job",
 		Description: "desc",
-		BudgetCents:      10000,
 		Status:      job.StatusOpen,
 	}
 	for i := 0; i < 5; i++ {

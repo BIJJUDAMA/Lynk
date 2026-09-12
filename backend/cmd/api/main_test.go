@@ -226,7 +226,7 @@ func TestBuildRouter_MarketplaceWritesRequireVerifiedEmail(t *testing.T) {
 		nil,
 	)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(`{"title":"x","description":"yyyyyyyyyy","budget_cents":10000,"pay_type":"fixed"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(`{"title":"x","description":"yyyyyyyyyy"}`))
 	req.Header.Set("Authorization", "Bearer test")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -273,7 +273,7 @@ func TestBuildRouter_AuthMatrix(t *testing.T) {
 
 	router := BuildRouter(cfg, nil, userHandler, jobHandler, nil, nil, nil, authMW, stubStore{})
 
-	jobBody := `{"title":"x","description":"yyyyyyyyyy","budget_cents":10000,"pay_type":"fixed"}`
+	jobBody := `{"title":"x","description":"yyyyyyyyyy"}`
 
 	tests := []struct {
 		name     string
@@ -554,7 +554,7 @@ func TestTimeoutMiddleware(t *testing.T) {
 		mux.Get("/slow", func(w http.ResponseWriter, r *http.Request) {
 			select {
 			case <-r.Context().Done():
-				// Context cancelled by timeout — chi Timeout middleware will
+				// Context cancelled by timeout -- chi Timeout middleware will
 				// have already written 504 Gateway Timeout; just return.
 				return
 			case <-time.After(5 * time.Second):
@@ -621,7 +621,7 @@ func TestRequestBodyLimiter(t *testing.T) {
 		jobHandler := job.NewHandler(jobSvc, jobRepo)
 		router := BuildRouter(cfg, nil, nil, jobHandler, nil, nil, nil, nil, nil)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(`{"title":"x","description":"y","budget_cents":100,"pay_type":"fixed"}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(`{"title":"x","description":"y"}`))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)

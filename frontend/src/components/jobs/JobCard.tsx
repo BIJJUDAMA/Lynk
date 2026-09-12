@@ -1,23 +1,17 @@
 import Link from "next/link";
 import {
-  Briefcase,
   Building2,
   Calendar,
-  DollarSign,
   GraduationCap,
   ArrowRight,
-  Clock,
 } from "lucide-react";
 import { Job, JobStatus } from "@/types/api";
-import { formatBudget } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 
 export interface JobCardProps {
   job: Job;
   className?: string;
 }
-
-export { formatBudget } from "@/lib/formatters";
 
 /**
  * Formats ISO date string into human-readable date.
@@ -102,35 +96,27 @@ export function JobCard({ job, className }: JobCardProps) {
       )}
     >
       <div>
-        {/* Top Meta Bar: Status, Department, Pay */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Status Badge */}
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider",
-                statusStyles.bg,
-                statusStyles.text
-              )}
-            >
-              <span className={cn("h-1.5 w-1.5 rounded-full", statusStyles.dot)} />
-              {job.status.replace("_", " ")}
-            </span>
-
-            {/* Department Badge */}
-            {job.department && (
-              <span className="inline-flex items-center gap-1 rounded-[10px] bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                <GraduationCap className="h-3.5 w-3.5 text-slate-500" />
-                <span>{job.department}</span>
-              </span>
+        {/* Top Meta Bar: Status, Department */}
+        <div className="flex flex-wrap items-center gap-2 pb-3">
+          {/* Status Badge */}
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider",
+              statusStyles.bg,
+              statusStyles.text
             )}
-          </div>
+          >
+            <span className={cn("h-1.5 w-1.5 rounded-full", statusStyles.dot)} />
+            {job.status.replace("_", " ")}
+          </span>
 
-          {/* Budget Badge */}
-          <div className="inline-flex items-center gap-1 rounded-[10px] bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-            <DollarSign className="h-3.5 w-3.5" />
-            <span>{formatBudget(job.budget_cents, job.pay_type)}</span>
-          </div>
+          {/* Department Badge */}
+          {job.department && (
+            <span className="inline-flex items-center gap-1 rounded-[10px] bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+              <GraduationCap className="h-3.5 w-3.5 text-slate-500" />
+              <span>{job.department}</span>
+            </span>
+          )}
         </div>
 
         {/* Job Title & Creator */}

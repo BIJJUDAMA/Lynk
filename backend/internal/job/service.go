@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
-	"github.com/lynk/backend/internal/money"
 )
 
 var (
@@ -53,15 +52,6 @@ func (s *Service) CreateJob(ctx context.Context, claims *auth.UserClaims, req Cr
 		return nil, fmt.Errorf("%w: description cannot exceed 5000 characters", ErrInvalidInput)
 	}
 
-	if err := money.ValidateNonNegative(money.Cents(req.BudgetCents)); err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
-	}
-
-	payType := strings.ToLower(strings.TrimSpace(req.PayType))
-	if payType != PayTypeFixed && payType != PayTypeHourly {
-		return nil, fmt.Errorf("%w: pay_type must be 'fixed' or 'hourly'", ErrInvalidInput)
-	}
-
 	dept := strings.TrimSpace(req.Department)
 	if len(dept) > 100 {
 		return nil, fmt.Errorf("%w: department cannot exceed 100 characters", ErrInvalidInput)
@@ -78,8 +68,6 @@ func (s *Service) CreateJob(ctx context.Context, claims *auth.UserClaims, req Cr
 		CreatedBy:      createdBy,
 		Title:          title,
 		Description:    desc,
-		BudgetCents:    req.BudgetCents,
-		PayType:        payType,
 		RequiredSkills: skills,
 		Department:     dept,
 		Deadline:       req.Deadline.Time(),
@@ -148,24 +136,18 @@ func (s *Service) UpdateJob(ctx context.Context, claims *auth.UserClaims, id uui
 	}
 
 	if job.Status == StatusInProgress {
-		if req.BudgetCents != nil {
-			return nil, fmt.Errorf("%w: budget cannot be changed while the job is in progress", ErrInvalidInput)
-		}
-		if req.PayType != nil {
-			return nil, fmt.Errorf("%w: pay_type cannot be changed while the job is in progress", ErrInvalidInput)
-		}
 		if req.Deadline != nil {
 			return nil, fmt.Errorf("%w: deadline cannot be changed while the job is in progress", ErrInvalidInput)
 		}
 	}
 
-	if req.BudgetCents != nil || req.PayType != nil || req.Deadline != nil {
+	if req.Deadline != nil {
 		hasApps, err := s.repo.HasApplicationsForJob(ctx, id)
 		if err != nil {
 			return nil, err
 		}
 		if hasApps {
-			return nil, fmt.Errorf("%w: budget, pay_type, and deadline cannot change after applications exist", ErrInvalidInput)
+			return nil, fmt.Errorf("%w: deadline cannot change after applications exist", ErrInvalidInput)
 		}
 	}
 
@@ -189,21 +171,6 @@ func (s *Service) UpdateJob(ctx context.Context, claims *auth.UserClaims, id uui
 			return nil, fmt.Errorf("%w: description cannot exceed 5000 characters", ErrInvalidInput)
 		}
 		job.Description = d
-	}
-
-	if req.BudgetCents != nil {
-		if err := money.ValidateNonNegative(money.Cents(*req.BudgetCents)); err != nil {
-			return nil, fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
-		}
-		job.BudgetCents = *req.BudgetCents
-	}
-
-	if req.PayType != nil {
-		pt := strings.ToLower(strings.TrimSpace(*req.PayType))
-		if pt != PayTypeFixed && pt != PayTypeHourly {
-			return nil, fmt.Errorf("%w: pay_type must be 'fixed' or 'hourly'", ErrInvalidInput)
-		}
-		job.PayType = pt
 	}
 
 	if req.Department != nil {

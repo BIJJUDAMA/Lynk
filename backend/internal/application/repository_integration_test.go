@@ -35,8 +35,8 @@ func TestRepository_AcceptApplicationTx_Integration(t *testing.T) {
 
 	jobID := uuid.New()
 	_, err = pool.Exec(ctx, `
-		INSERT INTO jobs (id, created_by, title, description, budget, pay_type, required_skills, department, status)
-		VALUES ($1, $2, 'Gig', 'A real job description', 150.00, 'fixed', '{}', 'CS', 'open')`, jobID, poster)
+		INSERT INTO jobs (id, created_by, title, description, required_skills, department, status)
+		VALUES ($1, $2, 'Gig', 'A real job description', '{}', 'CS', 'open')`, jobID, poster)
 	if err != nil {
 		t.Fatalf("insert job: %v", err)
 	}

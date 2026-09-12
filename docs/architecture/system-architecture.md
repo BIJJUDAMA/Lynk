@@ -1,7 +1,7 @@
 # System Architecture & Monorepo Topology - Lynk
 
 > **Authoritative System Architecture Specification**  
-> **Platform:** Lynk - High-Trust University Freelance & Campus Gig Marketplace  
+> **Platform:** Lynk - High-Trust Campus Opportunity Discovery & Student Networking Platform  
 > **Status:** Active Baseline (MVP Implementation)  
 > **IAM Specification:** Self-Hosted SuperTokens Core 9.3 (`:3567`)  
 > **Object Storage:** MinIO S3 (`:9000` API / `:9001` Web Console) - Exclusively for Resumes  
@@ -11,7 +11,7 @@
 
 ## 1. Executive Summary & Core Thesis
 
-**Lynk** is an institutional campus freelance and gig marketplace engineered to connect verified university students, student founders, faculty, laboratories, and student organizations. By replacing the traditional fragmented dual-account model ("student" vs "employer") with a **Unified Campus Member** architecture, Lynk enables any campus participant to simultaneously offer specialized services and commission opportunities under a single verified academic profile.
+**Lynk** is an institutional campus opportunity discovery and student networking platform engineered to connect verified university students, student founders, faculty, laboratories, and student organizations. Operating without payment handling, Lynk focuses purely on discovery, academic credentials, deliverable collaboration contracts, and peer reviews. By replacing the traditional fragmented dual-account model ("student" vs "employer") with a **Unified Campus Member** architecture, Lynk enables any campus participant to discover opportunities, collaborate on deliverables, and build verified academic reputations under a single verified academic profile.
 
 ### 1.1 Architectural Pillars
 1. **Unified Campus Member Model:** Single user identity for all participants. Fluid transition between client and contributor capabilities with zero role switching or separate accounts.
@@ -171,7 +171,7 @@ sequenceDiagram
     API-->>FE: HTTP 200 OK (Resume Metadata)
 
     Note over User,DB: 3. Job Posting & Proposal Lifecycle
-    User->>FE: Create Opportunity (Budget, Skills, Deadline)
+    User->>FE: Create Opportunity (Department, Skills, Deadline)
     FE->>API: POST /api/v1/jobs (JSON Payload)
     API->>DB: INSERT INTO jobs (status='open')
     API-->>FE: HTTP 201 Created

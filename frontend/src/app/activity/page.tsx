@@ -10,20 +10,9 @@ import {
   PlusCircle,
   Users,
   Search,
-  RotateCcw,
-  AlertCircle,
   Lock,
-  GraduationCap,
-  Calendar,
-  Clock,
-  DollarSign,
-  ArrowRight,
-  ExternalLink,
-  CheckCircle2,
-  XCircle,
   Loader2,
   ChevronRight,
-  ShieldCheck,
 } from "lucide-react";
 import {
   Job,
@@ -42,7 +31,6 @@ import {
 import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
-  formatBudget,
   formatJobDate,
   getStatusBadgeClasses,
   getApplicationStatusBadgeClasses,
@@ -496,9 +484,6 @@ function ActivityContent() {
                         <span className="text-xs text-muted-foreground">
                           • {job.department}
                         </span>
-                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                          • {formatBudget(job.budget_cents, job.pay_type)}
-                        </span>
                       </div>
 
                       <Link
@@ -591,10 +576,6 @@ function ActivityContent() {
 
                         <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                           {isClient ? "You are Client" : "You are Freelancer"}
-                        </span>
-
-                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                          • {formatBudget(contract.agreed_budget_cents, contract.job?.pay_type ?? "fixed")}
                         </span>
                       </div>
 

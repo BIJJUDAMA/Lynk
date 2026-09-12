@@ -1,5 +1,5 @@
 # ==============================================================================
-# Lynk Platform — End-to-End Integration Smoke Test Suite (PowerShell)
+# Lynk Platform -- End-to-End Integration Smoke Test Suite (PowerShell)
 #
 # Exercises the complete MVP lifecycle against running local infrastructure:
 #   1. Infrastructure Health Checks (Go API, SuperTokens Core, MinIO S3)
@@ -740,8 +740,6 @@ startxref
     $jobPayload = @{
         title = "Campus Marketplace Go & Next.js Engineer"
         description = "Looking for an energetic student engineer to develop high-trust freelance marketplace features with Go, Chi, PostgreSQL, and Next.js."
-        budget_cents = 95000
-        pay_type = "fixed"
         required_skills = @("Go", "PostgreSQL", "Docker", "Next.js")
         department = "Computer Science"
     } | ConvertTo-Json -Depth 5
@@ -777,7 +775,7 @@ startxref
         Log-Fail "Job detail ID mismatch: expected $JobId, got '$($jobDetailData.id)'"
         exit 1
     }
-    Log-Pass "Job details retrieved successfully: Budget Cents $($jobDetailData.budget_cents)"
+    Log-Pass "Job details retrieved successfully: Title '$($jobDetailData.title)'"
 
     # --------------------------------------------------------------------------
     # STEP 9: Campus Email Verification Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)
@@ -788,8 +786,6 @@ startxref
     $unvJobPayload = @{
         title = "Unauthorized Opportunity"
         description = "Should be blocked by campus verification gate."
-        budget_cents = 10000
-        pay_type = "fixed"
         required_skills = @("Go")
         department = "Computer Science"
     } | ConvertTo-Json -Depth 5
@@ -908,7 +904,7 @@ startxref
         Log-Fail "Expected initial contract status 'active', got '$($contractGetData.status)'"
         exit 1
     }
-    Log-Pass "Contract verified in active state (Agreed Budget Cents: $($contractGetData.agreed_budget_cents))"
+    Log-Pass "Contract verified in active state (ID: $($contractGetData.id))"
 
     # SEC-06 Assertion: Freelancer attempting to mark contract completed must receive 403 Forbidden
     Log-Substep "Asserting freelancer cannot mark contract completed (SEC-06)..."
