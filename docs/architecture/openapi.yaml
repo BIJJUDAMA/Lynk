@@ -1,0 +1,1044 @@
+openapi: 3.1.0
+info:
+  title: Lynk REST API
+  description: Authoritative REST API specification for Lynk, a high-trust campus freelance and gig marketplace built on the Unified Campus Member model.
+  version: 1.0.0
+  contact:
+    name: Lynk Engineering Team
+    url: https://github.com/BIJJUDAMA/Lynk
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local Docker Compose development environment
+
+security:
+  - cookieAuth: []
+  - bearerAuth: []
+
+paths:
+  /auth/signup:
+    post:
+      summary: Register campus member
+      description: Creates a new user identity in SuperTokens Core and application database. Strictly enforces institutional .edu email validation.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRequest'
+      responses:
+        '200':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Validation error or non-.edu email address
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/signin:
+    post:
+      summary: Member sign in
+      description: Authenticates user credentials and sets HttpOnly session cookies.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInRequest'
+      responses:
+        '200':
+          description: Sign in successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/signout:
+    post:
+      summary: Member sign out
+      description: Invalidates active session in SuperTokens Core and clears session cookies.
+      responses:
+        '200':
+          description: Session invalidated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: OK
+
+  /auth/me:
+    get:
+      summary: Get current authenticated member
+      description: Returns claims, role, and email verification status for active session.
+      responses:
+        '200':
+          description: Current user identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthenticated session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /profile/me:
+    get:
+      summary: Get current user profile
+      description: Retrieves the unified profile for the calling authenticated member.
+      responses:
+        '200':
+          description: Unified profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '401':
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Update current user profile
+      description: Updates profile fields with strict HTTP/HTTPS URL scheme validation. Preserves empty strings and zero when clearing fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '400':
+          description: Invalid URL scheme or validation failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /profile/{id}:
+    get:
+      summary: Get public profile
+      description: Retrieves sanitized public profile of a campus member by user ID.
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            example: st_usr_9a4f21e0
+      responses:
+        '200':
+          description: Public profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '404':
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /profile/resume:
+    post:
+      summary: Upload student resume
+      description: Streams resume to MinIO S3 bucket before database transaction. Gated behind verified email.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                resume:
+                  type: string
+                  format: binary
+                  description: PDF or Word document up to 5MB
+              required:
+                - resume
+      responses:
+        '200':
+          description: Resume uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResumeUploadResponse'
+        '400':
+          description: Invalid file type or payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Campus verification pending
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      summary: Download current user resume
+      description: Streams caller resume or returns presigned download URL.
+      responses:
+        '200':
+          description: Resume binary file stream
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  /jobs:
+    get:
+      summary: Search and list campus opportunities
+      description: Filter jobs by department, skills, budget, and search keywords.
+      security: []
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: department
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: skills
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: min_budget
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: max_budget
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: pay_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [fixed, hourly]
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, closed, completed, cancelled]
+            default: open
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated job opportunities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobListResponse'
+
+    post:
+      summary: Post a new job opportunity
+      description: Creates a new gig. Description capped at 5,000 characters. Skills capped at 25 items. Normalizes deadlines to UTC calendar day.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobRequest'
+      responses:
+        '201':
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          description: Validation error or bounds exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Campus verification pending
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /jobs/{id}:
+    get:
+      summary: Get job details
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Update job opportunity
+      description: Modifies open job parameters. Closed and cancelled jobs are immutable.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateJobRequest'
+      responses:
+        '200':
+          description: Job updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          description: Cannot update closed or cancelled job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Unauthorized to modify job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Cancel job opportunity
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Job cancelled successfully
+
+  /applications:
+    get:
+      summary: List job applications
+      description: Returns caller submitted applications or incoming applicants for an employer's job.
+      parameters:
+        - name: job_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, accepted, rejected]
+      responses:
+        '200':
+          description: Application list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Application'
+    post:
+      summary: Submit application proposal
+      description: Submits pitch and attaches applicant resume key. Gated behind verified email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApplicationRequest'
+      responses:
+        '201':
+          description: Application submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '400':
+          description: Cannot apply to own job or invalid job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate application
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /applications/{id}/accept:
+    post:
+      summary: Accept application proposal
+      description: Closes job, auto-rejects peers, and creates active contract in a single transaction.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Application accepted and contract created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    example: active
+                  amount:
+                    type: number
+                    example: 750.00
+
+  /applications/{id}/reject:
+    post:
+      summary: Reject application proposal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Application rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: rejected
+
+  /contracts:
+    get:
+      summary: List user contracts
+      description: Returns contracts where user is client or freelancer.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, completed, cancelled]
+      responses:
+        '200':
+          description: Contracts list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Contract'
+
+  /contracts/{id}:
+    get:
+      summary: Get contract details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Contract details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contract'
+        '403':
+          description: Unauthorized to view contract
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /contracts/{id}/complete:
+    post:
+      summary: Complete contract
+      description: Client marks deliverables approved.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Contract completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: completed
+
+  /contracts/{id}/cancel:
+    post:
+      summary: Cancel contract and restore candidates
+      description: Cancels active contract, restores competing applications to pending, and re-opens job.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Contract cancelled and candidates restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: cancelled
+                  job_status:
+                    type: string
+                    example: open
+                  restored_applications_count:
+                    type: integer
+                    example: 3
+
+  /reviews:
+    post:
+      summary: Submit contract review
+      description: Submits 1-5 star peer rating for completed contract.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+      responses:
+        '201':
+          description: Review created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        '400':
+          description: Contract not completed or invalid rating
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Review already submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reviews/user/{id}:
+    get:
+      summary: Get member reviews
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            example: st_usr_9a4f21e0
+      responses:
+        '200':
+          description: Public reviews list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Review'
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sAccessToken
+      description: SuperTokens HttpOnly session access token
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Optional bearer token for API clients
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: Campus verification pending
+
+    SignUpRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: student@stanford.edu
+        password:
+          type: string
+          format: password
+          example: SecurePassword123!
+
+    SignInRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: student@stanford.edu
+        password:
+          type: string
+          format: password
+          example: SecurePassword123!
+
+    AuthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: OK
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              example: st_usr_9a4f21e0-3e21
+            email:
+              type: string
+              example: student@stanford.edu
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          example: st_usr_9a4f21e0
+        email:
+          type: string
+          example: student@stanford.edu
+        role:
+          type: string
+          example: member
+        email_verified:
+          type: boolean
+          example: true
+
+    Profile:
+      type: object
+      properties:
+        user_id:
+          type: string
+          example: st_usr_9a4f21e0
+        full_name:
+          type: string
+          example: Jane Stanford
+        department:
+          type: string
+          example: Computer Science
+        major:
+          type: string
+          example: Artificial Intelligence
+        graduation_year:
+          type: integer
+          example: 2026
+        bio:
+          type: string
+          example: Researcher building agentic software.
+        skills:
+          type: array
+          items:
+            type: string
+          example: [Go, TypeScript, Next.js]
+        portfolio_links:
+          type: array
+          items:
+            type: string
+          example: ["https://github.com/janestanford"]
+        organization_name:
+          type: string
+          example: Stanford ACM
+        organization_website:
+          type: string
+          example: https://acm.stanford.edu
+        resume_key:
+          type: string
+          nullable: true
+          example: resumes/st_usr_9a4f21e0/resume.pdf
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: Jane Stanford
+        department:
+          type: string
+          example: Computer Science
+        major:
+          type: string
+          example: Artificial Intelligence
+        graduation_year:
+          type: integer
+          example: 2026
+        bio:
+          type: string
+          example: Updated researcher bio.
+        skills:
+          type: array
+          items:
+            type: string
+        portfolio_links:
+          type: array
+          items:
+            type: string
+        organization_name:
+          type: string
+        organization_website:
+          type: string
+
+    ResumeUploadResponse:
+      type: object
+      properties:
+        resume_key:
+          type: string
+          example: resumes/st_usr_9a4f21e0/resume.pdf
+        file_name:
+          type: string
+          example: resume.pdf
+        file_size:
+          type: integer
+          example: 184320
+        mime_type:
+          type: string
+          example: application/pdf
+        uploaded_at:
+          type: string
+          format: date-time
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_by:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        budget:
+          type: number
+        pay_type:
+          type: string
+          enum: [fixed, hourly]
+        required_skills:
+          type: array
+          items:
+            type: string
+        department:
+          type: string
+        status:
+          type: string
+          enum: [open, closed, completed, cancelled]
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateJobRequest:
+      type: object
+      required:
+        - title
+        - description
+        - budget
+        - pay_type
+      properties:
+        title:
+          type: string
+          minLength: 5
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 5000
+        budget:
+          type: number
+          minimum: 0.01
+        pay_type:
+          type: string
+          enum: [fixed, hourly]
+        required_skills:
+          type: array
+          items:
+            type: string
+            maxLength: 50
+          maxItems: 25
+        department:
+          type: string
+        deadline:
+          type: string
+          format: date-time
+
+    UpdateJobRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 5000
+        budget:
+          type: number
+          minimum: 0.01
+        pay_type:
+          type: string
+          enum: [fixed, hourly]
+        required_skills:
+          type: array
+          items:
+            type: string
+            maxLength: 50
+          maxItems: 25
+        department:
+          type: string
+        deadline:
+          type: string
+          format: date-time
+
+    JobListResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    Application:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        job_id:
+          type: string
+          format: uuid
+        applicant_id:
+          type: string
+        cover_letter:
+          type: string
+        resume_key:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, accepted, rejected]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateApplicationRequest:
+      type: object
+      required:
+        - job_id
+        - cover_letter
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        cover_letter:
+          type: string
+          minLength: 10
+
+    Contract:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        job_id:
+          type: string
+          format: uuid
+        application_id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+        freelancer_id:
+          type: string
+        amount:
+          type: number
+        status:
+          type: string
+          enum: [active, completed, cancelled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Review:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        contract_id:
+          type: string
+          format: uuid
+        reviewer_id:
+          type: string
+        reviewee_id:
+          type: string
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CreateReviewRequest:
+      type: object
+      required:
+        - contract_id
+        - rating
+        - comment
+      properties:
+        contract_id:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          minLength: 5

@@ -1,5 +1,9 @@
 # System Architecture Document - Lynk
 
+> [!NOTE]
+> **Authoritative Documentation Suite Available:**  
+> This file is retained for historical reference. The active, multi-part documentation suite is located in [`docs/README.md`](README.md) and [`docs/architecture/system-architecture.md`](architecture/system-architecture.md).
+
 > **Project:** Lynk - High-Trust Campus Freelance & Gig Marketplace  
 > **Status:** MVP Architecture Specification  
 > **Identity & Access Management (IAM):** SuperTokens Core (Session + EmailPassword + EmailVerification)  
@@ -295,8 +299,8 @@ erDiagram
 ```
 
 ### Partial Unique Indexes (Contracts)
-* `uq_contracts_active_job` — at most one non-cancelled contract per `job_id`.
-* `uq_contracts_active_application` — at most one non-cancelled contract per `application_id`.
+* `uq_contracts_active_job` - at most one non-cancelled contract per `job_id`.
+* `uq_contracts_active_application` - at most one non-cancelled contract per `application_id`.
 
 ---
 
@@ -455,7 +459,7 @@ services:
         condition: service_healthy
     environment:
       POSTGRESQL_CONNECTION_URI: "postgresql://lynk_user:lynk_password@postgres:5432/supertokens_db"
-      API_KEYS: "lynk_supertokens_secret_api_key_2026"
+      API_KEYS: "lynk-supertokens-secret-api-key-2026"
     ports:
       - "3567:3567"
     networks:
@@ -513,7 +517,7 @@ services:
       DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
       MIGRATIONS_DIR: "/app/migrations"
       SUPERTOKENS_CONNECTION_URI: "http://supertokens:3567"
-      SUPERTOKENS_API_KEY: "lynk_supertokens_secret_api_key_2026"
+      SUPERTOKENS_API_KEY: "lynk-supertokens-secret-api-key-2026"
       API_DOMAIN: "http://localhost:8080"
       WEBSITE_DOMAIN: "http://localhost:3000"
       MINIO_ENDPOINT: "minio:9000"
