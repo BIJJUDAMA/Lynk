@@ -68,7 +68,7 @@ func LoadConfig() Config {
 	}
 
 	stConnectionURI := getEnv("SUPERTOKENS_CONNECTION_URI", "http://localhost:3567")
-	stAPIKey := getEnv("SUPERTOKENS_API_KEY", "lynk_supertokens_secret_api_key_2026")
+	stAPIKey := getEnv("SUPERTOKENS_API_KEY", "lynk-supertokens-secret-api-key-2026")
 	apiDomain := getEnv("API_DOMAIN", "http://localhost:8080")
 	websiteDomain := getEnv("WEBSITE_DOMAIN", "http://localhost:3000")
 	minioEndpoint := getEnv("MINIO_ENDPOINT", "localhost:9000")
@@ -110,7 +110,7 @@ func warnIfDefaultSecrets(appEnv, accessKey, secretKey, stAPIKey string) string 
 	if isDev {
 		return ""
 	}
-	if accessKey == "minio_admin" || secretKey == "minio_password" || stAPIKey == "lynk_supertokens_secret_api_key_2026" {
+	if accessKey == "minio_admin" || secretKey == "minio_password" || stAPIKey == "lynk-supertokens-secret-api-key-2026" {
 		return "default MinIO or SuperTokens credentials detected; set unique MINIO_ACCESS_KEY/MINIO_SECRET_KEY and SUPERTOKENS_API_KEY"
 	}
 	return ""

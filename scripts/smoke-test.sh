@@ -49,28 +49,28 @@ else
     C_MAGENTA=""
 fi
 
-log_info()    { echo -e "${C_CYAN}[INFO]${C_RESET} $*"; }
-log_step()    { echo -e "\n${C_BOLD}${C_BLUE}======================================================================${C_RESET}"; echo -e "${C_BOLD}${C_MAGENTA}[STEP $1/13]${C_RESET} ${C_BOLD}$2${C_RESET}"; echo -e "${C_BOLD}${C_BLUE}======================================================================${C_RESET}"; }
-log_substep() { echo -e "  ${C_CYAN}-->${C_RESET} $*"; }
-log_pass()    { echo -e "  ${C_GREEN}[PASS]${C_RESET} $*"; }
+log_info()    { echo -e "${C_CYAN}[INFO]${C_RESET} $*" >&2; }
+log_step()    { echo -e "\n${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; echo -e "${C_BOLD}${C_MAGENTA}[STEP $1/13]${C_RESET} ${C_BOLD}$2${C_RESET}" >&2; echo -e "${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; }
+log_substep() { echo -e "  ${C_CYAN}-->${C_RESET} $*" >&2; }
+log_pass()    { echo -e "  ${C_GREEN}[PASS]${C_RESET} $*" >&2; }
 log_fail()    { echo -e "  ${C_RED}[FAIL]${C_RESET} $*" >&2; }
-log_warn()    { echo -e "  ${C_YELLOW}[WARN]${C_RESET} $*"; }
+log_warn()    { echo -e "  ${C_YELLOW}[WARN]${C_RESET} $*" >&2; }
 
 # ------------------------------------------------------------------------------
 # Configuration & Defaults
 # ------------------------------------------------------------------------------
 API_BASE_URL="${API_BASE_URL:-http://localhost:8080}"
 SUPERTOKENS_URL="${SUPERTOKENS_URL:-http://localhost:3567}"
-SUPERTOKENS_API_KEY="${SUPERTOKENS_API_KEY:-lynk_supertokens_secret_api_key_2026}"
+SUPERTOKENS_API_KEY="${SUPERTOKENS_API_KEY:-lynk-supertokens-secret-api-key-2026}"
 MINIO_URL="${MINIO_URL:-http://localhost:9000}"
 
-EMPLOYER_EMAIL="${EMPLOYER_EMAIL:-${EMPLOYER_USERNAME:-employer@stanford.edu}}"
+EMPLOYER_EMAIL="${EMPLOYER_EMAIL:-${EMPLOYER_USERNAME:-poster@campus.edu}}"
 EMPLOYER_PASSWORD="${EMPLOYER_PASSWORD:-password123}"
 
-VERIFIED_STUDENT_EMAIL="${VERIFIED_STUDENT_EMAIL:-${VERIFIED_STUDENT_USERNAME:-student@mit.edu}}"
+VERIFIED_STUDENT_EMAIL="${VERIFIED_STUDENT_EMAIL:-${VERIFIED_STUDENT_USERNAME:-applicant@campus.edu}}"
 VERIFIED_STUDENT_PASSWORD="${VERIFIED_STUDENT_PASSWORD:-password123}"
 
-UNVERIFIED_STUDENT_EMAIL="${UNVERIFIED_STUDENT_EMAIL:-${UNVERIFIED_STUDENT_USERNAME:-unverified@berkeley.edu}}"
+UNVERIFIED_STUDENT_EMAIL="${UNVERIFIED_STUDENT_EMAIL:-${UNVERIFIED_STUDENT_USERNAME:-unverified@campus.edu}}"
 UNVERIFIED_STUDENT_PASSWORD="${UNVERIFIED_STUDENT_PASSWORD:-password123}"
 
 UNAUTHORIZED_EMAIL="${UNAUTHORIZED_EMAIL:-unauthorized@gmail.com}"
@@ -91,16 +91,16 @@ Usage:
 Environment Variables:
   API_BASE_URL                 Base URL of Lynk Go API (default: http://localhost:8080)
   SUPERTOKENS_URL              Base URL of SuperTokens Core (default: http://localhost:3567)
-  SUPERTOKENS_API_KEY          SuperTokens Core API Key (default: lynk_supertokens_secret_api_key_2026)
+  SUPERTOKENS_API_KEY          SuperTokens Core API Key (default: lynk-supertokens-secret-api-key-2026)
   MINIO_URL                    Base URL of MinIO S3 (default: http://localhost:9000)
   EMPLOYER_TOKEN               Pre-acquired access token for employer
   VERIFIED_STUDENT_TOKEN       Pre-acquired access token for verified student
   UNVERIFIED_STUDENT_TOKEN     Pre-acquired access token for unverified student
-  EMPLOYER_EMAIL               Employer email (default: employer@stanford.edu)
-  EMPLOYER_PASSWORD            Employer password (default: password123)
-  VERIFIED_STUDENT_EMAIL       Student email (default: student@mit.edu)
-  VERIFIED_STUDENT_PASSWORD    Student password (default: password123)
-  UNVERIFIED_STUDENT_EMAIL     Unverified email (default: unverified@berkeley.edu)
+  EMPLOYER_EMAIL               Poster member email (default: poster@campus.edu)
+  EMPLOYER_PASSWORD            Poster password (default: password123)
+  VERIFIED_STUDENT_EMAIL       Applicant member email (default: applicant@campus.edu)
+  VERIFIED_STUDENT_PASSWORD    Applicant password (default: password123)
+  UNVERIFIED_STUDENT_EMAIL     Unverified member email (default: unverified@campus.edu)
   UNVERIFIED_STUDENT_PASSWORD  Unverified password (default: password123)
   SKIP_INFRA_HEALTH            Set to 1 to skip SuperTokens/MinIO health pings
 EOF
@@ -258,7 +258,7 @@ EOF
     local token
     token=$(grep -i '^st-access-token:' "$head_file" 2>/dev/null | tr -d '\r' | awk '{print $2}' | head -n1 || true)
     if [ -z "$token" ]; then
-        token=$(grep -i 'sAccessToken=' "$head_file" 2>/dev/null | sed -n 's/.*sAccessToken=\([^;]*\).*/\1/p' | head -n1 || true)
+        token=$(grep -i 'sAccessToken=' "$head_file" 2>/dev/null | tr -d '\r' | sed -n 's/.*sAccessToken=\([^;]*\).*/\1/p' | head -n1 || true)
     fi
 
     local user_id
@@ -303,7 +303,7 @@ EOF
     local token
     token=$(grep -i '^st-access-token:' "$head_file" 2>/dev/null | tr -d '\r' | awk '{print $2}' | head -n1 || true)
     if [ -z "$token" ]; then
-        token=$(grep -i 'sAccessToken=' "$head_file" 2>/dev/null | sed -n 's/.*sAccessToken=\([^;]*\).*/\1/p' | head -n1 || true)
+        token=$(grep -i 'sAccessToken=' "$head_file" 2>/dev/null | tr -d '\r' | sed -n 's/.*sAccessToken=\([^;]*\).*/\1/p' | head -n1 || true)
     fi
 
     local user_id
@@ -360,7 +360,7 @@ resolve_token() {
     local token="$REG_TOKEN"
     local user_id="$REG_USER_ID"
 
-    if [ "$REG_STATUS" = "EMAIL_ALREADY_EXISTS_ERROR" ]; then
+    if [ "$REG_STATUS" = "EMAIL_ALREADY_EXISTS_ERROR" ] || [[ "$REG_BODY" == *"already exists"* ]]; then
         log_substep "Member $email already registered; signing in..."
         login_supertokens_user "$email" "$password"
         if [ "$LOGIN_STATUS" = "OK" ]; then

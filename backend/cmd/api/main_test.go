@@ -445,7 +445,7 @@ func DefaultTestConfig() Config {
 		DatabaseURL:              "postgres://test",
 		MigrationsDir:            "migrations",
 		SuperTokensConnectionURI: "http://localhost:3567",
-		SuperTokensAPIKey:        "lynk_supertokens_secret_api_key_2026",
+		SuperTokensAPIKey:        "lynk-supertokens-secret-api-key-2026",
 		APIDomain:                "http://localhost:8080",
 		WebsiteDomain:            "http://localhost:3000",
 		MinioEndpoint:            "localhost:9000",
@@ -459,14 +459,14 @@ func DefaultTestConfig() Config {
 }
 
 func TestWarnIfDefaultSecrets_NondDev(t *testing.T) {
-	msg := warnIfDefaultSecrets("production", "minio_admin", "minio_password", "lynk_supertokens_secret_api_key_2026")
+	msg := warnIfDefaultSecrets("production", "minio_admin", "minio_password", "lynk-supertokens-secret-api-key-2026")
 	if msg == "" {
 		t.Fatal("expected warning for default secrets in production")
 	}
 }
 
 func TestWarnIfDefaultSecrets_DevSilent(t *testing.T) {
-	msg := warnIfDefaultSecrets("development", "minio_admin", "minio_password", "lynk_supertokens_secret_api_key_2026")
+	msg := warnIfDefaultSecrets("development", "minio_admin", "minio_password", "lynk-supertokens-secret-api-key-2026")
 	if msg != "" {
 		t.Fatalf("dev should not warn, got %q", msg)
 	}
@@ -482,8 +482,8 @@ func TestLoadConfig_SuperTokens(t *testing.T) {
 		if cfg.SuperTokensConnectionURI != "http://localhost:3567" {
 			t.Errorf("expected default SuperTokensConnectionURI http://localhost:3567, got: %s", cfg.SuperTokensConnectionURI)
 		}
-		if cfg.SuperTokensAPIKey != "lynk_supertokens_secret_api_key_2026" {
-			t.Errorf("expected default SuperTokensAPIKey lynk_supertokens_secret_api_key_2026, got: %s", cfg.SuperTokensAPIKey)
+		if cfg.SuperTokensAPIKey != "lynk-supertokens-secret-api-key-2026" {
+			t.Errorf("expected default SuperTokensAPIKey lynk-supertokens-secret-api-key-2026, got: %s", cfg.SuperTokensAPIKey)
 		}
 		if cfg.APIDomain != "http://localhost:8080" {
 			t.Errorf("expected default APIDomain http://localhost:8080, got: %s", cfg.APIDomain)

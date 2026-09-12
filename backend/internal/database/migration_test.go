@@ -380,3 +380,57 @@ func TestMigration000009_DownSQL_Structure(t *testing.T) {
 	}
 }
 
+func TestMigration000010_UpSQL_Structure(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000010_seed_test_campus_members.up.sql"))
+	if err != nil {
+		t.Fatalf("failed to read 000010 up migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	expectedFragments := []string{
+		"INSERT INTO users (id, email, role, created_at, updated_at)",
+		"'a2be7abb-a253-4b8d-b3c3-5a5f39416239', 'poster@campus.edu', 'member'",
+		"'2e961701-96a1-43ef-9201-f9720bdef3d5', 'applicant@campus.edu', 'member'",
+		"'e4264e59-8290-4a3f-91fe-4826d9165c89', 'unverified@campus.edu', 'member'",
+		"INSERT INTO profiles (",
+		"'a2be7abb-a253-4b8d-b3c3-5a5f39416239'",
+		"'2e961701-96a1-43ef-9201-f9720bdef3d5'",
+		"'e4264e59-8290-4a3f-91fe-4826d9165c89'",
+		"CREATE EXTENSION IF NOT EXISTS dblink;",
+		"INSERT INTO roles (app_id, role)",
+		"INSERT INTO emailverification_verified_emails",
+		"INSERT INTO user_roles",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(content, fragment) {
+			t.Errorf("000010 up migration missing fragment: %s", fragment)
+		}
+	}
+}
+
+func TestMigration000010_DownSQL_Structure(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000010_seed_test_campus_members.down.sql"))
+	if err != nil {
+		t.Fatalf("failed to read 000010 down migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	expectedFragments := []string{
+		"DELETE FROM profiles WHERE user_id IN (",
+		"'a2be7abb-a253-4b8d-b3c3-5a5f39416239'",
+		"'2e961701-96a1-43ef-9201-f9720bdef3d5'",
+		"'e4264e59-8290-4a3f-91fe-4826d9165c89'",
+		"DELETE FROM users WHERE id IN (",
+		"DELETE FROM user_roles WHERE user_id IN",
+		"DELETE FROM emailverification_verified_emails WHERE user_id IN",
+		"DELETE FROM emailpassword_users WHERE user_id IN",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(content, fragment) {
+			t.Errorf("000010 down migration missing fragment: %s", fragment)
+		}
+	}
+}
+

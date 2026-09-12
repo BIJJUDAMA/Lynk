@@ -25,24 +25,25 @@
 
 [CmdletBinding()]
 param (
-    [string]$ApiBaseUrl = $(if ($env:API_BASE_URL) { $env:API_BASE_URL } else { "http://localhost:8080" }),
-    [string]$SuperTokensUrl = $(if ($env:SUPERTOKENS_URL) { $env:SUPERTOKENS_URL } else { "http://localhost:3567" }),
-    [string]$SuperTokensApiKey = $(if ($env:SUPERTOKENS_API_KEY) { $env:SUPERTOKENS_API_KEY } else { "lynk_supertokens_secret_api_key_2026" }),
-    [string]$MinioUrl = $(if ($env:MINIO_URL) { $env:MINIO_URL } else { "http://localhost:9000" }),
+    [string]$ApiBaseUrl = $(if ($env:API_BASE_URL) { $env:API_BASE_URL } else { "http://127.0.0.1:8080" }),
+    [string]$SuperTokensUrl = $(if ($env:SUPERTOKENS_URL) { $env:SUPERTOKENS_URL } else { "http://127.0.0.1:3567" }),
+    [string]$SuperTokensApiKey = $(if ($env:SUPERTOKENS_API_KEY) { $env:SUPERTOKENS_API_KEY } else { "lynk-supertokens-secret-api-key-2026" }),
+    [string]$MinioUrl = $(if ($env:MINIO_URL) { $env:MINIO_URL } else { "http://127.0.0.1:9000" }),
     [string]$EmployerToken = $env:EMPLOYER_TOKEN,
     [string]$VerifiedStudentToken = $env:VERIFIED_STUDENT_TOKEN,
     [string]$UnverifiedStudentToken = $env:UNVERIFIED_STUDENT_TOKEN,
-    [string]$EmployerEmail = $(if ($env:EMPLOYER_EMAIL) { $env:EMPLOYER_EMAIL } elseif ($env:EMPLOYER_USERNAME) { $env:EMPLOYER_USERNAME } else { "employer@stanford.edu" }),
+    [string]$EmployerEmail = $(if ($env:EMPLOYER_EMAIL) { $env:EMPLOYER_EMAIL } elseif ($env:EMPLOYER_USERNAME) { $env:EMPLOYER_USERNAME } else { "poster@campus.edu" }),
     [string]$EmployerPassword = $(if ($env:EMPLOYER_PASSWORD) { $env:EMPLOYER_PASSWORD } else { "password123" }),
-    [string]$VerifiedStudentEmail = $(if ($env:VERIFIED_STUDENT_EMAIL) { $env:VERIFIED_STUDENT_EMAIL } elseif ($env:VERIFIED_STUDENT_USERNAME) { $env:VERIFIED_STUDENT_USERNAME } else { "student@mit.edu" }),
+    [string]$VerifiedStudentEmail = $(if ($env:VERIFIED_STUDENT_EMAIL) { $env:VERIFIED_STUDENT_EMAIL } elseif ($env:VERIFIED_STUDENT_USERNAME) { $env:VERIFIED_STUDENT_USERNAME } else { "applicant@campus.edu" }),
     [string]$VerifiedStudentPassword = $(if ($env:VERIFIED_STUDENT_PASSWORD) { $env:VERIFIED_STUDENT_PASSWORD } else { "password123" }),
-    [string]$UnverifiedStudentEmail = $(if ($env:UNVERIFIED_STUDENT_EMAIL) { $env:UNVERIFIED_STUDENT_EMAIL } elseif ($env:UNVERIFIED_STUDENT_USERNAME) { $env:UNVERIFIED_STUDENT_USERNAME } else { "unverified@berkeley.edu" }),
+    [string]$UnverifiedStudentEmail = $(if ($env:UNVERIFIED_STUDENT_EMAIL) { $env:UNVERIFIED_STUDENT_EMAIL } elseif ($env:UNVERIFIED_STUDENT_USERNAME) { $env:UNVERIFIED_STUDENT_USERNAME } else { "unverified@campus.edu" }),
     [string]$UnverifiedStudentPassword = $(if ($env:UNVERIFIED_STUDENT_PASSWORD) { $env:UNVERIFIED_STUDENT_PASSWORD } else { "password123" }),
     [string]$UnauthorizedEmail = "unauthorized@gmail.com",
     [switch]$SkipInfraHealth = $(if ($env:SKIP_INFRA_HEALTH -eq "1") { $true } else { $false })
 )
 
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 
 # ------------------------------------------------------------------------------
 # Logging Helpers
