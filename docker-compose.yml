@@ -30,19 +30,19 @@ services:
         condition: service_healthy
     environment:
       POSTGRESQL_CONNECTION_URI: "postgresql://lynk_user:lynk_password@postgres:5432/supertokens_db"
-      API_KEYS: "${SUPERTOKENS_API_KEY:-lynk_supertokens_secret_api_key_2026}"
+      API_KEYS: "${SUPERTOKENS_API_KEY:-lynk-supertokens-secret-api-key-2026}"
     ports:
       - "3567:3567"
     networks:
       - lynk-net
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/3567 && echo -e 'GET /hello HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'Hello'"]
+      test: ["CMD-SHELL", "curl -f http://localhost:3567/hello || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   minio:
-    image: minio/minio:RELEASE.2024-11-07T00-52-28Z
+    image: quay.io/minio/minio:RELEASE.2024-11-07T00-52-20Z
     container_name: lynk-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -74,7 +74,7 @@ services:
       DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
       MIGRATIONS_DIR: "/app/migrations"
       SUPERTOKENS_CONNECTION_URI: "http://supertokens:3567"
-      SUPERTOKENS_API_KEY: "${SUPERTOKENS_API_KEY:-lynk_supertokens_secret_api_key_2026}"
+      SUPERTOKENS_API_KEY: "${SUPERTOKENS_API_KEY:-lynk-supertokens-secret-api-key-2026}"
       API_DOMAIN: "http://localhost:8080"
       WEBSITE_DOMAIN: "http://localhost:3000"
       MINIO_ENDPOINT: "minio:9000"
