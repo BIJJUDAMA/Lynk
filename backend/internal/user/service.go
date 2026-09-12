@@ -235,22 +235,26 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 	org := existing.Organization
 	if req.Organization != nil {
 		org = strings.TrimSpace(*req.Organization)
-		if len(org) > 200 {
-			return nil, fmt.Errorf("%w: organization name must not exceed 200 characters", ErrInvalidInput)
-		}
+	} else if req.CompanyOrOrg != nil {
+		org = strings.TrimSpace(*req.CompanyOrOrg)
+	}
+	if len(org) > 200 {
+		return nil, fmt.Errorf("%w: organization name must not exceed 200 characters", ErrInvalidInput)
 	}
 
 	orgWebsite := existing.OrganizationWebsite
 	if req.OrganizationWebsite != nil {
 		orgWebsite = strings.TrimSpace(*req.OrganizationWebsite)
-		if len(orgWebsite) > 255 {
-			return nil, fmt.Errorf("%w: organization website must not exceed 255 characters", ErrInvalidInput)
-		}
-		if orgWebsite != "" {
-			parsed, err := url.ParseRequestURI(orgWebsite)
-			if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-				return nil, fmt.Errorf("%w: organization website must be a valid http or https URL", ErrInvalidInput)
-			}
+	} else if req.Website != nil {
+		orgWebsite = strings.TrimSpace(*req.Website)
+	}
+	if len(orgWebsite) > 255 {
+		return nil, fmt.Errorf("%w: organization website must not exceed 255 characters", ErrInvalidInput)
+	}
+	if orgWebsite != "" {
+		parsed, err := url.ParseRequestURI(orgWebsite)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return nil, fmt.Errorf("%w: organization website must be a valid http or https URL", ErrInvalidInput)
 		}
 	}
 
@@ -264,7 +268,9 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 		Skills:              skills,
 		PortfolioLinks:      links,
 		Organization:        org,
+		CompanyOrOrg:        org,
 		OrganizationWebsite: orgWebsite,
+		Website:             orgWebsite,
 	}
 
 	if err := s.repo.UpsertProfile(ctx, p); err != nil {

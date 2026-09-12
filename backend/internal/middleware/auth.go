@@ -10,8 +10,10 @@ import (
 	"github.com/supertokens/supertokens-golang/recipe/emailpassword"
 	"github.com/supertokens/supertokens-golang/recipe/emailverification"
 	"github.com/supertokens/supertokens-golang/recipe/session"
+	"github.com/supertokens/supertokens-golang/recipe/session/claims"
 	"github.com/supertokens/supertokens-golang/recipe/session/sessmodels"
 	"github.com/supertokens/supertokens-golang/recipe/userroles"
+	"github.com/supertokens/supertokens-golang/supertokens"
 )
 
 type statusTrackingWriter struct {
@@ -81,7 +83,11 @@ func SessionMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tw := newStatusTrackingWriter(w)
-			sessionContainer, err := session.GetSession(r, tw, &sessmodels.VerifySessionOptions{})
+			sessionContainer, err := session.GetSession(r, tw, &sessmodels.VerifySessionOptions{
+				OverrideGlobalClaimValidators: func(globalClaimValidators []claims.SessionClaimValidator, sessionContainer sessmodels.SessionContainer, userContext supertokens.UserContext) ([]claims.SessionClaimValidator, error) {
+					return []claims.SessionClaimValidator{}, nil
+				},
+			})
 			if err != nil || sessionContainer == nil {
 				if tw.Wrote() {
 					return

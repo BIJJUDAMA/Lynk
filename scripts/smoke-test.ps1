@@ -44,6 +44,7 @@ param (
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+$PSDefaultParameterValues['Invoke-WebRequest:UseBasicParsing'] = $true
 
 # ------------------------------------------------------------------------------
 # Logging Helpers
@@ -105,6 +106,7 @@ function Invoke-ApiRequest {
     if ($Token) {
         $headers["Authorization"] = "Bearer $Token"
         $headers["st-auth-mode"] = "header"
+        $headers["st-access-token"] = $Token
         $headers["Cookie"] = "sAccessToken=$Token"
     }
 
@@ -129,25 +131,43 @@ function Invoke-ApiRequest {
     }
     catch [System.Net.WebException] {
         $webEx = $_.Exception
-        if ($webEx.Response) {
-            $responseStatusCode = [int]$webEx.Response.StatusCode
+        if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+            $responseBody = $_.ErrorDetails.Message
+        } elseif ($webEx.Response) {
             $stream = $webEx.Response.GetResponseStream()
             if ($stream) {
                 $reader = New-Object System.IO.StreamReader($stream)
                 $responseBody = $reader.ReadToEnd()
                 $reader.Close()
             }
+        }
+        if ($webEx.Response) {
+            $responseStatusCode = [int]$webEx.Response.StatusCode
         } else {
             $responseStatusCode = 0
-            $responseBody = $webEx.Message
+            if (-not $responseBody) { $responseBody = $webEx.Message }
         }
     }
     catch {
         # Catch for PowerShell 7 / HttpResponseException
         if ($_.Exception.Response) {
             $responseStatusCode = [int]$_.Exception.Response.StatusCode
+            try {
+                if ($_.Exception.Response.Content) {
+                    $responseBody = $_.Exception.Response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                } elseif ($_.Exception.Response.GetResponseStream) {
+                    $stream = $_.Exception.Response.GetResponseStream()
+                    if ($stream) {
+                        $reader = New-Object System.IO.StreamReader($stream)
+                        $responseBody = $reader.ReadToEnd()
+                        $reader.Close()
+                    }
+                }
+            } catch { }
         }
-        $responseBody = $_.ToString()
+        if (-not $responseBody) {
+            $responseBody = $_.ToString()
+        }
     }
 
     if ($responseStatusCode -ne $ExpectedStatusCode) {
@@ -342,7 +362,7 @@ function Set-SuperTokensEmailVerified {
 
     Log-Substep "Verifying campus email in SuperTokens Core for $Email ($UserId)..."
 
-    $url = "$SuperTokensUrl/recipe/user/email/verify"
+    $tokenUrl = "$SuperTokensUrl/recipe/user/email/verify/token"
     $headers = @{
         "api-key" = $SuperTokensApiKey
         "Content-Type" = "application/json"
@@ -353,13 +373,26 @@ function Set-SuperTokensEmailVerified {
     } | ConvertTo-Json -Depth 5
 
     try {
-        $res = Invoke-WebRequest -Uri $url -Method Post -Headers $headers -Body $body -ErrorAction Stop
-        $json = $res.Content | ConvertFrom-Json
-        if ($json.status -eq "OK" -or $json.status -eq "EMAIL_ALREADY_VERIFIED_ERROR") {
+        $tokRes = Invoke-WebRequest -Uri $tokenUrl -Method Post -Headers $headers -Body $body -ErrorAction Stop
+        $tokJson = $tokRes.Content | ConvertFrom-Json
+        if ($tokJson.status -eq "EMAIL_ALREADY_VERIFIED_ERROR") {
             Log-Pass "Campus email verified in SuperTokens: $Email"
             return $true
         }
-        Log-Warn "SuperTokens email verify returned unexpected status: $($json.status)"
+        if ($tokJson.status -eq "OK" -and $tokJson.token) {
+            $verifyUrl = "$SuperTokensUrl/recipe/user/email/verify"
+            $verifyBody = @{
+                method = "token"
+                token = $tokJson.token
+            } | ConvertTo-Json -Depth 5
+            $vRes = Invoke-WebRequest -Uri $verifyUrl -Method Post -Headers $headers -Body $verifyBody -ErrorAction Stop
+            $vJson = $vRes.Content | ConvertFrom-Json
+            if ($vJson.status -eq "OK" -or $vJson.status -eq "EMAIL_ALREADY_VERIFIED_ERROR") {
+                Log-Pass "Campus email verified in SuperTokens: $Email"
+                return $true
+            }
+        }
+        Log-Warn "SuperTokens email verify returned unexpected status: $($tokJson.status)"
         return $false
     }
     catch {
@@ -386,7 +419,7 @@ function Resolve-SuperTokensUser {
     $token = $reg.Token
     $userId = $reg.UserId
 
-    if ($reg.Json -and $reg.Json.status -eq "EMAIL_ALREADY_EXISTS_ERROR") {
+    if (($reg.Json -and $reg.Json.status -eq "EMAIL_ALREADY_EXISTS_ERROR") -or ($reg.Body -like "*already exists*")) {
         Log-Substep "Member $Email already registered; signing in..."
         $login = Login-SuperTokensUser -Email $Email -Password $Password
         if ($login.Json -and $login.Json.status -eq "OK") {
@@ -707,7 +740,7 @@ startxref
     $jobPayload = @{
         title = "Campus Marketplace Go & Next.js Engineer"
         description = "Looking for an energetic student engineer to develop high-trust freelance marketplace features with Go, Chi, PostgreSQL, and Next.js."
-        budget = 950.00
+        budget_cents = 95000
         pay_type = "fixed"
         required_skills = @("Go", "PostgreSQL", "Docker", "Next.js")
         department = "Computer Science"
@@ -744,7 +777,7 @@ startxref
         Log-Fail "Job detail ID mismatch: expected $JobId, got '$($jobDetailData.id)'"
         exit 1
     }
-    Log-Pass "Job details retrieved successfully: Budget `$$($jobDetailData.budget)"
+    Log-Pass "Job details retrieved successfully: Budget Cents $($jobDetailData.budget_cents)"
 
     # --------------------------------------------------------------------------
     # STEP 9: Campus Email Verification Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)
@@ -755,7 +788,7 @@ startxref
     $unvJobPayload = @{
         title = "Unauthorized Opportunity"
         description = "Should be blocked by campus verification gate."
-        budget = 100.00
+        budget_cents = 10000
         pay_type = "fixed"
         required_skills = @("Go")
         department = "Computer Science"
@@ -828,7 +861,7 @@ startxref
     $presigned = $memberResumeJson.data.download_url
     if (-not $presigned) { $presigned = $memberResumeJson.data.url }
     if (-not $presigned) { throw "SEC-07: missing presigned download URL in JSON body: $memberResumeResp" }
-    $dl = Invoke-WebRequest -Uri $presigned -Method GET -MaximumRedirection 0 -SkipHttpErrorCheck
+    $dl = Invoke-WebRequest -Uri $presigned -Method GET -MaximumRedirection 0
     if ($dl.StatusCode -ne 200) { throw "SEC-07: presigned GET expected 200, got $($dl.StatusCode)" }
     Log-Pass "SEC-07: Job poster retrieved applicant resume via /profile/{id}/resume and GET presigned URL"
 
@@ -875,7 +908,7 @@ startxref
         Log-Fail "Expected initial contract status 'active', got '$($contractGetData.status)'"
         exit 1
     }
-    Log-Pass "Contract verified in active state (Agreed Budget: `$$($contractGetData.agreed_budget))"
+    Log-Pass "Contract verified in active state (Agreed Budget Cents: $($contractGetData.agreed_budget_cents))"
 
     # SEC-06 Assertion: Freelancer attempting to mark contract completed must receive 403 Forbidden
     Log-Substep "Asserting freelancer cannot mark contract completed (SEC-06)..."

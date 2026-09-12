@@ -248,12 +248,23 @@ curl -i http://localhost:9000/minio/health/live
 cd backend
 go test -v -race ./...
 
-# Frontend typecheck & linting
+# Frontend typecheck, linting & test suite
 cd frontend
-npm run typecheck
 npm run lint
 npm test
+npm run typecheck
+npm run build
+
+# End-to-end multi-container smoke test suite (against live local Docker stack)
+./scripts/smoke-test.sh          # Linux / macOS
+.\scripts\smoke-test.ps1         # Windows PowerShell
 ```
+
+### 7.5 Automated GitHub Actions CI/CD Pipelines
+The repository enforces code quality and deployment safety across three decoupled workflows:
+- **Core CI (`.github/workflows/ci.yml`):** Runs `golangci-lint`, forward/rollback migration checks (`up`, `down -all`, `up`), Go race detector tests, ESLint, frontend unit tests, TypeScript typechecks, and Next.js production builds.
+- **Container Build (`.github/workflows/docker-build.yml`):** Validates that `backend/Dockerfile` builds cleanly via Buildx with layer caching on any backend or compose change.
+- **E2E Smoke Test (`.github/workflows/smoke-test.yml`):** Orchestrates a clean Docker Compose environment, polls healthchecks for all four services, and executes `./scripts/smoke-test.sh` with automated container log dumps on failure.
 
 ---
 

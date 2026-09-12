@@ -88,6 +88,7 @@ func (r *Repository) GetProfile(ctx context.Context, userID string) (*Profile, e
 	if p.PortfolioLinks == nil {
 		p.PortfolioLinks = []string{}
 	}
+	populateProfileAliases(p)
 	return p, nil
 }
 
@@ -136,6 +137,7 @@ func (r *Repository) GetProfileByID(ctx context.Context, id string) (*Profile, e
 	if p.PortfolioLinks == nil {
 		p.PortfolioLinks = []string{}
 	}
+	populateProfileAliases(p)
 	return p, nil
 }
 
@@ -180,6 +182,7 @@ func (r *Repository) UpsertProfile(ctx context.Context, p *Profile) error {
 	if p.PortfolioLinks == nil {
 		p.PortfolioLinks = []string{}
 	}
+	populateProfileAliases(p)
 	return nil
 }
 
@@ -271,6 +274,7 @@ func (r *Repository) ProvisionUser(ctx context.Context, u *User, profile *Profil
 		if profile.PortfolioLinks == nil {
 			profile.PortfolioLinks = []string{}
 		}
+		populateProfileAliases(profile)
 	}
 
 	return tx.Commit(ctx)
@@ -293,4 +297,10 @@ func (r *Repository) WithProfileLock(ctx context.Context, userID string, fn func
 	return tx.Commit(ctx)
 }
 
-
+func populateProfileAliases(p *Profile) {
+	if p == nil {
+		return
+	}
+	p.CompanyOrOrg = p.Organization
+	p.Website = p.OrganizationWebsite
+}

@@ -127,7 +127,7 @@ func InitSupertokens(cfg SuperTokensConfig) error {
 				},
 			}),
 			emailverification.Init(evmodels.TypeInput{
-				Mode: evmodels.ModeRequired,
+				Mode: evmodels.ModeOptional,
 				Override: &evmodels.OverrideStruct{
 					APIs: func(originalImplementation evmodels.APIInterface) evmodels.APIInterface {
 						ogVerifyEmailPOST := *originalImplementation.VerifyEmailPOST

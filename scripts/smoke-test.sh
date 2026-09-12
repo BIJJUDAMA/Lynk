@@ -196,6 +196,7 @@ http_request() {
         curl_cmd+=(-H "Authorization: Bearer $token")
         curl_cmd+=(-H "Cookie: sAccessToken=$token")
         curl_cmd+=(-H "st-auth-mode: header")
+        curl_cmd+=(-H "st-access-token: $token")
     fi
 
     if [ -n "$content_type" ]; then
@@ -324,21 +325,38 @@ verify_supertokens_email() {
 
     log_substep "Verifying campus email in SuperTokens Core for $email ($user_id)..."
 
-    local resp
-    resp=$(curl -s -S -X POST "${SUPERTOKENS_URL}/recipe/user/email/verify" \
+    local tok_resp
+    tok_resp=$(curl -s -S -X POST "${SUPERTOKENS_URL}/recipe/user/email/verify/token" \
         -H "api-key: ${SUPERTOKENS_API_KEY}" \
         -H "Content-Type: application/json" \
         -d "{\"userId\":\"${user_id}\",\"email\":\"${email}\"}" 2>/dev/null || true)
 
-    local status
-    status=$(json_extract "$resp" ".status")
+    local tok_status
+    tok_status=$(json_extract "$tok_resp" ".status")
 
-    if [ "$status" = "OK" ] || [ "$status" = "EMAIL_ALREADY_VERIFIED_ERROR" ]; then
+    if [ "$tok_status" = "EMAIL_ALREADY_VERIFIED_ERROR" ]; then
         log_pass "Campus email verified in SuperTokens: $email"
         return 0
     fi
 
-    log_warn "SuperTokens email verify returned unexpected status: $status (body: $resp)"
+    local v_token
+    v_token=$(json_extract "$tok_resp" ".token")
+    if [ -n "$v_token" ]; then
+        local verify_resp
+        verify_resp=$(curl -s -S -X POST "${SUPERTOKENS_URL}/recipe/user/email/verify" \
+            -H "api-key: ${SUPERTOKENS_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"method\":\"token\",\"token\":\"${v_token}\"}" 2>/dev/null || true)
+
+        local v_status
+        v_status=$(json_extract "$verify_resp" ".status")
+        if [ "$v_status" = "OK" ] || [ "$v_status" = "EMAIL_ALREADY_VERIFIED_ERROR" ]; then
+            log_pass "Campus email verified in SuperTokens: $email"
+            return 0
+        fi
+    fi
+
+    log_warn "SuperTokens email verify returned unexpected status: $tok_status (body: $tok_resp)"
     return 1
 }
 
@@ -643,7 +661,7 @@ JOB_PAYLOAD=$(cat <<EOF
 {
   "title": "Campus Marketplace Go & Next.js Engineer",
   "description": "Looking for an energetic student engineer to develop high-trust freelance marketplace features with Go, Chi, PostgreSQL, and Next.js.",
-  "budget": 950.00,
+  "budget_cents": 95000,
   "pay_type": "fixed",
   "required_skills": ["Go", "PostgreSQL", "Docker", "Next.js"],
   "department": "Computer Science"
@@ -678,13 +696,13 @@ log_pass "Job discovered via public search & filter query"
 log_substep "Retrieving single job detail (GET /api/v1/jobs/${JOB_ID})..."
 JOB_DETAIL_RESP=$(http_request "GET" "/api/v1/jobs/${JOB_ID}" "" "" "200")
 DETAIL_ID=$(json_extract "$JOB_DETAIL_RESP" ".data.id")
-DETAIL_BUDGET=$(json_extract "$JOB_DETAIL_RESP" ".data.budget")
+DETAIL_BUDGET=$(json_extract "$JOB_DETAIL_RESP" ".data.budget_cents")
 
 if [ "$DETAIL_ID" != "$JOB_ID" ]; then
     log_fail "Job detail ID mismatch: expected $JOB_ID, got '$DETAIL_ID'"
     exit 1
 fi
-log_pass "Job details retrieved successfully: Budget \$$DETAIL_BUDGET"
+log_pass "Job details retrieved successfully: Budget Cents $DETAIL_BUDGET"
 
 # ------------------------------------------------------------------------------
 # STEP 9: Campus Email Verification Gate Enforcement (HTTP 403 EMAIL_NOT_VERIFIED)
@@ -698,7 +716,7 @@ GATE_JOB_RESP=$(curl -s -S -w "\n%{http_code}" \
     -H "Cookie: sAccessToken=${UNVERIFIED_STUDENT_TOKEN}" \
     -H "st-auth-mode: header" \
     -H "Content-Type: application/json" \
-    -d '{"title":"Unauthorized Opportunity","description":"Should be blocked","budget":100.0,"pay_type":"fixed","required_skills":["Go"],"department":"Computer Science"}' 2>/dev/null || echo -e "\n000")
+    -d '{"title":"Unauthorized Opportunity","description":"Should be blocked","budget_cents":10000,"pay_type":"fixed","required_skills":["Go"],"department":"Computer Science"}' 2>/dev/null || echo -e "\n000")
 
 GATE_JOB_CODE=$(echo "$GATE_JOB_RESP" | tail -n1)
 GATE_JOB_BODY=$(echo "$GATE_JOB_RESP" | sed '$d')
@@ -850,13 +868,13 @@ log_step "12" "Contract State Machine Progression (active -> completed)"
 log_substep "Inspecting active contract detail (GET /api/v1/contracts/${CONTRACT_ID})..."
 CONTRACT_GET_RESP=$(http_request "GET" "/api/v1/contracts/${CONTRACT_ID}" "$EMPLOYER_TOKEN" "" "200")
 INITIAL_STATUS=$(json_extract "$CONTRACT_GET_RESP" ".data.status")
-AGREED_BUDGET=$(json_extract "$CONTRACT_GET_RESP" ".data.agreed_budget")
+AGREED_BUDGET=$(json_extract "$CONTRACT_GET_RESP" ".data.agreed_budget_cents")
 
 if [ "$INITIAL_STATUS" != "active" ]; then
     log_fail "Expected initial contract status 'active', got '$INITIAL_STATUS'"
     exit 1
 fi
-log_pass "Contract verified in active state (Agreed Budget: \$$AGREED_BUDGET)"
+log_pass "Contract verified in active state (Agreed Budget Cents: $AGREED_BUDGET)"
 
 # SEC-06 Assertion: Freelancer attempting to mark contract completed must receive 403 Forbidden
 log_substep "Asserting freelancer cannot mark contract completed (SEC-06)..."

@@ -36,7 +36,9 @@ type Profile struct {
 	ResumeFilename      *string   `json:"resume_filename,omitempty"`
 	ResumeByteSize      int64     `json:"resume_byte_size"`
 	Organization        string    `json:"organization,omitempty"`
+	CompanyOrOrg        string    `json:"company_or_org,omitempty"`
 	OrganizationWebsite string    `json:"organization_website,omitempty"`
+	Website             string    `json:"website,omitempty"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
@@ -50,7 +52,9 @@ type UpdateProfileRequest struct {
 	Skills              *[]string `json:"skills,omitempty"`
 	PortfolioLinks      *[]string `json:"portfolio_links,omitempty"`
 	Organization        *string   `json:"organization,omitempty"`
+	CompanyOrOrg        *string   `json:"company_or_org,omitempty"`
 	OrganizationWebsite *string   `json:"organization_website,omitempty"`
+	Website             *string   `json:"website,omitempty"`
 }
 
 // SyncUserRequest contains optional user profile attributes on sync.
