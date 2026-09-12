@@ -160,15 +160,22 @@ flowchart TB
 ### 4.1 Backend CI Verification Sequence
 1. **Container Health:** PostgreSQL 16 Alpine container spins up with health checks (`pg_isready`).
 2. **Linting:** `golangci-lint` (v2.4.0) performs static analysis across all Go packages.
-3. **Migration Verification:** `golang-migrate` tests raw SQL migration files (`000001` through `000009`) against a throwaway database (`lynk_migrate_check`) and drops it.
+3. **Migration Verification:** `golang-migrate` tests raw SQL migration files (`000001` through `000010`) against a throwaway database (`lynk_migrate_check`), testing forward `up`, rollback `down -all`, and re-application `up`.
 4. **App Migrations:** The application migrator applies migrations to `lynk_db` via `TestRunMigrations_AppliesInitOnEmptyDatabase`.
 5. **Race Detector Suite:** `go test -race -count=1 ./...` executes across all 13 Go packages under thread-safety scrutiny.
 
 ### 4.2 Frontend CI Verification Sequence
 1. **Clean Installation:** `npm ci` restores exact locked dependencies from `package-lock.json`.
-2. **Unit Tests:** `npm test` executes all unit tests using Node 22 native type-stripping.
-3. **Typecheck:** `tsc --noEmit` validates all TypeScript interfaces and props.
-4. **Production Build:** `next build` compiles all 13 static and dynamic routes.
+2. **Linter:** `npm run lint` (`next lint`) validates ESLint rules and React hook constraints.
+3. **Unit Tests:** `npm test` executes all unit tests using Node 22 native type-stripping.
+4. **Typecheck:** `tsc --noEmit` validates all TypeScript interfaces and props.
+5. **Production Build:** `next build` compiles all 13 static and dynamic routes.
+
+### 4.3 Container Build Workflow (.github/workflows/docker-build.yml)
+Validates that the multi-stage Go container image builds cleanly via Buildx on any changes to `backend/**` or `docker-compose.yml`.
+
+### 4.4 End-to-End Smoke Test Workflow (.github/workflows/smoke-test.yml)
+Spins up the complete Docker Compose multi-container stack (`lynk-postgres`, `lynk-supertokens`, `lynk-minio`, and `lynk-api`), waits for all four healthchecks to pass, and executes `./scripts/smoke-test.sh` exercising the complete marketplace lifecycle against live network sockets.
 
 ---
 

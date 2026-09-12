@@ -1,0 +1,63 @@
+name: E2E Smoke Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    name: Full Stack Integration Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x ./scripts/smoke-test.sh
+
+      - name: Spin up Docker Compose Stack
+        run: |
+          docker compose up -d --build
+        env:
+          SUPERTOKENS_API_KEY: lynk-supertokens-secret-api-key-2026
+
+      - name: Wait for Containers to be Healthy
+        run: |
+          echo "Waiting for all Docker containers to become healthy..."
+          timeout 120s bash -c '
+            until [ "$(docker inspect -f {{.State.Health.Status}} lynk-postgres 2>/dev/null)" = "healthy" ] && \
+                  [ "$(docker inspect -f {{.State.Health.Status}} lynk-supertokens 2>/dev/null)" = "healthy" ] && \
+                  [ "$(docker inspect -f {{.State.Health.Status}} lynk-minio 2>/dev/null)" = "healthy" ] && \
+                  [ "$(docker inspect -f {{.State.Health.Status}} lynk-api 2>/dev/null)" = "healthy" ]; do
+              echo "Waiting for container healthchecks..."
+              docker ps --format "table {{.Names}}\t{{.Status}}"
+              sleep 3
+            done
+          '
+          echo "All containers are healthy!"
+          docker ps
+
+      - name: Run E2E Smoke Test Suite
+        run: ./scripts/smoke-test.sh
+        env:
+          API_BASE_URL: http://localhost:8080
+          SUPERTOKENS_URL: http://localhost:3567
+          SUPERTOKENS_API_KEY: lynk-supertokens-secret-api-key-2026
+          MINIO_URL: http://localhost:9000
+
+      - name: Dump Container Logs on Failure
+        if: failure()
+        run: |
+          echo "=== Lynk API Logs ==="
+          docker logs lynk-api --tail 100 || true
+          echo "=== SuperTokens Logs ==="
+          docker logs lynk-supertokens --tail 100 || true
+          echo "=== PostgreSQL Logs ==="
+          docker logs lynk-postgres --tail 100 || true
+          echo "=== MinIO Logs ==="
+          docker logs lynk-minio --tail 100 || true
+
+      - name: Teardown Stack
+        if: always()
+        run: docker compose down -v --remove-orphans

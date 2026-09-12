@@ -37,7 +37,7 @@ jobs:
         with:
           working-directory: backend
           version: v2.4.0
-      - name: Verify SQL migrations (throwaway database)
+      - name: Verify SQL migrations up and rollback (throwaway database)
         env:
           PGPASSWORD: lynk_password
         run: |
@@ -46,6 +46,11 @@ jobs:
           go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.17.1
           psql -h localhost -U lynk_user -d lynk_db -c "DROP DATABASE IF EXISTS lynk_migrate_check;"
           psql -h localhost -U lynk_user -d lynk_db -c "CREATE DATABASE lynk_migrate_check;"
+          # 1. Verify forward migrations
+          migrate -path backend/migrations -database "postgres://lynk_user:lynk_password@localhost:5432/lynk_migrate_check?sslmode=disable" up
+          # 2. Verify rollback down migrations
+          migrate -path backend/migrations -database "postgres://lynk_user:lynk_password@localhost:5432/lynk_migrate_check?sslmode=disable" down -all
+          # 3. Verify re-application idempotency
           migrate -path backend/migrations -database "postgres://lynk_user:lynk_password@localhost:5432/lynk_migrate_check?sslmode=disable" up
           psql -h localhost -U lynk_user -d lynk_db -c "DROP DATABASE lynk_migrate_check;"
       - name: Apply application migrations
@@ -69,6 +74,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm run lint
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
