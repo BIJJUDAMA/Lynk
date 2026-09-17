@@ -474,3 +474,128 @@ func TestMigration000011_DownSQL_Structure(t *testing.T) {
 	}
 }
 
+func TestMigration000012_UpSQL_Structure(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000012_ai_subsystem_init.up.sql"))
+	if err != nil {
+		t.Fatalf("failed to read 000012 up migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	expectedFragments := []string{
+		"CREATE EXTENSION IF NOT EXISTS vector;",
+		"CREATE TABLE IF NOT EXISTS skills (",
+		"canonical_name VARCHAR(100) NOT NULL UNIQUE",
+		"parent_skill_id UUID REFERENCES skills(id) ON DELETE SET NULL",
+		"CREATE TABLE IF NOT EXISTS skill_aliases (",
+		"skill_id UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE",
+		"alias VARCHAR(100) NOT NULL UNIQUE",
+		"source VARCHAR(50) NOT NULL DEFAULT 'manual'",
+		"confidence DOUBLE PRECISION NOT NULL DEFAULT 1.0",
+		"CREATE TABLE IF NOT EXISTS profile_skills (",
+		"user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE",
+		"skill_id UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE",
+		"confidence DOUBLE PRECISION NOT NULL DEFAULT 1.0",
+		"source VARCHAR(50) NOT NULL DEFAULT 'user'",
+		"verified BOOLEAN NOT NULL DEFAULT false",
+		"PRIMARY KEY (user_id, skill_id)",
+		"CREATE TABLE IF NOT EXISTS job_skills (",
+		"job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE",
+		"skill_id UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE",
+		"importance VARCHAR(20) NOT NULL DEFAULT 'required'",
+		"required BOOLEAN NOT NULL DEFAULT true",
+		"confidence DOUBLE PRECISION NOT NULL DEFAULT 1.0",
+		"PRIMARY KEY (job_id, skill_id)",
+		"CREATE TABLE IF NOT EXISTS ai_embeddings (",
+		"embedding vector(384) NOT NULL",
+		"UNIQUE(entity_type, entity_id, embedding_type, model_name, model_version)",
+		"CREATE TABLE IF NOT EXISTS ai_runs (",
+		"feature VARCHAR(50) NOT NULL",
+		"pipeline_version VARCHAR(50) NOT NULL",
+		"input_hash VARCHAR(64) NOT NULL",
+		"output_json JSONB NOT NULL DEFAULT '{}'",
+		"status VARCHAR(20) NOT NULL DEFAULT 'success'",
+		"CREATE TABLE IF NOT EXISTS ai_recommendations (",
+		"user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE",
+		"metadata JSONB NOT NULL DEFAULT '{}'",
+		"status VARCHAR(20) NOT NULL DEFAULT 'active'",
+		"CREATE TABLE IF NOT EXISTS application_ai_scores (",
+		"application_id UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE",
+		"job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE",
+		"matched_skills TEXT[] NOT NULL DEFAULT '{}'",
+		"missing_skills TEXT[] NOT NULL DEFAULT '{}'",
+		"job_version INTEGER NOT NULL DEFAULT 1",
+		"profile_version INTEGER NOT NULL DEFAULT 1",
+		"is_stale BOOLEAN NOT NULL DEFAULT false",
+		"UNIQUE(application_id)",
+		"CREATE TABLE IF NOT EXISTS moderation_events (",
+		"risk_score DOUBLE PRECISION NOT NULL",
+		"decision VARCHAR(20) NOT NULL DEFAULT 'allow'",
+		"signals TEXT[] NOT NULL DEFAULT '{}'",
+		"CREATE TABLE IF NOT EXISTS review_insights (",
+		"user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE",
+		"aspect VARCHAR(50) NOT NULL",
+		"sample_count INTEGER NOT NULL DEFAULT 1",
+		"is_recurring BOOLEAN NOT NULL DEFAULT false",
+		"strengths TEXT[] NOT NULL DEFAULT '{}'",
+		"improvements TEXT[] NOT NULL DEFAULT '{}'",
+		"UNIQUE(user_id, aspect)",
+		"CREATE TABLE IF NOT EXISTS skill_demand_snapshots (",
+		"skill_id UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE",
+		"period VARCHAR(20) NOT NULL",
+		"demand_score DOUBLE PRECISION NOT NULL DEFAULT 0.0",
+		"growth_rate DOUBLE PRECISION NOT NULL DEFAULT 0.0",
+		"UNIQUE(skill_id, period)",
+		"CREATE TABLE IF NOT EXISTS ai_jobs (",
+		"job_type VARCHAR(50) NOT NULL",
+		"payload JSONB NOT NULL DEFAULT '{}'",
+		"status VARCHAR(20) NOT NULL DEFAULT 'pending'",
+		"attempts INTEGER NOT NULL DEFAULT 0",
+		"max_attempts INTEGER NOT NULL DEFAULT 3",
+		"CREATE INDEX IF NOT EXISTS idx_ai_embeddings_embedding ON ai_embeddings USING hnsw (embedding vector_cosine_ops);",
+		"CREATE INDEX IF NOT EXISTS idx_ai_embeddings_entity ON ai_embeddings(entity_type, entity_id);",
+		"CREATE INDEX IF NOT EXISTS idx_ai_runs_entity ON ai_runs(entity_type, entity_id);",
+		"CREATE INDEX IF NOT EXISTS idx_ai_runs_feature ON ai_runs(feature);",
+		"CREATE INDEX IF NOT EXISTS idx_ai_recommendations_user_id ON ai_recommendations(user_id);",
+		"CREATE INDEX IF NOT EXISTS idx_application_ai_scores_job_id ON application_ai_scores(job_id);",
+		"CREATE INDEX IF NOT EXISTS idx_moderation_events_entity ON moderation_events(entity_type, entity_id);",
+		"CREATE INDEX IF NOT EXISTS idx_ai_jobs_status_created_at ON ai_jobs(status, created_at);",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(content, fragment) {
+			t.Errorf("000012 up migration missing fragment: %s", fragment)
+		}
+	}
+}
+
+func TestMigration000012_DownSQL_Structure(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000012_ai_subsystem_init.down.sql"))
+	if err != nil {
+		t.Fatalf("failed to read 000012 down migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	expectedFragments := []string{
+		"DROP TABLE IF EXISTS ai_jobs;",
+		"DROP TABLE IF EXISTS skill_demand_snapshots;",
+		"DROP TABLE IF EXISTS review_insights;",
+		"DROP TABLE IF EXISTS moderation_events;",
+		"DROP TABLE IF EXISTS application_ai_scores;",
+		"DROP TABLE IF EXISTS ai_recommendations;",
+		"DROP TABLE IF EXISTS ai_runs;",
+		"DROP TABLE IF EXISTS ai_embeddings;",
+		"DROP TABLE IF EXISTS job_skills;",
+		"DROP TABLE IF EXISTS profile_skills;",
+		"DROP TABLE IF EXISTS skill_aliases;",
+		"DROP TABLE IF EXISTS skills;",
+		"DROP EXTENSION IF EXISTS vector;",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(content, fragment) {
+			t.Errorf("000012 down migration missing fragment: %s", fragment)
+		}
+	}
+}
+
+
