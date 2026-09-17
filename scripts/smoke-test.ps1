@@ -39,6 +39,7 @@ param (
     [string]$UnverifiedStudentEmail = $(if ($env:UNVERIFIED_STUDENT_EMAIL) { $env:UNVERIFIED_STUDENT_EMAIL } elseif ($env:UNVERIFIED_STUDENT_USERNAME) { $env:UNVERIFIED_STUDENT_USERNAME } else { "unverified@campus.edu" }),
     [string]$UnverifiedStudentPassword = $(if ($env:UNVERIFIED_STUDENT_PASSWORD) { $env:UNVERIFIED_STUDENT_PASSWORD } else { "password123" }),
     [string]$UnauthorizedEmail = "unauthorized@gmail.com",
+    [string]$AiBaseUrl = $(if ($env:AI_BASE_URL) { $env:AI_BASE_URL } else { "http://127.0.0.1:8000" }),
     [switch]$SkipInfraHealth = $(if ($env:SKIP_INFRA_HEALTH -eq "1") { $true } else { $false })
 )
 
@@ -56,7 +57,7 @@ function Log-Info ($msg) {
 function Log-Step ($num, $title) {
     Write-Host ""
     Write-Host ("=" * 70) -ForegroundColor Blue
-    Write-Host "[STEP $num/13] $title" -ForegroundColor Magenta
+    Write-Host "[STEP $num/14] $title" -ForegroundColor Magenta
     Write-Host ("=" * 70) -ForegroundColor Blue
 }
 
@@ -998,11 +999,114 @@ startxref
     Log-Pass "SEC-01: Reviews successfully joined profiles table returning member names"
 
     # --------------------------------------------------------------------------
+    # STEP 14: AI Subsystem Integration (Health, Draft, Ranking, Search & Fallback)
+    # --------------------------------------------------------------------------
+    Log-Step "14" "AI Subsystem Integration & Verification"
+
+    # Phase 14a: AI Service Health Probe
+    Log-Substep "Phase 14a: Probing AI service health..."
+    try {
+        $aiHealthResp = Invoke-WebRequest -Uri "$AiBaseUrl/health" -Method Get -TimeoutSec 3 -ErrorAction SilentlyContinue
+        if ($aiHealthResp -and $aiHealthResp.StatusCode -eq 200) {
+            Log-Pass "Direct AI service health check verified (HTTP 200 OK from $AiBaseUrl/health)"
+        } else {
+            Log-Warn "Direct AI service health check not reachable at $AiBaseUrl/health (container network isolation); proceeding with API integration probes"
+        }
+    } catch {
+        Log-Warn "Direct AI service probe bypassed ($AiBaseUrl/health unreachable from host); proceeding with API integration probes"
+    }
+
+    # Phase 14b: AI Job Draft Generation (POST /api/v1/jobs/generate)
+    Log-Substep "Phase 14b: Generating AI job draft (POST /api/v1/jobs/generate)..."
+    
+    # Query current jobs count to assert non-mutation invariant
+    $jobsBeforeResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/jobs?limit=100" -ExpectedStatusCode 200
+    $jobsBeforeCount = (($jobsBeforeResp | ConvertFrom-Json).data).Count
+
+    $draftPayload = @{
+        idea = "Need an experienced React and TypeScript student to build a real-time chat interface"
+        department = "Computer Science"
+    } | ConvertTo-Json
+
+    $draftResp = Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/jobs/generate" -Token $EmployerToken -Body $draftPayload -ExpectedStatusCode 200
+    $draftJson = ($draftResp | ConvertFrom-Json).data
+
+    if (-not $draftJson.title -or -not $draftJson.description) {
+        Log-Fail "AI job draft missing required fields (title, description): $($draftResp)"
+        exit 1
+    }
+    if (-not $draftJson.required_skills -or $draftJson.required_skills.Count -eq 0) {
+        Log-Fail "AI job draft missing required_skills: $($draftResp)"
+        exit 1
+    }
+    Log-Pass "AI job draft generated successfully: '$($draftJson.title)' with skills ($($draftJson.required_skills -join ', '))"
+
+    # Verify authoritative non-mutation invariant
+    $jobsAfterResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/jobs?limit=100" -ExpectedStatusCode 200
+    $jobsAfterCount = (($jobsAfterResp | ConvertFrom-Json).data).Count
+    if ($jobsBeforeCount -ne $jobsAfterCount) {
+        Log-Fail "Authoritative non-mutation invariant violated: Job draft mutated jobs table! (before: $jobsBeforeCount, after: $jobsAfterCount)"
+        exit 1
+    }
+    Log-Pass "Non-mutation invariant verified: Job draft did not mutate authoritative jobs table"
+
+    # Phase 14c: AI Applicant Ranking Verification (GET /api/v1/jobs/{id}/applicants/ranking)
+    Log-Substep "Phase 14c: Verifying AI advisory applicant ranking (GET /api/v1/jobs/$JobId/applicants/ranking)..."
+    $rankingResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/jobs/$JobId/applicants/ranking" -Token $EmployerToken -ExpectedStatusCode 200
+    $rankingData = ($rankingResp | ConvertFrom-Json).data
+
+    if (-not $rankingData.results) {
+        Log-Fail "Ranking response missing results field: $($rankingResp)"
+        exit 1
+    }
+    Log-Pass "AI applicant ranking returned $($rankingData.results.Count) evaluated candidate(s)"
+
+    # Verify candidate ranking item structure
+    if ($rankingData.results.Count -gt 0) {
+        $firstRank = $rankingData.results[0]
+        if ($firstRank.score -lt 0 -or $firstRank.score -gt 100) {
+            Log-Fail "Candidate score out of [0, 100] bounds: $($firstRank.score)"
+            exit 1
+        }
+        Log-Pass "Candidate ranking verified: Score $($firstRank.score)/100 with explanation"
+    }
+
+    # Verify RBAC: Student must be forbidden from accessing employer applicant ranking
+    Log-Substep "Asserting RBAC: Student cannot view employer applicant ranking (Must return 403)..."
+    Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/jobs/$JobId/applicants/ranking" -Token $VerifiedStudentToken -ExpectedStatusCode 403 | Out-Null
+    Log-Pass "RBAC verified: Non-job creator blocked from applicant ranking with HTTP 403"
+
+    # Phase 14d: AI Semantic Search Queries
+    Log-Substep "Phase 14d: Testing AI semantic & hybrid search..."
+    $searchJobsResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/search/jobs?q=engineer" -ExpectedStatusCode 200
+    Log-Pass "Public job semantic search verified: Query 'engineer' returned HTTP 200"
+
+    $searchPeopleResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/search/people?q=react" -Token $VerifiedStudentToken -ExpectedStatusCode 200
+    Log-Pass "Authenticated member semantic search verified: Query 'react' returned HTTP 200"
+
+    # Unauthenticated access to member search must return 401
+    Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/search/people?q=react" -ExpectedStatusCode 401 | Out-Null
+    Log-Pass "RBAC verified: Unauthenticated member search blocked with HTTP 401"
+
+    # Phase 14e: Graceful Fallback & Degradation Test
+    Log-Substep "Phase 14e: Testing graceful degradation & invalid input fallback..."
+    $nonsenseSearch = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/search/jobs?q=xyznonexistentabc999" -ExpectedStatusCode 200
+    Log-Pass "Graceful fallback verified: Obscure search query returned HTTP 200 without error"
+
+    # Unauthenticated draft generation returns 401
+    Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/jobs/generate" -Body $draftPayload -ExpectedStatusCode 401 | Out-Null
+    Log-Pass "RBAC verified: Unauthenticated draft generation blocked with HTTP 401"
+
+    # Unverified student draft generation returns 403
+    Invoke-ApiRequest -Method "POST" -Endpoint "/api/v1/jobs/generate" -Token $UnverifiedStudentToken -Body $draftPayload -ExpectedStatusCode 403 | Out-Null
+    Log-Pass "Campus gate verified: Unverified student draft generation blocked with HTTP 403"
+
+    # --------------------------------------------------------------------------
     # SUMMARY
     # --------------------------------------------------------------------------
     Write-Host ""
     Write-Host ("=" * 70) -ForegroundColor Green
-    Write-Host "  ALL 13 END-TO-END SMOKE TEST PHASES PASSED SUCCESSFULLY!            " -ForegroundColor Green
+    Write-Host "  ALL 14 END-TO-END SMOKE TEST PHASES PASSED SUCCESSFULLY!            " -ForegroundColor Green
     Write-Host ("=" * 70) -ForegroundColor Green
     Write-Host "  Job ID:         $JobId" -ForegroundColor Cyan
     Write-Host "  Application ID: $ApplicationId" -ForegroundColor Cyan

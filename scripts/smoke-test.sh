@@ -50,7 +50,7 @@ else
 fi
 
 log_info()    { echo -e "${C_CYAN}[INFO]${C_RESET} $*" >&2; }
-log_step()    { echo -e "\n${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; echo -e "${C_BOLD}${C_MAGENTA}[STEP $1/13]${C_RESET} ${C_BOLD}$2${C_RESET}" >&2; echo -e "${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; }
+log_step()    { echo -e "\n${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; echo -e "${C_BOLD}${C_MAGENTA}[STEP $1/14]${C_RESET} ${C_BOLD}$2${C_RESET}" >&2; echo -e "${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; }
 log_substep() { echo -e "  ${C_CYAN}-->${C_RESET} $*" >&2; }
 log_pass()    { echo -e "  ${C_GREEN}[PASS]${C_RESET} $*" >&2; }
 log_fail()    { echo -e "  ${C_RED}[FAIL]${C_RESET} $*" >&2; }
@@ -63,6 +63,7 @@ API_BASE_URL="${API_BASE_URL:-http://localhost:8080}"
 SUPERTOKENS_URL="${SUPERTOKENS_URL:-http://localhost:3567}"
 SUPERTOKENS_API_KEY="${SUPERTOKENS_API_KEY:-lynk-supertokens-secret-api-key-2026}"
 MINIO_URL="${MINIO_URL:-http://localhost:9000}"
+AI_BASE_URL="${AI_BASE_URL:-http://localhost:8000}"
 
 EMPLOYER_EMAIL="${EMPLOYER_EMAIL:-${EMPLOYER_USERNAME:-poster@campus.edu}}"
 EMPLOYER_PASSWORD="${EMPLOYER_PASSWORD:-password123}"
@@ -992,10 +993,103 @@ fi
 log_pass "SEC-01: Reviews successfully joined profiles table returning member names"
 
 # ------------------------------------------------------------------------------
+# STEP 14: AI Subsystem Integration (Health, Draft, Ranking, Search & Fallback)
+# ------------------------------------------------------------------------------
+log_step "14" "AI Subsystem Integration & Verification"
+
+# Phase 14a: AI Service Health Probe
+log_substep "Phase 14a: Probing AI service health..."
+AI_HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "${AI_BASE_URL}/health" 2>/dev/null || echo "000")
+if [ "$AI_HEALTH_STATUS" = "200" ]; then
+    log_pass "Direct AI service health check verified (HTTP 200 OK from ${AI_BASE_URL}/health)"
+else
+    log_warn "Direct AI health check not reachable at ${AI_BASE_URL}/health (status: $AI_HEALTH_STATUS); proceeding with API integration probes"
+fi
+
+# Phase 14b: AI Job Draft Generation (POST /api/v1/jobs/generate)
+log_substep "Phase 14b: Generating AI job draft (POST /api/v1/jobs/generate)..."
+
+# Count jobs before draft generation
+JOBS_BEFORE_RESP=$(http_request "GET" "/api/v1/jobs?limit=100" "" "" "200")
+JOBS_BEFORE_COUNT=$(echo "$JOBS_BEFORE_RESP" | grep -o '"id"' | wc -l || echo "0")
+
+DRAFT_PAYLOAD=$(cat <<EOF
+{
+  "idea": "Need an experienced React and TypeScript student to build a real-time chat interface",
+  "department": "Computer Science"
+}
+EOF
+)
+
+DRAFT_RESP=$(http_request "POST" "/api/v1/jobs/generate" "$EMPLOYER_TOKEN" "$DRAFT_PAYLOAD" "200")
+DRAFT_TITLE=$(json_extract "$DRAFT_RESP" ".data.title")
+if [ -z "$DRAFT_TITLE" ] || [ "$DRAFT_TITLE" = "null" ]; then
+    log_fail "AI job draft missing title: $DRAFT_RESP"
+    exit 1
+fi
+if ! echo "$DRAFT_RESP" | grep -q '"description"'; then
+    log_fail "AI job draft missing description: $DRAFT_RESP"
+    exit 1
+fi
+if ! echo "$DRAFT_RESP" | grep -q '"required_skills"'; then
+    log_fail "AI job draft missing required_skills: $DRAFT_RESP"
+    exit 1
+fi
+log_pass "AI job draft generated successfully: '$DRAFT_TITLE'"
+
+# Assert authoritative non-mutation invariant
+JOBS_AFTER_RESP=$(http_request "GET" "/api/v1/jobs?limit=100" "" "" "200")
+JOBS_AFTER_COUNT=$(echo "$JOBS_AFTER_RESP" | grep -o '"id"' | wc -l || echo "0")
+if [ "$JOBS_BEFORE_COUNT" != "$JOBS_AFTER_COUNT" ]; then
+    log_fail "Authoritative non-mutation invariant violated: Draft mutated jobs table (before: $JOBS_BEFORE_COUNT, after: $JOBS_AFTER_COUNT)"
+    exit 1
+fi
+log_pass "Non-mutation invariant verified: Job draft did not mutate authoritative jobs table"
+
+# Phase 14c: AI Applicant Ranking Verification (GET /api/v1/jobs/{id}/applicants/ranking)
+log_substep "Phase 14c: Verifying AI advisory applicant ranking (GET /api/v1/jobs/${JOB_ID}/applicants/ranking)..."
+RANKING_RESP=$(http_request "GET" "/api/v1/jobs/${JOB_ID}/applicants/ranking" "$EMPLOYER_TOKEN" "" "200")
+if ! echo "$RANKING_RESP" | grep -q '"results"'; then
+    log_fail "Ranking response missing results field: $RANKING_RESP"
+    exit 1
+fi
+log_pass "AI applicant ranking returned evaluated candidate results"
+
+# Verify RBAC: Student forbidden from applicant ranking
+log_substep "Asserting RBAC: Student cannot view employer applicant ranking (Must return 403)..."
+http_request "GET" "/api/v1/jobs/${JOB_ID}/applicants/ranking" "$VERIFIED_STUDENT_TOKEN" "" "403" >/dev/null
+log_pass "RBAC verified: Non-job creator blocked from applicant ranking with HTTP 403"
+
+# Phase 14d: AI Semantic Search Queries
+log_substep "Phase 14d: Testing AI semantic & hybrid search..."
+SEARCH_JOBS_RESP=$(http_request "GET" "/api/v1/search/jobs?q=engineer" "" "" "200")
+log_pass "Public job semantic search verified: Query 'engineer' returned HTTP 200"
+
+SEARCH_PEOPLE_RESP=$(http_request "GET" "/api/v1/search/people?q=react" "$VERIFIED_STUDENT_TOKEN" "" "200")
+log_pass "Authenticated member semantic search verified: Query 'react' returned HTTP 200"
+
+# Unauthenticated people search returns 401
+http_request "GET" "/api/v1/search/people?q=react" "" "" "401" >/dev/null
+log_pass "RBAC verified: Unauthenticated member search blocked with HTTP 401"
+
+# Phase 14e: Graceful Fallback & Degradation Test
+log_substep "Phase 14e: Testing graceful degradation & invalid input fallback..."
+http_request "GET" "/api/v1/search/jobs?q=xyznonexistentabc999" "" "" "200" >/dev/null
+log_pass "Graceful fallback verified: Obscure search query returned HTTP 200 without error"
+
+# Unauthenticated draft generation returns 401
+http_request "POST" "/api/v1/jobs/generate" "" "$DRAFT_PAYLOAD" "401" >/dev/null
+log_pass "RBAC verified: Unauthenticated draft generation blocked with HTTP 401"
+
+# Unverified student draft generation returns 403
+http_request "POST" "/api/v1/jobs/generate" "$UNVERIFIED_STUDENT_TOKEN" "$DRAFT_PAYLOAD" "403" >/dev/null
+log_pass "Campus gate verified: Unverified student draft generation blocked with HTTP 403"
+
+# ------------------------------------------------------------------------------
 # SUMMARY
 # ------------------------------------------------------------------------------
 echo -e "\n${C_BOLD}${C_GREEN}======================================================================${C_RESET}"
-echo -e "${C_BOLD}${C_GREEN}  ALL 13 END-TO-END SMOKE TEST PHASES PASSED SUCCESSFULLY!            ${C_RESET}"
+echo -e "${C_BOLD}${C_GREEN}  ALL 14 END-TO-END SMOKE TEST PHASES PASSED SUCCESSFULLY!            ${C_RESET}"
 echo -e "${C_BOLD}${C_GREEN}======================================================================${C_RESET}"
 echo -e "  ${C_CYAN}Job ID:${C_RESET}         $JOB_ID"
 echo -e "  ${C_CYAN}Application ID:${C_RESET} $APPLICATION_ID"
