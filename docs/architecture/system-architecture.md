@@ -36,16 +36,26 @@ flowchart TB
     end
 
     subgraph DockerBridge["DOCKER COMPOSE NETWORK (lynk-net)"]
-        subgraph APIService["Go REST API (lynk-api)"]
+        subgraph APIService["Go REST API - Authoritative (lynk-api)"]
             GoAPI["Go 1.25 REST API<br/>Port: 8080:8080<br/>Handler -> Service -> Repository"]
+            Orchestrator["AI Orchestrator<br/>Feature Flags + SQL Fallback"]
+            GoAPI --> Orchestrator
+        end
+
+        subgraph AIService["FastAPI AI Backend (ai-api)"]
+            FastAPI["FastAPI 0.115<br/>Internal Port: 8000<br/>PyTorch + sentence-transformers"]
+        end
+
+        subgraph WorkerService["Asynchronous AI Worker (ai-worker)"]
+            AIWorker["Worker Daemon<br/>SKIP LOCKED Polling & Resume Parser"]
         end
 
         subgraph IAMService["SuperTokens Core (lynk-supertokens)"]
             ST["SuperTokens Core 9.3<br/>Port: 3567:3567<br/>EmailPassword + Session + EmailVerification"]
         end
 
-        subgraph DBService["PostgreSQL 16 (lynk-postgres)"]
-            PG["PostgreSQL 16 Alpine<br/>Port: 5432:5432<br/>lynk_db & supertokens_db"]
+        subgraph DBService["PostgreSQL 16 + pgvector (lynk-postgres)"]
+            PG["PostgreSQL 16 Alpine + pgvector<br/>Port: 5432:5432<br/>lynk_db (vector(384)) & supertokens_db"]
         end
 
         subgraph StorageService["MinIO S3 Storage (lynk-minio)"]
@@ -60,6 +70,9 @@ flowchart TB
     GoAPI -->|PostgreSQL Connection Pool| PG
     ST -->|Auth State Persistence| PG
     GoAPI -->|S3 Upload & Presigned URLs| MinIO
+    Orchestrator -->|X-Internal-AI-Secret + Correlation ID| FastAPI
+    FastAPI -->|pgvector Cosine Queries| PG
+    AIWorker -->|SKIP LOCKED Queue Processing| PG
 ```
 
 ### 2.1 Port Allocation Matrix
@@ -67,9 +80,11 @@ flowchart TB
 | Service | Container Name | Host Port | Internal Port | Protocol | Purpose |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Frontend** | *Host Process* | `3000` | N/A | HTTP | Next.js 14 App Router (React 18, TypeScript, Tailwind) |
-| **Go REST API** | `lynk-api` | `8080` | `8080` | HTTP | Go HTTP service (Chi router, business logic, endpoints) |
+| **Go REST API** | `lynk-api` | `8080` | `8080` | HTTP | Authoritative Go HTTP service (Chi router, endpoints) |
+| **FastAPI AI Backend** | `ai-api` | N/A (Internal) | `8000` | HTTP | Internal ML/embedding/ranking service (`X-Internal-AI-Secret`) |
+| **AI Worker Daemon** | `ai-worker` | N/A | N/A | Background | Concurrent queue worker (`FOR UPDATE SKIP LOCKED`) |
 | **SuperTokens Core** | `lynk-supertokens` | `3567` | `3567` | HTTP | Self-hosted IAM engine & session verifier |
-| **PostgreSQL** | `lynk-postgres` | `5432` | `5432` | TCP | Relational persistence (`lynk_db` and `supertokens_db`) |
+| **PostgreSQL + pgvector** | `lynk-postgres` | `5432` | `5432` | TCP | Relational & 384-dim vector storage (`lynk_db`, `supertokens_db`) |
 | **MinIO S3 API** | `lynk-minio` | `9000` | `9000` | HTTP/S3 | AWS S3 v4 compatible object storage for student resumes |
 | **MinIO Web Console** | `lynk-minio` | `9001` | `9001` | HTTP | Storage management web user interface |
 
@@ -134,10 +149,34 @@ The backend (`backend/`) avoids bloated enterprise frameworks in favor of Go sta
    - Example: Decoupled S3 resume uploads from PostgreSQL advisory locks (`WithProfileLock`), executing S3 streaming first and running compensating deletions on database commit failure (F-02, F-13).
 4. **Repositories (`internal/<domain>/`):**
    - Manages relational queries using raw SQL. Strictly encapsulates transaction management (`pgx.Tx`), row scanning, and row-level locking (`SELECT ... FOR UPDATE`).
+5. **AI Orchestrator (`internal/ai/orchestrator/`):**
+   - Sits alongside domain services. Encapsulates HTTP client calls to the internal FastAPI service (`http://ai-api:8000`), injects `X-Internal-AI-Secret` and `X-Correlation-ID`, manages feature flags, and executes bounded retries with jitter.
+   - Invariant: Implements graceful degradation fallbacks to SQL/heuristic logic whenever the AI backend is disabled or unreachable.
 
 ---
 
-## 4. End-to-End Data Flow & Request Lifecycle
+## 4. First-Class AI Subsystem & Orchestration Architecture
+
+The AI subsystem in Lynk is engineered as an internal platform capability preserving the Go backend as the authoritative boundary.
+
+### 4.1 Authority Boundary & Defense-in-Depth
+- **Authority Invariant:** The Go REST API (`:8080`) is the sole public-facing service. The FastAPI AI backend (`:8000`) is bound exclusively to `lynk-net` and rejects requests lacking `X-Internal-AI-Secret`.
+- **Non-Mutation Invariant:** Generative AI endpoints return draft payloads; they never execute database mutations on authoritative domain tables (`jobs`, `applications`, `contracts`).
+- **Telemetry Parity:** Every pipeline execution invokes `track_ai_run` recording feature name, model/prompt/pipeline versions, SHA-256 input hash, output JSON, and wall-clock latency in `ai_runs`.
+
+### 4.2 Dense Semantic Memory & Vector Search (pgvector)
+- **Embedding Model:** `all-MiniLM-L6-v2` generating 384-dimensional dense vectors normalized to unit length.
+- **Index Structure:** PostgreSQL 16 `vector(384)` indexed with Hierarchical Navigable Small World (`HNSW`) cosine distance metric (`vector_cosine_ops`).
+- **Unique Invariant:** `ai_embeddings` enforces `UNIQUE(entity_type, entity_id, embedding_type, model_name, model_version)` ensuring idempotent re-indexing.
+
+### 4.3 Asynchronous Queue Processing (`ai-worker`)
+- **Queue Table:** `ai_jobs` table storing job type, entity ID, JSONB payload, status (`pending`, `processing`, `completed`, `failed`, `dead_letter`), attempt counters, and backoff timestamps.
+- **Concurrency Law:** The `ai-worker` daemon claims jobs using `SELECT ... FOR UPDATE SKIP LOCKED`, preventing worker race conditions across concurrent containers.
+- **Backoff & Recovery:** Failures calculate exponential backoff stored in `payload->>'retry_at'` (`power(2, attempts + 1) * INTERVAL '1 second'`). Once `max_attempts` is reached, jobs transition safely to `dead_letter`.
+
+---
+
+## 5. End-to-End Data Flow & Request Lifecycle
 
 ```mermaid
 sequenceDiagram
@@ -184,7 +223,7 @@ sequenceDiagram
 
 ---
 
-## 5. Evolutionary Architecture Roadmap
+## 6. Evolutionary Architecture Roadmap
 
 Lynk starts with a synchronous, self-contained architecture and evolves incrementally across four well-defined phases.
 

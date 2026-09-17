@@ -457,3 +457,188 @@ Returns all public peer reviews received by a campus member.
     }
   ]
   ```
+
+---
+
+## 8. AI Subsystem Public Endpoints
+
+All AI endpoints are exposed authoritatively through the Go REST API under `/api/v1` with built-in graceful degradation.
+
+### 8.1 Generate Job Description Draft
+`POST /jobs/generate`
+Generates a structured, professional opportunity posting draft from a rough idea and department using vLLM.
+
+- **Auth Required:** Yes (Active session + verified `.edu` email)
+- **Non-Mutation Invariant:** Returns transient draft JSON; does not insert rows into `jobs` table.
+- **Request Body:**
+  ```json
+  {
+    "idea": "Need an experienced React and TypeScript student to build a real-time chat interface",
+    "department": "Computer Science"
+  }
+  ```
+- **Response `200 OK`:**
+  ```json
+  {
+    "data": {
+      "title": "Real-Time Chat Interface Developer",
+      "description": "Looking for an experienced frontend student developer...",
+      "required_skills": ["React", "TypeScript", "WebSocket"],
+      "department": "Computer Science"
+    }
+  }
+  ```
+- **Error Codes:** `401 Unauthorized`, `403 Forbidden` (unverified email), `400 Bad Request` (empty idea).
+
+### 8.2 Advisory Candidate Ranking
+`GET /jobs/{id}/applicants/ranking`
+Returns transparent, algorithmic advisory scoring for all applicants to a specific posting.
+
+- **Auth Required:** Yes (Active session + verified `.edu` email + job creator authorization)
+- **Fairness Guarantee:** Demographic attributes are strictly excluded from scoring.
+- **Response `200 OK`:**
+  ```json
+  {
+    "data": {
+      "results": [
+        {
+          "application_id": "9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e",
+          "score": 88.5,
+          "matched_skills": ["React", "TypeScript"],
+          "missing_skills": ["WebSocket"],
+          "reason": "Strong skill overlap (2/3 skills match) and high semantic similarity.",
+          "confidence": 0.92
+        }
+      ],
+      "model_name": "candidate-ranker",
+      "model_version": "1.0.0"
+    }
+  }
+  ```
+- **Error Codes:** `401 Unauthorized`, `403 Forbidden` (caller is not job creator or email unverified), `404 Not Found` (job does not exist).
+
+### 8.3 Hybrid Semantic Job Search
+`GET /search/jobs?q={query}&limit={limit}`
+Performs hybrid search combining PostgreSQL full-text search, canonical skill tags, and pgvector cosine distance via Reciprocal Rank Fusion.
+
+- **Auth Required:** No (Publicly accessible)
+- **Response `200 OK`:**
+  ```json
+  {
+    "data": [
+      {
+        "id": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+        "title": "Full-Stack Web Developer",
+        "description": "Building a campus event discovery portal...",
+        "department": "Computer Science",
+        "status": "open",
+        "score": 0.89,
+        "matched_skills": ["React", "Go"]
+      }
+    ]
+  }
+  ```
+
+### 8.4 Hybrid Semantic Member Discovery
+`GET /search/people?q={query}&limit={limit}`
+Discovers campus peers by natural language query combining skills, academic interests, and bio semantics.
+
+- **Auth Required:** Yes (Active session + verified `.edu` email)
+- **Response `200 OK`:**
+  ```json
+  {
+    "data": [
+      {
+        "id": "st_usr_student123",
+        "first_name": "Alex",
+        "last_name": "Rivera",
+        "bio": "CS senior specializing in distributed backend systems...",
+        "department": "Computer Science",
+        "skills": ["Go", "Docker", "PostgreSQL"],
+        "score": 0.94
+      }
+    ]
+  }
+  ```
+- **Error Codes:** `401 Unauthorized`, `403 Forbidden` (unverified email).
+
+### 8.5 Member Profile Recommendations
+`GET /profile/recommendations`
+Returns personalized skill suggestions (via skill co-occurrence graph) and profile completeness guidance.
+
+- **Auth Required:** Yes (Active session + verified `.edu` email)
+- **Response `200 OK`:**
+  ```json
+  {
+    "data": [
+      {
+        "type": "skill",
+        "title": "Docker",
+        "reason": "Frequently pairs with your existing skills (Go, PostgreSQL).",
+        "confidence": 0.85
+      },
+      {
+        "type": "profile",
+        "title": "Add External Portfolio Link",
+        "reason": "Profiles with GitHub links receive 40% higher contract award rates.",
+        "confidence": 0.90
+      }
+    ]
+  }
+  ```
+
+### 8.6 Campus Skill Demand Analytics & Forecasts
+`GET /analytics/skills`
+Aggregates active opportunity counts, demand snapshots, and statistical least-squares linear growth forecasts.
+
+- **Auth Required:** No (Publicly accessible)
+- **Response `200 OK`:**
+  ```json
+  {
+    "data": {
+      "snapshots": [
+        {
+          "skill_name": "Python",
+          "frequency": 42,
+          "unique_posters": 18,
+          "demand_ratio": 0.35,
+          "projected_growth_rate": 0.12,
+          "trend_direction": "growing"
+        }
+      ]
+    }
+  }
+  ```
+
+### 8.7 Member Review AI Insights
+`GET /users/{id}/ai-insights`
+Decomposes qualitative peer reviews into aspect-based ratings (Technical Ability, Communication, Timeliness) and recurring strength highlights.
+
+- **Auth Required:** No (Publicly accessible)
+- **Response `200 OK`:**
+  ```json
+  {
+    "data": {
+      "user_id": "st_usr_student123",
+      "aspects": [
+        {
+          "aspect": "technical_ability",
+          "score": 4.8,
+          "mention_count": 5,
+          "sentiment": "positive",
+          "is_recurring": true
+        },
+        {
+          "aspect": "timeliness",
+          "score": 4.6,
+          "mention_count": 4,
+          "sentiment": "positive",
+          "is_recurring": true
+        }
+      ],
+      "summary": "Consistently recognized for technical code quality and prompt turnaround."
+    }
+  }
+  ```
+- **Error Codes:** `404 Not Found` (user does not exist).
+

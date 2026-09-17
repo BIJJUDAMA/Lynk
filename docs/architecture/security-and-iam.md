@@ -186,3 +186,71 @@ cors.Options{
 | `X-XSS-Protection` | `1; mode=block` | Enables legacy browser XSS filters |
 | `Access-Control-Allow-Credentials` | `true` | Restricts credentials to explicit allowed origin |
 | `X-Request-Id` | UUIDv4 | Tracing and audit correlation |
+
+---
+
+## 5. First-Class AI Subsystem Security Architecture & Threat Model
+
+The AI Subsystem introduces dedicated machine learning pipelines, embedding vector indexes, and generative inference capabilities while strictly preserving the Go backend as the authoritative application gateway.
+
+```mermaid
+flowchart LR
+    Client["Browser Client"]
+    GoAPI["Go REST API (:8080)<br/>Authoritative Gateway & RBAC"]
+    AIAPI["FastAPI AI Subsystem (:8000)<br/>Internal ML Pipelines"]
+    Worker["ai-worker<br/>Queue Worker Daemon"]
+    Postgres[("PostgreSQL 16<br/>pgvector + lynk_db")]
+
+    Client -->|Session Cookie + Anti-CSRF| GoAPI
+    GoAPI -->|X-Internal-AI-Secret + X-Correlation-ID| AIAPI
+    Worker -->|FOR UPDATE SKIP LOCKED| Postgres
+    AIAPI -->|pgvector Cosine Queries| Postgres
+    GoAPI -->|Authoritative Mutations| Postgres
+```
+
+### 5.1 Internal Service Isolation & Defense-in-Depth (`X-Internal-AI-Secret`)
+- **Network Boundary:** The FastAPI AI backend (`ai-api:8000`) is deployed on the private Docker bridge network (`lynk-net`). Public browser clients communicate strictly through the Go backend (`:8080/api/v1/...`) and never invoke the AI service directly.
+- **Header Authentication:** All `/internal/v1/*` routes in FastAPI enforce the `X-Internal-AI-Secret` header via `ai.app.middleware.auth.InternalAuthMiddleware`. Requests with missing or incorrect secrets are rejected with `HTTP 401 Unauthorized` before request parsing or pipeline execution.
+- **Go AI Client Injection:** The Go backend securely injects the configured secret from `INTERNAL_AI_SECRET` into every outgoing HTTP request header.
+
+### 5.2 Distributed Request Tracing (`X-Correlation-ID`)
+- Every request entering the Go backend AI client either extracts the existing correlation ID from `ctx` or mints a new UUIDv4 injected as `X-Correlation-ID`.
+- The FastAPI `CorrelationIdMiddleware` captures this header, binds it to contextual logs, and passes it into the `ai_runs` execution telemetry table.
+- This provides unified audit trails across the Go orchestrator, Python inference pipeline, and database vector lookups.
+
+### 5.3 Role-Based Access Control & Ownership Enforcement
+The Go backend strictly enforces authorization boundaries prior to contacting internal AI services:
+1. **Applicant Ranking (`GET /api/v1/jobs/{id}/applicants/ranking`):**
+   - Requires active SuperTokens session (`HTTP 401` if unauthenticated).
+   - Requires verified institutional `.edu` email (`HTTP 403` if unverified).
+   - Enforces strict job creator ownership: `job.CreatedBy == claims.UserID`. Any third-party user or applicant attempting to inspect candidate rankings receives an immediate `HTTP 403 Forbidden`.
+2. **People Search (`GET /api/v1/search/people`):**
+   - Gated by active session and verified email (`HTTP 401/403`).
+   - Prevents unauthenticated scraping or external harvesting of student profiles and skills.
+3. **Generative Job Drafts (`POST /api/v1/jobs/generate`):**
+   - Gated by active session and verified email.
+   - Restricts generative model capacity consumption to verified campus members.
+4. **Member Recommendations (`GET /api/v1/profile/recommendations`):**
+   - Gated by active session and verified email. Recommendations are computed strictly for the authenticated caller's own profile.
+
+### 5.4 Algorithmic Fairness & Non-Protected Attributes
+Candidate scoring models must be fair, transparent, and legally defensible:
+- **Observable Features Only:** The ranking pipeline (`ai/pipelines/ranking/ranker.py`) scores applicants based exclusively on three observable, merit-based dimensions:
+  1. Canonical skill overlap (45% weight)
+  2. Semantic embedding cosine similarity between job scope and cover letter / bio (35% weight)
+  3. Academic department alignment (20% weight)
+- **Protected Attribute Exclusion:** Demographic attributes (gender, race, ethnicity, age, graduation year) are strictly excluded from feature vectors, prompt templates, and scoring inputs.
+- **Deterministic Parity:** Candidates with identical skill sets, department, and bio produce identical rank scores regardless of user identity.
+- **Explainable Rationale:** Every advisory score includes transparent citations of matched skills, missing requirements, and component weight breakdowns.
+
+### 5.5 Generative Sandboxing & Non-Mutation Invariant
+- **Strict Pydantic Validation:** Generative draft responses from the LLM are parsed and validated through the `GeneratedJobDraft` Pydantic model (`ai/pipelines/drafts/generator.py`), validating fields, clamping string lengths, and enforcing type safety.
+- **Non-Persistent Proposals:** The draft generation endpoint (`POST /api/v1/jobs/generate`) is strictly read-only with respect to the `jobs` database. It produces an ephemeral JSON draft returned to the client. The job is only created when the user reviews, edits, and explicitly submits `POST /api/v1/jobs`.
+- **Offline Template Fallback:** If vLLM or external model inference is unavailable or produces unparseable JSON, the pipeline falls back to an offline rule-based heuristic template without crashing.
+
+### 5.6 Graceful Degradation & Fault Domain Isolation
+The platform guarantees that AI failure never compromises core business functionality:
+- Every Go handler wrapping an AI pipeline includes deterministic SQL fallback logic.
+- If `ai-api` is unresponsive, times out, or returns a 5xx error, the Go backend logs the failure, records telemetry, and returns standard database results with `HTTP 200 OK`.
+- Core campus gig creation, applications, and contract completions remain operational even during total AI subsystem outages.
+
