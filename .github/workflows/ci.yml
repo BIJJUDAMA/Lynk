@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: lynk_user
           POSTGRES_PASSWORD: lynk_password
@@ -78,3 +78,27 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+
+  ai:
+    name: AI Subsystem
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ai/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ai/requirements.txt
+
+      - name: Run Pytest Suite
+        run: python -m pytest ai/tests/ -v
+
+      - name: Run Offline IR Evaluation Harness
+        run: python -m ai.evaluation.harness

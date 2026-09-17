@@ -5,11 +5,13 @@ on:
     branches: [main, master]
     paths:
       - "backend/**"
+      - "ai/**"
       - "docker-compose.yml"
       - ".github/workflows/docker-build.yml"
   pull_request:
     paths:
       - "backend/**"
+      - "ai/**"
       - "docker-compose.yml"
       - ".github/workflows/docker-build.yml"
   workflow_dispatch:
@@ -33,3 +35,23 @@ jobs:
           tags: lynk-api:ci-test
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  build-ai:
+    name: Build AI Subsystem Container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build AI container image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./ai
+          file: ./ai/Dockerfile
+          push: false
+          tags: lynk-ai-api:ci-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
