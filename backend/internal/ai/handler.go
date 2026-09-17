@@ -885,11 +885,12 @@ func fallbackReviewInsights(userID string, reviews []*review.Review) *models.Ana
 			strengths := []string{}
 			improvements := []string{}
 			if avgScore >= 4.0 {
-				if aspect == "timeliness" {
+				switch aspect {
+				case "timeliness":
 					strengths = append(strengths, "Fast Turnaround")
-				} else if aspect == "technical_ability" {
+				case "technical_ability":
 					strengths = append(strengths, "Superb Code Quality")
-				} else if aspect == "communication" {
+				case "communication":
 					strengths = append(strengths, "Proactive Communicator")
 				}
 			} else if avgScore <= 3.0 {
