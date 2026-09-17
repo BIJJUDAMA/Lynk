@@ -133,7 +133,7 @@ services:
       dockerfile: Dockerfile
     container_name: lynk-ai-worker
     restart: unless-stopped
-    command: python -m workers.worker
+    command: python -m ai.workers.worker
     environment:
       INTERNAL_AI_SECRET: "${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}"
       DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"

@@ -34,7 +34,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
 
-COPY . /app
+COPY . /app/ai
 
 RUN chown -R appuser:appuser /app
 
@@ -42,4 +42,4 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "ai.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
