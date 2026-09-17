@@ -44,6 +44,11 @@ func GetUserContext(ctx context.Context) (*UserClaims, error) {
 	return claims, nil
 }
 
+// GetSessionUser returns the current authenticated UserClaims from context.
+func GetSessionUser(ctx context.Context) (*UserClaims, error) {
+	return GetUserContext(ctx)
+}
+
 // CheckEmailVerified returns ErrEmailNotVerified when the caller has not completed campus email verification.
 func CheckEmailVerified(claims *UserClaims) error {
 	if claims == nil || claims.UserID == "" {

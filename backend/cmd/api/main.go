@@ -18,6 +18,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/lynk/backend/internal/ai"
+	"github.com/lynk/backend/internal/ai/client"
+	"github.com/lynk/backend/internal/ai/orchestrator"
 	"github.com/lynk/backend/internal/application"
 	"github.com/lynk/backend/internal/auth"
 	"github.com/lynk/backend/internal/contract"
@@ -153,6 +156,7 @@ func BuildRouter(
 	reviewHandler *review.Handler,
 	authMiddleware func(http.Handler) http.Handler,
 	s3Client storage.Client,
+	aiHandler ...*ai.AIHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -250,6 +254,14 @@ func BuildRouter(
 					}
 				})
 
+				// AI recommendations (requires verified campus email)
+				if len(aiHandler) > 0 && aiHandler[0] != nil {
+					r.Group(func(vr chi.Router) {
+						vr.Use(middleware.RequireVerifiedEmail())
+						vr.Get("/recommendations", aiHandler[0].GetMyRecommendations)
+					})
+				}
+
 				// Backward-compatible aliases (PUT profile remains session-only)
 				r.Get("/student", userHandler.GetMyStudentProfile)
 				r.Put("/student", userHandler.UpdateMyStudentProfile)
@@ -274,6 +286,10 @@ func BuildRouter(
 					pr.Use(middleware.RequireVerifiedEmail())
 					// Literal /mine before /{id}
 					pr.Get("/mine", jobHandler.GetMyJobs)
+					// AI job draft generator (literal /generate before /{id})
+					if len(aiHandler) > 0 && aiHandler[0] != nil {
+						pr.Post("/generate", aiHandler[0].GenerateJobDraft)
+					}
 					pr.Post("/", jobHandler.CreateJob)
 					pr.Put("/{id}", jobHandler.UpdateJob)
 					pr.Delete("/{id}", jobHandler.DeleteJob)
@@ -282,6 +298,11 @@ func BuildRouter(
 					if appHandler != nil {
 						pr.Post("/{id}/applications", appHandler.ApplyToJob)
 						pr.Get("/{id}/applications", appHandler.ListJobApplications)
+					}
+
+					// AI applicant ranking (requires session, verified email, and job ownership)
+					if len(aiHandler) > 0 && aiHandler[0] != nil {
+						pr.Get("/{id}/applicants/ranking", aiHandler[0].RankApplicants)
 					}
 				})
 
@@ -330,6 +351,25 @@ func BuildRouter(
 		// Public user reviews endpoint
 		if reviewHandler != nil {
 			r.Get("/users/{id}/reviews", reviewHandler.GetUserReviews)
+		}
+
+		// AI user review insights endpoint (public campus reputation viewing)
+		if len(aiHandler) > 0 && aiHandler[0] != nil {
+			r.Get("/users/{id}/ai-insights", aiHandler[0].GetUserAIInsights)
+			r.Get("/analytics/skills", aiHandler[0].GetSkillAnalytics)
+		}
+
+		// AI search endpoints
+
+		if len(aiHandler) > 0 && aiHandler[0] != nil {
+			aiHandler[0].RegisterRoutes(r, authMiddleware)
+			if userHandler == nil {
+				r.Route("/profile", func(pr chi.Router) {
+					pr.Use(authMiddleware)
+					pr.Use(middleware.RequireVerifiedEmail())
+					pr.Get("/recommendations", aiHandler[0].GetMyRecommendations)
+				})
+			}
 		}
 	})
 
@@ -462,7 +502,18 @@ func main() {
 	reviewService := review.NewService(reviewRepo, contractRepo)
 	reviewHandler := review.NewHandler(reviewService)
 
+	// AI Subsystem
+	aiBaseURL := getEnv("AI_SERVICE_URL", "http://localhost:8000")
+	aiSecret := getEnv("INTERNAL_AI_SECRET", "lynk-ai-subsystem-internal-secret-key-2026")
+	aiClient := client.NewClient(client.Config{
+		BaseURL:        aiBaseURL,
+		InternalSecret: aiSecret,
+	})
+	aiOrch := orchestrator.NewOrchestrator(aiClient, orchestrator.NewFeatureFlagsFromEnv(), slog.Default())
+	aiHandler := ai.NewHandler(aiOrch, pool, jobRepo, userRepo, appRepo).WithReviewRepo(reviewRepo)
+
 	// 6. Build HTTP Router
+
 	router := BuildRouter(
 		cfg,
 		pool,
@@ -473,6 +524,7 @@ func main() {
 		reviewHandler,
 		middleware.SessionMiddleware(),
 		s3Client,
+		aiHandler,
 	)
 
 	// 7. Start HTTP Server with Graceful Shutdown
