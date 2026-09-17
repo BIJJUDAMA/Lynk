@@ -1,7 +1,8 @@
 # Testing, Quality Assurance, & Verification Strategy - Lynk
 
 > **Authoritative Testing Handbook & Verification Standard**  
-> **Backend Testing:** Go 1.25 Standard Library + Race Detector (`-race -count=1`)  
+> **Backend Testing:** Go 1.25 Standard Library + Race Detector (`-race -count=1`) across 16 packages  
+> **AI Subsystem Testing:** Python 3.11+ Pytest Suite (100 tests) + Offline IR Benchmarks (`ai/evaluation/`)  
 > **Frontend Testing:** Node 22+ Native ESM Runner (`--experimental-strip-types --test`)  
 > **Continuous Integration:** GitHub Actions Multi-Job Pipeline (`.github/workflows/ci.yml`)
 
@@ -58,7 +59,7 @@ flowchart TD
         IT1["Atomic contract creation (AcceptApplicationTx)"]
         IT2["Lock ordering deadlock tests (jobs -> apps -> contracts)"]
         IT3["Contract cancellation & re-hire restoration"]
-        IT4["Raw SQL migration execution (000001 -> 000009)"]
+        IT4["Raw SQL migration execution (000001 -> 000012)"]
     end
 ```
 
@@ -129,7 +130,61 @@ npm run build
 
 ---
 
-## 4. Continuous Integration Pipeline (.github/workflows/ci.yml)
+## 4. AI Subsystem Testing Architecture (Python & Offline Benchmarks)
+
+The AI subsystem maintains a dedicated Python testing suite and offline evaluation harness under `ai/tests/` and `ai/evaluation/`:
+
+```mermaid
+flowchart TD
+    subgraph PytestSuite["1. Fast Isolated Pytest Suite (ai/tests/)"]
+        PT1["Skill Normalization & Fuzzy Aliasing (test_normalizer.py)"]
+        PT2["Dense Vector Cosine Similarity (test_embeddings.py)"]
+        PT3["Hybrid Search Fusion (test_search.py)"]
+        PT4["Demographic-Free Candidate Ranking (test_ranking.py)"]
+        PT5["Member Recommendations Engine (test_recommendations.py)"]
+        PT6["Duplicate & Velocity Moderation (test_moderation.py)"]
+        PT7["Aspect-Based Review Sentiment (test_reviews.py)"]
+        PT8["Statistical Skill Demand Forecasting (test_analytics.py)"]
+        PT9["vLLM Generative Drafts & Schema Validation (test_drafts.py)"]
+        PT10["Asynchronous Queue Worker with SKIP LOCKED (test_worker.py)"]
+    end
+
+    subgraph EvalHarness["2. Offline Evaluation & IR Benchmarks (ai/evaluation/)"]
+        EH1["Precision@K & Recall@K metrics"]
+        EH2["Mean Reciprocal Rank (MRR)"]
+        EH3["Normalized Discounted Cumulative Gain (NDCG@K)"]
+        EH4["F1 Score with zero-division guards"]
+        EH5["Curated Benchmark Ground Truth (datasets/sample_eval.json)"]
+    end
+
+    PytestSuite --> EvalHarness
+```
+
+### 4.1 Test Execution Commands
+
+```bash
+# Run all Python AI unit and pipeline tests (100 passing tests)
+python -m pytest ai/tests/ -v
+
+# Run targeted test suites
+python -m pytest ai/tests/test_search.py -v
+python -m pytest ai/tests/test_ranking.py -v
+python -m pytest ai/tests/test_worker.py -v
+
+# Run offline evaluation benchmark harness
+python -m ai.evaluation.harness
+```
+
+### 4.2 Offline Evaluation Metrics Standard
+The benchmark harness (`ai/evaluation/metrics.py`) enforces strict information retrieval metrics for quantifying pipeline accuracy across model and prompt revisions:
+- **Precision@K & Recall@K:** Measures relevant candidate recall within the top-K recommendations.
+- **Mean Reciprocal Rank (MRR):** Quantifies where the first relevant profile or job appears in search results.
+- **NDCG@K (Normalized Discounted Cumulative Gain):** Evaluates non-binary relevance gradations against theoretical ideal rankings (`IDCG`).
+- **Mathematical Invariant:** All evaluation functions include zero-division and empty dataset guards, ensuring reliable test automation without NaN exceptions.
+
+---
+
+## 5. Continuous Integration Pipeline (.github/workflows/ci.yml)
 
 The platform is guarded by a multi-job GitHub Actions workflow triggered on every push and pull request to `main`:
 
@@ -137,12 +192,12 @@ The platform is guarded by a multi-job GitHub Actions workflow triggered on ever
 flowchart TB
     subgraph GitHubActions["GitHub Actions CI Pipeline (.github/workflows/ci.yml)"]
         subgraph BackendJob["Job 1: Backend CI (Ubuntu Latest)"]
-            B1["PostgreSQL 16 Service Container (port 5432)"]
+            B1["PostgreSQL 16 Service Container with pgvector (port 5432)"]
             B2["Setup Go 1.25.x with Module Cache"]
             B3["golangci-lint v2.4.0 (Go 1.25 compatible)"]
             B4["Verify SQL migrations on throwaway DB (golang-migrate)"]
-            B5["Apply application migrations on lynk_db"]
-            B6["Test with Go Race Detector (go test -race -count=1 ./...)"]
+            B5["Apply application migrations on lynk_db (000001 -> 000012)"]
+            B6["Test with Go Race Detector across 16 packages"]
             B1 --> B2 --> B3 --> B4 --> B5 --> B6
         end
 
@@ -154,32 +209,40 @@ flowchart TB
             F5["npm run build (Next.js 14 production compilation)"]
             F1 --> F2 --> F3 --> F4 --> F5
         end
+
+        subgraph AIJob["Job 3: AI Subsystem CI (Ubuntu Latest)"]
+            A1["Setup Python 3.11 with pip cache"]
+            A2["Install dependencies (FastAPI, PyTorch, pgvector, pydantic)"]
+            A3["Execute 100-test Pytest Suite (pytest ai/tests/ -v)"]
+            A4["Run Offline IR Evaluation Harness (python -m ai.evaluation.harness)"]
+            A1 --> A2 --> A3 --> A4
+        end
     end
 ```
 
-### 4.1 Backend CI Verification Sequence
-1. **Container Health:** PostgreSQL 16 Alpine container spins up with health checks (`pg_isready`).
+### 5.1 Backend CI Verification Sequence
+1. **Container Health:** PostgreSQL 16 Alpine container spins up with `pgvector` extension and health checks (`pg_isready`).
 2. **Linting:** `golangci-lint` (v2.4.0) performs static analysis across all Go packages.
-3. **Migration Verification:** `golang-migrate` tests raw SQL migration files (`000001` through `000010`) against a throwaway database (`lynk_migrate_check`), testing forward `up`, rollback `down -all`, and re-application `up`.
+3. **Migration Verification:** `golang-migrate` tests raw SQL migration files (`000001` through `000012`) against a throwaway database (`lynk_migrate_check`), testing forward `up`, rollback `down -all`, and re-application `up`.
 4. **App Migrations:** The application migrator applies migrations to `lynk_db` via `TestRunMigrations_AppliesInitOnEmptyDatabase`.
-5. **Race Detector Suite:** `go test -race -count=1 ./...` executes across all 13 Go packages under thread-safety scrutiny.
+5. **Race Detector Suite:** `go test -race -count=1 ./...` executes across all 16 Go packages under thread-safety scrutiny.
 
-### 4.2 Frontend CI Verification Sequence
+### 5.2 Frontend CI Verification Sequence
 1. **Clean Installation:** `npm ci` restores exact locked dependencies from `package-lock.json`.
 2. **Linter:** `npm run lint` (`next lint`) validates ESLint rules and React hook constraints.
 3. **Unit Tests:** `npm test` executes all unit tests using Node 22 native type-stripping.
 4. **Typecheck:** `tsc --noEmit` validates all TypeScript interfaces and props.
 5. **Production Build:** `next build` compiles all 13 static and dynamic routes.
 
-### 4.3 Container Build Workflow (.github/workflows/docker-build.yml)
-Validates that the multi-stage Go container image builds cleanly via Buildx on any changes to `backend/**` or `docker-compose.yml`.
+### 5.3 Container Build Workflow (.github/workflows/docker-build.yml)
+Validates that multi-stage Go and Python container images build cleanly via Buildx on any changes to `backend/**`, `ai/**`, or `docker-compose.yml`.
 
-### 4.4 End-to-End Smoke Test Workflow (.github/workflows/smoke-test.yml)
-Spins up the complete Docker Compose multi-container stack (`lynk-postgres`, `lynk-supertokens`, `lynk-minio`, and `lynk-api`), waits for all four healthchecks to pass, and executes `./scripts/smoke-test.sh` exercising the complete marketplace lifecycle against live network sockets.
+### 5.4 End-to-End Smoke Test Workflow (.github/workflows/smoke-test.yml)
+Spins up the complete Docker Compose multi-container stack (`lynk-postgres`, `lynk-supertokens`, `lynk-minio`, `lynk-api`, `ai-api`, and `ai-worker`), waits for all service healthchecks to pass, and executes `./scripts/smoke-test.sh` exercising the complete 14-phase marketplace lifecycle against live network sockets.
 
 ---
 
-## 5. End-to-End Smoke Test Automation
+## 6. End-to-End Smoke Test Automation
 
 For full-stack verification of live running containers and endpoints, automated smoke test scripts are provided:
 
@@ -191,13 +254,27 @@ For full-stack verification of live running containers and endpoints, automated 
 ./scripts/smoke-test.sh
 ```
 
-### 5.1 Automated Smoke Test Coverage
-1. Deep health check evaluation (`GET /health`).
-2. SuperTokens Core ping (`GET /hello`).
-3. Member registration with verified `.edu` email address.
-4. Profile retrieval and metadata updates.
-5. Resume multipart streaming upload to MinIO S3.
-6. Job opportunity publication.
-7. Application submission against the open job.
-8. Application acceptance and contract generation.
-9. Contract completion and peer review submission.
+### 6.1 Automated 14-Phase Smoke Test Coverage
+1. **Phase 1: Deep Health Probes:** Evaluates Go backend health (`GET /health`), database connectivity, and MinIO S3 bucket availability.
+2. **Phase 2: SuperTokens IAM Ping:** Validates SuperTokens Core connectivity (`GET /hello`).
+3. **Phase 3: Member Registration & Verification:** Provisions student accounts with institutional `.edu` email validation and token activation.
+4. **Phase 4: Profile Management:** Updates profile bio, major, skills, and portfolio URLs.
+5. **Phase 5: Multipart Resume Upload:** Streams binary resume upload to MinIO S3 and validates download pre-signed URLs.
+6. **Phase 6: Campus Gig Publication:** Posts campus opportunity with title, task description, and required skill tags.
+7. **Phase 7: Application Submission:** Submits proposal pitch with attached resume key.
+8. **Phase 8: Application Acceptance & Contract State Machine:** Accepts application, verifies atomic state transition (`pending` -> `accepted`), closes job, and spawns `active` contract.
+9. **Phase 9: Contract Cancellation & Re-Hire Restoration:** Tests employer cancellation, restoring job to `open` and peer applications to `pending`.
+10. **Phase 10: Contract Re-Formation & Completion:** Re-hires candidate and marks contract `completed`.
+11. **Phase 11: Peer Review & 1-5 Star Rating:** Submits qualitative review and numerical rating.
+12. **Phase 12: Activity Feed Stream Verification:** Verifies unified audit events across contract and job actions.
+13. **Phase 13: Security Boundaries & Edge Cases:** Tests unverified email blocks (403), 1MB JSON clamping (413), and protocol injection filters.
+14. **Phase 14: First-Class AI Subsystem End-to-End Verification:**
+    - **14.1 AI Health Probe:** Verifies internal FastAPI health (`:8000/health`) and Go orchestrator connectivity.
+    - **14.2 Generative Job Drafts:** Invokes `POST /api/v1/jobs/generate` to produce structured job drafts from brief raw ideas.
+    - **14.3 Database Non-Mutation:** Proves generative drafts are strictly in-memory suggestions and do NOT insert uncommitted rows into `jobs`.
+    - **14.4 Applicant Advisory Ranking & RBAC:** Verifies `GET /api/v1/jobs/{id}/applicants/ranking` returns 200 with non-empty scoring for the job creator, and strictly rejects non-owners with 403 Forbidden.
+    - **14.5 Hybrid Semantic Search:** Validates `GET /api/v1/search/jobs?q=...` returning semantic similarity and keyword scores, with deterministic SQL fallback when AI is disabled.
+    - **14.6 Member Recommendations:** Tests `GET /api/v1/profile/recommendations` returning personalized skill acquisition suggestions.
+    - **14.7 Review Insights:** Tests `GET /api/v1/users/{id}/ai-insights` returning aggregated aspect scores for completed work.
+    - **14.8 Skill Demand Analytics:** Verifies `GET /api/v1/analytics/skills` returning campus velocity and growth snapshots.
+    - **14.9 Graceful Degradation:** Simulates AI service outage and proves Go backend returns HTTP 200 with deterministic SQL fallback data.

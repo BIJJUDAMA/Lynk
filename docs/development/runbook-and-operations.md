@@ -1,8 +1,9 @@
 # Operations, Runbook, & Local Developer Guide - Lynk
 
 > **Authoritative Operational Runbook & Developer Guide**  
-> **Environment:** Polyglot Monorepo (Next.js 14 Host + Docker Compose Backend)  
-> **Databases:** PostgreSQL 16 (`lynk_db`, `supertokens_db`)  
+> **Environment:** Polyglot Monorepo (Next.js 14 Host + Docker Compose Backend + AI Subsystem)  
+> **Databases:** PostgreSQL 16 (`lynk_db`, `supertokens_db`) with `pgvector`  
+> **AI Subsystem:** FastAPI (`:8000`), `ai-worker` queue daemon, and optional profile-gated `vllm`  
 > **Object Storage:** MinIO S3 (`resumes` bucket)  
 > **Authentication:** Self-Hosted SuperTokens Core (`:3567`)
 
@@ -18,6 +19,7 @@ Before setting up Lynk locally, ensure your developer workstation satisfies the 
 | **Node.js** | Node.js v22.0.0+ | Frontend development & native type-stripping ESM test runner | `node -v` |
 | **npm** | npm v10.0.0+ | Package management for Next.js frontend | `npm -v` |
 | **Go** | Go 1.22+ (Recommended: 1.25.x) | Direct Go compilation, testing, and toolchain checks | `go version` |
+| **Python** | Python v3.11+ | AI subsystem service, queue worker daemon, and pytest suite | `python --version` |
 | **PostgreSQL Client** | `psql` v16+ | Direct database inspection and migration debugging | `psql --version` |
 | **Git** | Git v2.40+ | Version control | `git --version` |
 
@@ -47,6 +49,8 @@ docker compose ps
 # lynk-supertokens    registry.supertokens.io/...             "/bin/sh -c 'exec ./..."   supertokens         Up (healthy)        0.0.0.0:3567->3567/tcp
 # lynk-minio          quay.io/minio/minio:RELEASE...          "/usr/bin/docker-ent..."   minio               Up (healthy)        0.0.0.0:9000->9000/tcp, 0.0.0.0:9001->9001/tcp
 # lynk-api            lynk-backend                            "/app/api"               api                 Up (healthy)        0.0.0.0:8080->8080/tcp
+# ai-api              lynk-ai-api                             "uvicorn ai.app.main..."   ai-api              Up (healthy)        0.0.0.0:8000->8000/tcp
+# ai-worker           lynk-ai-worker                          "python -m ai.worker..."   ai-worker           Up                  
 
 # 5. Bootstrap and launch the Next.js frontend on host
 cd frontend
@@ -55,6 +59,7 @@ npm run dev
 
 # Frontend is live at: http://localhost:3000
 # Backend REST API is live at: http://localhost:8080
+# AI Subsystem API is live at: http://localhost:8000
 # MinIO Web Console is live at: http://localhost:9001 (User: minio_admin / Pass: minio_password)
 ```
 
@@ -89,6 +94,19 @@ The application relies on `.env` loaded at root. The table below details every c
 | `MIGRATIONS_DIR` | `backend/migrations` | Go API | Filesystem path to raw SQL migrations directory |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8080` | Next.js | Public API base URL exposed to browser clients |
 | `NEXT_PUBLIC_WEBSITE_URL` | `http://localhost:3000` | Next.js | Public website URL |
+| `AI_API_URL` | `http://ai-api:8000` | Go API | Internal base URL for the FastAPI AI subsystem |
+| `INTERNAL_AI_SECRET` | `lynk-ai-internal-shared-secret-2026` | Go API / AI | Shared defense-in-depth secret for internal AI routes |
+| `AI_ENABLED` | `true` | Go API | Master toggle for AI orchestrator pipelines |
+| `AI_SKILL_NORMALIZATION` | `true` | Go API | Enables canonical skill normalization |
+| `AI_SEMANTIC_SEARCH` | `true` | Go API | Enables pgvector hybrid semantic search |
+| `AI_APPLICATION_RANKING` | `true` | Go API | Enables candidate advisory ranking |
+| `AI_JOB_GENERATION` | `true` | Go API | Enables generative job draft pipeline |
+| `AI_MODERATION` | `true` | Go API | Enables content safety & spam moderation |
+| `AI_REVIEW_INSIGHTS` | `true` | Go API | Enables aspect sentiment extraction |
+| `AI_SKILL_ANALYTICS` | `true` | Go API | Enables skill demand velocity analytics |
+| `AI_WORKER_POLL_INTERVAL_SEC` | `5` | `ai-worker` | Queue polling frequency in seconds |
+| `VLLM_API_BASE` | `http://vllm:8000/v1` | AI / vLLM | Optional OpenAI-compatible local LLM endpoint |
+| `VLLM_MODEL` | `Qwen/Qwen2.5-7B-Instruct` | AI / vLLM | Model name passed to vLLM server |
 
 ### 3.1 Secret & API Key Rotation
 In `docker-compose.yml`, all credentials utilize bash variable expansion with development fallbacks:
@@ -96,6 +114,7 @@ In `docker-compose.yml`, all credentials utilize bash variable expansion with de
 API_KEYS: "${SUPERTOKENS_API_KEY:-lynk-supertokens-secret-api-key-2026}"
 MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minio_admin}"
 MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minio_password}"
+INTERNAL_AI_SECRET: "${INTERNAL_AI_SECRET:-lynk-ai-internal-shared-secret-2026}"
 ```
 
 To rotate any API key or secret in any environment:
@@ -103,6 +122,7 @@ To rotate any API key or secret in any environment:
    ```env
    SUPERTOKENS_API_KEY=your-new-secret-key-here
    MINIO_ROOT_PASSWORD=your-new-minio-password-here
+   INTERNAL_AI_SECRET=your-new-ai-secret-here
    ```
 2. Re-create the affected containers:
    ```bash
@@ -122,9 +142,9 @@ When `lynk-api` starts, `database.RunMigrations(ctx, pool, cfg.MigrationsDir)` e
 ### 4.2 Creating New Migrations
 Always create an incremental forward and rollback pair with a zero-padded 6-digit sequence:
 ```bash
-# Template: backend/migrations/000011_<name>.up.sql and .down.sql
-touch backend/migrations/000011_add_contract_milestones.up.sql
-touch backend/migrations/000011_add_contract_milestones.down.sql
+# Template: backend/migrations/000013_<name>.up.sql and .down.sql
+touch backend/migrations/000013_add_feature.up.sql
+touch backend/migrations/000013_add_feature.down.sql
 ```
 
 ### 4.3 Migration Rules & Invariants
@@ -159,6 +179,10 @@ docker exec -i lynk-postgres psql -U lynk_user -d supertokens_db < .docker/postg
 | **PostgreSQL: `relation "users" does not exist` in CI** | Integration tests running before database migration step | Run `go test -v ./internal/database` | Ensure CI workflow runs `Apply application migrations` before parallel race detector test suite. |
 | **Resume upload TCP socket drop mid-transfer** | Go HTTP server write timeout lower than handler deadline | Inspect `cmd/api/main.go` `ServerWriteTimeout` | Confirm `ServerReadTimeout=95s` and `ServerWriteTimeout=100s` exceed the 90s dynamic upload timeout. |
 | **SuperTokens: `Invalid API key`** | `SUPERTOKENS_API_KEY` mismatch between compose and API | Inspect `docker compose logs supertokens` | Synchronize `SUPERTOKENS_API_KEY` in `.env` across `docker-compose.yml` and Go API config. |
+| **AI API: `401 Unauthorized` on internal routes** | `INTERNAL_AI_SECRET` header mismatch | Inspect `docker compose logs ai-api` | Ensure `INTERNAL_AI_SECRET` matches across `.env`, `docker-compose.yml`, and Go API configuration. |
+| **AI Worker: connection refused to postgres** | PostgreSQL not ready when worker booted | `docker compose logs ai-worker` | Restart worker via `docker compose restart ai-worker`. In production, worker retries with backoff. |
+| **Search fallback warning in Go API logs** | AI backend offline, degraded, or timed out | Inspect `docker compose ps ai-api` | Normal graceful degradation. Go automatically serves standard SQL results without breaking. |
+| **PostgreSQL: `type "vector" does not exist`** | `pgvector` extension not loaded on database | Check `docker compose exec postgres psql -U lynk_user -d lynk_db -c '\dx'` | Run migration `000012_ai_subsystem_init.up.sql` to install `vector` extension. |
 
 ---
 
