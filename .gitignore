@@ -4,3 +4,7 @@
 backend/bin/
 bin/
 *.exe
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
