@@ -1,0 +1,138 @@
+{
+  "skills": [
+    {
+      "raw_input": "reactjs",
+      "expected_canonical": "React"
+    },
+    {
+      "raw_input": "react.js",
+      "expected_canonical": "React"
+    },
+    {
+      "raw_input": "python3",
+      "expected_canonical": "Python"
+    },
+    {
+      "raw_input": "py",
+      "expected_canonical": "Python"
+    },
+    {
+      "raw_input": "golang",
+      "expected_canonical": "Go"
+    },
+    {
+      "raw_input": "ts",
+      "expected_canonical": "TypeScript"
+    },
+    {
+      "raw_input": "postgres",
+      "expected_canonical": "PostgreSQL"
+    },
+    {
+      "raw_input": "k8s",
+      "expected_canonical": "Kubernetes"
+    },
+    {
+      "raw_input": "tf",
+      "expected_canonical": "TensorFlow"
+    },
+    {
+      "raw_input": "docker",
+      "expected_canonical": "Docker"
+    },
+    {
+      "raw_input": "nonexistent_skill_xyz",
+      "expected_canonical": "nonexistent_skill_xyz"
+    }
+  ],
+  "ranking": [
+    {
+      "job": {
+        "id": "eval-job-001",
+        "title": "Full Stack Web Developer",
+        "required_skills": ["React", "Python", "PostgreSQL"],
+        "description": "Develop full stack cloud services and modern web application frontends with high responsiveness.",
+        "department": "Computer Science"
+      },
+      "candidates": [
+        {
+          "id": "cand-perfect-1",
+          "relevance": 3.0,
+          "skills": ["React", "Python", "PostgreSQL"],
+          "department": "Computer Science",
+          "bio": "Experienced full stack engineer specializing in React interfaces and Python microservices.",
+          "cover_letter": "I have built production web applications with React, Python, and PostgreSQL."
+        },
+        {
+          "id": "cand-good-2",
+          "relevance": 2.0,
+          "skills": ["React", "Python"],
+          "department": "Software Engineering",
+          "bio": "Software developer proficient in React web apps and Python backends.",
+          "cover_letter": "Excited to apply my React and Python skills to this project."
+        },
+        {
+          "id": "cand-partial-3",
+          "relevance": 1.0,
+          "skills": ["React"],
+          "department": "Information Technology",
+          "bio": "Frontend designer with basic React knowledge.",
+          "cover_letter": "Looking forward to learning backend systems while writing React code."
+        },
+        {
+          "id": "cand-irrelevant-4",
+          "relevance": 0.0,
+          "skills": ["Pottery", "Creative Writing"],
+          "department": "Fine Arts",
+          "bio": "Ceramics and studio artist.",
+          "cover_letter": "Seeking creative opportunities."
+        }
+      ]
+    },
+    {
+      "job": {
+        "id": "eval-job-002",
+        "title": "Machine Learning Research Assistant",
+        "required_skills": ["Python", "TensorFlow"],
+        "description": "Train and evaluate deep neural networks and machine learning models for computer vision.",
+        "department": "Data Science"
+      },
+      "candidates": [
+        {
+          "id": "cand-ml-1",
+          "relevance": 3.0,
+          "skills": ["Python", "TensorFlow"],
+          "department": "Data Science",
+          "bio": "Machine learning researcher with deep learning and TensorFlow expertise.",
+          "cover_letter": "I have trained vision transformers and CNNs in TensorFlow."
+        },
+        {
+          "id": "cand-ml-2",
+          "relevance": 1.5,
+          "skills": ["Python"],
+          "department": "Mathematics",
+          "bio": "Applied mathematics major with scientific Python experience.",
+          "cover_letter": "Strong quantitative foundation and Python programmer."
+        },
+        {
+          "id": "cand-ml-3",
+          "relevance": 0.0,
+          "skills": ["Accounting", "Bookkeeping"],
+          "department": "Finance",
+          "bio": "Financial auditor and accountant.",
+          "cover_letter": "Experienced with spreadsheet analysis."
+        }
+      ]
+    }
+  ],
+  "search": [
+    {
+      "query": "React full stack engineer",
+      "relevant_entity_ids": ["cand-perfect-1", "cand-good-2"]
+    },
+    {
+      "query": "TensorFlow deep learning research",
+      "relevant_entity_ids": ["cand-ml-1"]
+    }
+  ]
+}
