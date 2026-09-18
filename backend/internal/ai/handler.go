@@ -597,9 +597,13 @@ func (h *AIHandler) RankApplicants(w http.ResponseWriter, r *http.Request) {
 
 	candidates := make([]models.CandidateRankInput, 0, len(rawApps))
 	for _, a := range rawApps {
+		skills := a.Skills
+		if skills == nil {
+			skills = []string{}
+		}
 		candidates = append(candidates, models.CandidateRankInput{
 			ApplicationID: a.ID.String(),
-			Skills:        a.Skills,
+			Skills:        skills,
 			Bio:           a.Bio,
 			Department:    a.Department,
 			CoverLetter:   a.CoverLetter,

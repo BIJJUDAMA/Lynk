@@ -13,7 +13,7 @@ Traces every evaluation run in PostgreSQL ai_runs via track_ai_run.
 
 import logging
 from typing import Any, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ai.app.middleware.run_tracker import track_ai_run
 from ai.models.embeddings.provider import (
@@ -76,10 +76,17 @@ class CandidateRankInput(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     application_id: str = Field(..., description="Application unique identifier")
-    skills: list[str] = Field(default_factory=list, description="Candidate declared skills")
+    skills: Optional[list[str]] = Field(default_factory=list, description="Candidate declared skills")
     bio: Optional[str] = Field(default=None, description="Candidate bio text")
     department: Optional[str] = Field(default=None, description="Academic department or major")
     cover_letter: Optional[str] = Field(default=None, description="Application cover letter")
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def _coerce_skills(cls, v: Any) -> list[str]:
+        if v is None:
+            return []
+        return v
 
 
 class CandidateRankResult(BaseModel):
