@@ -754,3 +754,61 @@ func TestNewServer_SocketTimeoutsExceedDynamicUploadTimeout(t *testing.T) {
 		t.Errorf("expected IdleTimeout to be 60s, got %v", srv.IdleTimeout)
 	}
 }
+
+func TestAIConfigResolution(t *testing.T) {
+	t.Run("AI_API_URL takes precedence over AI_SERVICE_URL", func(t *testing.T) {
+		t.Setenv("AI_API_URL", "http://ai-api:8000")
+		t.Setenv("AI_SERVICE_URL", "http://legacy-ai:8000")
+		t.Setenv("INTERNAL_AI_SECRET", "custom-secret")
+
+		url, secret := resolveAIConfig()
+		if url != "http://ai-api:8000" {
+			t.Fatalf("expected http://ai-api:8000, got %s", url)
+		}
+		if secret != "custom-secret" {
+			t.Fatalf("expected custom-secret, got %s", secret)
+		}
+	})
+
+	t.Run("AI_SERVICE_URL fallback works", func(t *testing.T) {
+		t.Setenv("AI_API_URL", "")
+		t.Setenv("AI_SERVICE_URL", "http://legacy-ai:8000")
+		t.Setenv("INTERNAL_AI_SECRET", "")
+
+		url, _ := resolveAIConfig()
+		if url != "http://legacy-ai:8000" {
+			t.Fatalf("expected http://legacy-ai:8000, got %s", url)
+		}
+	})
+
+	t.Run("Default URL is http://localhost:8000", func(t *testing.T) {
+		t.Setenv("AI_API_URL", "")
+		t.Setenv("AI_SERVICE_URL", "")
+
+		url, _ := resolveAIConfig()
+		if url != "http://localhost:8000" {
+			t.Fatalf("expected http://localhost:8000, got %s", url)
+		}
+	})
+
+	t.Run("Default internal secret is lynk-ai-internal-secret-key-2026", func(t *testing.T) {
+		t.Setenv("INTERNAL_AI_SECRET", "")
+
+		_, secret := resolveAIConfig()
+		if secret != "lynk-ai-internal-secret-key-2026" {
+			t.Fatalf("expected lynk-ai-internal-secret-key-2026, got %s", secret)
+		}
+	})
+}
+
+func TestWarnIfDefaultSecrets_AISecret(t *testing.T) {
+	msg := warnIfDefaultSecrets("production", "custom_minio", "custom_pass", "custom_st", "lynk-ai-internal-secret-key-2026")
+	if msg == "" {
+		t.Fatal("expected warning when AI secret is default in production")
+	}
+
+	cleanMsg := warnIfDefaultSecrets("production", "custom_minio", "custom_pass", "custom_st", "custom-ai-secret")
+	if cleanMsg != "" {
+		t.Fatalf("expected no warning for custom AI secret, got %q", cleanMsg)
+	}
+}

@@ -107,16 +107,27 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func warnIfDefaultSecrets(appEnv, accessKey, secretKey, stAPIKey string) string {
+func warnIfDefaultSecrets(appEnv, accessKey, secretKey, stAPIKey string, aiSecret ...string) string {
 	env := strings.ToLower(strings.TrimSpace(appEnv))
 	isDev := env == "" || env == "development" || env == "dev" || env == "local"
 	if isDev {
 		return ""
 	}
-	if accessKey == "minio_admin" || secretKey == "minio_password" || stAPIKey == "lynk-supertokens-secret-api-key-2026" {
-		return "default MinIO or SuperTokens credentials detected; set unique MINIO_ACCESS_KEY/MINIO_SECRET_KEY and SUPERTOKENS_API_KEY"
+	aiSec := ""
+	if len(aiSecret) > 0 {
+		aiSec = aiSecret[0]
+	}
+	if accessKey == "minio_admin" || secretKey == "minio_password" || stAPIKey == "lynk-supertokens-secret-api-key-2026" || aiSec == "lynk-ai-internal-secret-key-2026" {
+		return "default MinIO, SuperTokens, or AI credentials detected; set unique MINIO_ACCESS_KEY/MINIO_SECRET_KEY, SUPERTOKENS_API_KEY, and INTERNAL_AI_SECRET"
 	}
 	return ""
+}
+
+// resolveAIConfig resolves AI service base URL and internal authentication secret from environment variables.
+func resolveAIConfig() (string, string) {
+	aiBaseURL := getEnv("AI_API_URL", getEnv("AI_SERVICE_URL", "http://localhost:8000"))
+	aiSecret := getEnv("INTERNAL_AI_SECRET", "lynk-ai-internal-secret-key-2026")
+	return aiBaseURL, aiSecret
 }
 
 type profileReaderAdapter struct {
@@ -401,7 +412,8 @@ func NewServer(cfg Config, handler http.Handler) *http.Server {
 
 func main() {
 	cfg := LoadConfig()
-	if msg := warnIfDefaultSecrets(getEnv("APP_ENV", ""), cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.SuperTokensAPIKey); msg != "" {
+	_, aiSecret := resolveAIConfig()
+	if msg := warnIfDefaultSecrets(getEnv("APP_ENV", ""), cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.SuperTokensAPIKey, aiSecret); msg != "" {
 		log.Printf("[WARN] %s", msg)
 	}
 	log.Printf("Starting Lynk API server on port %s...", cfg.Port)
@@ -503,8 +515,7 @@ func main() {
 	reviewHandler := review.NewHandler(reviewService)
 
 	// AI Subsystem
-	aiBaseURL := getEnv("AI_API_URL", getEnv("AI_SERVICE_URL", "http://localhost:8000"))
-	aiSecret := getEnv("INTERNAL_AI_SECRET", "lynk-ai-internal-secret-key-2026")
+	aiBaseURL, aiSecret := resolveAIConfig()
 	aiClient := client.NewClient(client.Config{
 		BaseURL:        aiBaseURL,
 		InternalSecret: aiSecret,
