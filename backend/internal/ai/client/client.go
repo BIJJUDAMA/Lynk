@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 	"time"
@@ -106,7 +106,7 @@ func (c *Client) backoffDelay(attempt int) time.Duration {
 	if delay > c.retryWaitMax {
 		delay = c.retryWaitMax
 	}
-	jitter := time.Duration(rand.Int63n(int64(delay/4 + 1)))
+	jitter := time.Duration(rand.Int64N(int64(delay/4 + 1)))
 	return delay + jitter
 }
 
@@ -174,7 +174,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, reqBody any
 			break
 		}
 
-		respBytes, readErr := io.ReadAll(resp.Body)
+		respBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 		_ = resp.Body.Close()
 		if readErr != nil {
 			lastErr = fmt.Errorf("ai client: failed to read response body: %w", readErr)

@@ -1,11 +1,13 @@
 package client_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -345,3 +347,41 @@ func TestClient_RankCandidates(t *testing.T) {
 		t.Errorf("expected score 88.0, got %f", resp.Results[0].Score)
 	}
 }
+
+func TestClient_ResponseBodyBounded(t *testing.T) {
+	// Start an HTTP test server that returns a response body larger than 10MB (12MB).
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		chunk := bytes.Repeat([]byte("A"), 1024*1024) // 1MB chunk
+		for i := 0; i < 12; i++ {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	c := client.NewClient(client.Config{
+		BaseURL:      server.URL,
+		RetryWaitMin: 1 * time.Millisecond,
+		RetryWaitMax: 5 * time.Millisecond,
+	})
+
+	err := c.Ping(context.Background())
+	if err == nil {
+		t.Fatal("expected error for 400 status, got nil")
+	}
+
+	const expectedMaxBytes = 10 << 20
+	prefix := "ai client: request failed with status 400: "
+	errMsg := err.Error()
+	if !strings.HasPrefix(errMsg, prefix) {
+		t.Fatalf("unexpected error prefix, got %q", errMsg[:min(len(errMsg), 50)])
+	}
+
+	bodyRead := errMsg[len(prefix):]
+	if len(bodyRead) != expectedMaxBytes {
+		t.Fatalf("expected response body read to be capped at %d bytes (10MB), got %d bytes", expectedMaxBytes, len(bodyRead))
+	}
+}
+
