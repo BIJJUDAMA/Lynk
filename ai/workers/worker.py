@@ -1,6 +1,7 @@
 """Asynchronous AI worker polling ai_jobs using SKIP LOCKED with backoff and dead-letter queuing."""
 
 import asyncio
+from datetime import datetime
 import json
 import logging
 import signal
@@ -31,6 +32,7 @@ class AIJob(BaseModel):
     max_attempts: int = 3
     error: Optional[str] = None
     content_hash: Optional[str] = None
+    started_at: Optional[datetime] = None
 
 
 class PostgresJobStore:
@@ -41,13 +43,15 @@ class PostgresJobStore:
 
     async def fetch_next_job(self) -> Optional[AIJob]:
         """Claim next pending job eligible by retry_at using SKIP LOCKED to prevent race conditions."""
-        query = """
+        query = r"""
             UPDATE ai_jobs
             SET status = 'processing', started_at = NOW()
             WHERE id = (
                 SELECT id FROM ai_jobs
-                WHERE status = 'pending'
-                  AND (payload->>'retry_at' IS NULL OR (payload->>'retry_at')::timestamptz <= NOW())
+                WHERE (
+                    (status = 'pending' AND (payload->>'retry_at' IS NULL OR (payload->>'retry_at' ~ '^\d{4}-\d{2}-\d{2}' AND (payload->>'retry_at')::timestamptz <= NOW())))
+                    OR (status = 'processing' AND started_at < NOW() - INTERVAL '10 minutes')
+                )
                 ORDER BY created_at ASC
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
@@ -81,6 +85,7 @@ class PostgresJobStore:
                 max_attempts=row["max_attempts"],
                 error=row["error"],
                 content_hash=row["content_hash"],
+                started_at=row["started_at"] if "started_at" in row else None,
             )
 
     async def complete_job(self, job_id: str, result: Optional[dict[str, Any]] = None) -> None:
@@ -91,7 +96,7 @@ class PostgresJobStore:
                 UPDATE ai_jobs
                 SET status = 'completed',
                     completed_at = NOW(),
-                    payload = payload || $2::jsonb
+                    payload = coalesce(payload, '{}'::jsonb) || $2::jsonb
                 WHERE id = $1::uuid;
                 """,
                 job_id,
