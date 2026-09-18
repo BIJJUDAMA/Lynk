@@ -4,6 +4,7 @@ Combines canonical skill matching, full-text lexical ranking, and pgvector cosin
 similarity with Reciprocal Rank Fusion (RRF).
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -42,7 +43,7 @@ def compute_hybrid_score(
         0.0,
         min(
             1.0,
-            (cosine_similarity + 1.0) / 2.0 if cosine_similarity < 0 else cosine_similarity,
+            (cosine_similarity + 1.0) / 2.0,
         ),
     )
     kw_score = max(0.0, min(1.0, keyword_score))
@@ -217,7 +218,7 @@ class HybridSearchPipeline:
             extracted_skills = self.skill_normalizer.extract_skills_from_text(cleaned_query)
             query_skill_names = [s.canonical_name for s in extracted_skills]
 
-            query_vec = self.embedding_provider.embed(cleaned_query)
+            query_vec = await asyncio.to_thread(self.embedding_provider.embed, cleaned_query)
             query_vec_json = json.dumps(query_vec)
 
             results: list[SearchResultItem] = []
@@ -272,6 +273,7 @@ class HybridSearchPipeline:
                             LEFT JOIN text_search t ON t.entity_id = j.id::text
                             WHERE j.status = 'open'
                               AND (v.entity_id IS NOT NULL OR t.text_rank_score > 0 OR j.required_skills && $3::text[])
+                            ORDER BY (COALESCE(v.vector_sim, 0.0) + COALESCE(t.text_rank_score, 0.0)) DESC
                             LIMIT $4;
                         """
                         async with self.db_pool.acquire() as conn:
@@ -363,6 +365,7 @@ class HybridSearchPipeline:
                             LEFT JOIN vector_search v ON (v.entity_id = p.user_id OR v.entity_id = p.id::text)
                             LEFT JOIN text_search t ON t.entity_id = p.user_id
                             WHERE (v.entity_id IS NOT NULL OR t.text_rank_score > 0 OR p.skills && $3::text[])
+                            ORDER BY (COALESCE(v.vector_sim, 0.0) + COALESCE(t.text_rank_score, 0.0)) DESC
                             LIMIT $4;
                         """
                         async with self.db_pool.acquire() as conn:
