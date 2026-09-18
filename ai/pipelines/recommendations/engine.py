@@ -491,15 +491,16 @@ class RecommendationEngine:
             # 5. Optional DB Persistence
             if self.db_pool is not None and len(final_items) > 0:
                 try:
-                    query = (
-                        "INSERT INTO ai_recommendations ("
-                        "user_id, type, title, reason, confidence, metadata, status"
-                        ") VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'active')"
-                    )
                     async with self.db_pool.acquire() as conn:
+                        await conn.execute(
+                            "UPDATE ai_recommendations SET status = 'archived' WHERE user_id = $1 AND status = 'active'",
+                            user_id,
+                        )
                         for it in final_items:
                             await conn.execute(
-                                query,
+                                "INSERT INTO ai_recommendations ("
+                                "user_id, type, title, reason, confidence, metadata, status"
+                                ") VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'active')",
                                 user_id,
                                 it.type,
                                 it.title,

@@ -140,3 +140,36 @@ async def test_recommendations_api_success():
         assert any(t in ("PyTorch", "Docker", "scikit-learn") for t in titles)
         assert data["model_name"] == "lynk-recommendation-engine"
         assert data["model_version"] == "1.0.0"
+
+
+@pytest.mark.asyncio
+async def test_recommendations_db_persistence_archives_existing():
+    """Test that existing active recommendations are archived prior to inserting new ones."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    mock_conn = AsyncMock()
+    mock_pool = MagicMock()
+    mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+    mock_pool.acquire.return_value.__aexit__.return_value = None
+
+    engine = RecommendationEngine(db_pool=mock_pool)
+    user_id = "usr-archive-test"
+    items = await engine.generate_recommendations(
+        user_id=user_id,
+        current_skills=["Python", "Machine Learning"],
+        department="Computer Science",
+        bio="Test bio for recommendations archiving.",
+    )
+
+    assert len(items) > 0
+    assert mock_conn.execute.call_count >= 2
+
+    # Verify first execute was archiving existing active recommendations
+    first_call = mock_conn.execute.call_args_list[0]
+    assert "UPDATE ai_recommendations SET status = 'archived'" in first_call[0][0]
+    assert first_call[0][1] == user_id
+
+    # Verify subsequent calls inserted new items
+    second_call = mock_conn.execute.call_args_list[1]
+    assert "INSERT INTO ai_recommendations" in second_call[0][0]
+    assert second_call[0][1] == user_id
