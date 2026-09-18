@@ -1,3 +1,5 @@
+import json
+from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -241,4 +243,115 @@ def test_empty_inputs_edge_cases():
         "There are no engineering skills mentioned here."
     )
     assert extracted_no_skills == []
+
+
+@pytest.mark.asyncio
+async def test_skills_validation_bounds():
+    """Verify NormalizeSkillRequest and ExtractSkillsRequest reject payloads exceeding bounds."""
+    transport = ASGITransport(app=app)
+    settings = get_settings()
+    headers = {"X-Internal-AI-Secret": settings.INTERNAL_AI_SECRET}
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Skill > 200 chars
+        resp_long_skill = await client.post(
+            "/internal/v1/skills/normalize",
+            headers=headers,
+            json={"skill": "s" * 201},
+        )
+        assert resp_long_skill.status_code == 422
+
+        # Skill < 1 char
+        resp_empty_skill = await client.post(
+            "/internal/v1/skills/normalize",
+            headers=headers,
+            json={"skill": ""},
+        )
+        assert resp_empty_skill.status_code == 422
+
+        # Text > 10000 chars
+        resp_long_text = await client.post(
+            "/internal/v1/skills/extract",
+            headers=headers,
+            json={"text": "t" * 10001},
+        )
+        assert resp_long_text.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_skills_telemetry_recording():
+    """Verify that /normalize and /extract record AI runs via track_ai_run."""
+    transport = ASGITransport(app=app)
+    settings = get_settings()
+    headers = {"X-Internal-AI-Secret": settings.INTERNAL_AI_SECRET}
+
+    mock_conn = AsyncMock()
+    mock_conn.execute = AsyncMock(return_value="INSERT 0 1")
+
+    mock_pool = MagicMock()
+    mock_acquire_cm = AsyncMock()
+    mock_acquire_cm.__aenter__.return_value = mock_conn
+    mock_acquire_cm.__aexit__.return_value = None
+    mock_pool.acquire.return_value = mock_acquire_cm
+
+    original_pool = getattr(app.state, "db_pool", None)
+    app.state.db_pool = mock_pool
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. Normalize skill endpoint telemetry
+            norm_resp = await client.post(
+                "/internal/v1/skills/normalize",
+                headers=headers,
+                json={"skill": "ReactJS"},
+            )
+            assert norm_resp.status_code == 200
+            assert mock_conn.execute.call_count == 1
+
+            call_args = mock_conn.execute.call_args[0]
+            query, params = call_args[0], call_args[1:]
+            assert "INSERT INTO ai_runs" in query
+            assert params[0] == "skill_normalization"  # feature
+            assert params[1] == "skill"  # entity_type
+            assert params[2] == "ReactJS"  # entity_id
+            assert params[3] == "lynk-skill-normalizer"  # model_name
+            assert params[4] == "1.0.0"  # model_version
+            assert params[6] == "skills-v1"  # pipeline_version
+            assert len(params[7]) == 64  # input_hash
+            output_json = json.loads(params[8])
+            assert output_json["canonical_name"] == "React"
+            assert output_json["confidence"] == 1.0
+            assert params[9] == 1.0  # confidence
+            assert params[11] == "success"  # status
+
+            # Reset call count
+            mock_conn.execute.reset_mock()
+
+            # 2. Extract skills endpoint telemetry
+            extract_resp = await client.post(
+                "/internal/v1/skills/extract",
+                headers=headers,
+                json={"text": "Looking for Go and React engineers"},
+            )
+            assert extract_resp.status_code == 200
+            assert mock_conn.execute.call_count == 1
+
+            call_args = mock_conn.execute.call_args[0]
+            query, params = call_args[0], call_args[1:]
+            assert "INSERT INTO ai_runs" in query
+            assert params[0] == "skill_extraction"  # feature
+            assert params[1] == "text"  # entity_type
+            assert params[2].startswith("Looking for")  # entity_id
+            assert params[3] == "lynk-skill-normalizer"  # model_name
+            assert params[4] == "1.0.0"  # model_version
+            assert params[6] == "skills-v1"  # pipeline_version
+            assert len(params[7]) == 64  # input_hash
+            output_json = json.loads(params[8])
+            assert "extracted_count" in output_json
+            assert output_json["extracted_count"] >= 1
+            assert params[11] == "success"  # status
+    finally:
+        app.state.db_pool = original_pool
+
+
 
