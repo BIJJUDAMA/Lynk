@@ -115,6 +115,8 @@ services:
       INTERNAL_AI_SECRET: "${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}"
       DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
       VLLM_URL: "http://vllm:8000/v1"
+    ports:
+      - "8000:8000"
     networks:
       - lynk-net
     depends_on:

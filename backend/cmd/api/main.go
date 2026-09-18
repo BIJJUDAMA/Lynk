@@ -503,8 +503,8 @@ func main() {
 	reviewHandler := review.NewHandler(reviewService)
 
 	// AI Subsystem
-	aiBaseURL := getEnv("AI_SERVICE_URL", "http://localhost:8000")
-	aiSecret := getEnv("INTERNAL_AI_SECRET", "lynk-ai-subsystem-internal-secret-key-2026")
+	aiBaseURL := getEnv("AI_API_URL", getEnv("AI_SERVICE_URL", "http://localhost:8000"))
+	aiSecret := getEnv("INTERNAL_AI_SECRET", "lynk-ai-internal-secret-key-2026")
 	aiClient := client.NewClient(client.Config{
 		BaseURL:        aiBaseURL,
 		InternalSecret: aiSecret,
