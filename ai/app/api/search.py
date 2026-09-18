@@ -14,9 +14,11 @@ router = APIRouter(prefix="/internal/v1/search", tags=["search"])
 
 
 class SearchRequest(BaseModel):
-    query: str = Field(..., description="Natural language search query")
+    query: str = Field(
+        ..., min_length=1, max_length=500, description="Natural language search query"
+    )
     entity_type: str = Field(
-        default="job", description="Entity type to search: 'job' or 'profile'"
+        default="job", max_length=50, description="Entity type to search: 'job' or 'profile'"
     )
     limit: int = Field(default=20, ge=1, le=100, description="Max results to return")
 

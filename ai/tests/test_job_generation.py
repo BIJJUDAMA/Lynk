@@ -136,3 +136,37 @@ async def test_malformed_json_primitive_triggers_fallback(monkeypatch):
 
     assert isinstance(draft, GeneratedJobDraft)
     assert len(draft.title) > 0
+
+
+@pytest.mark.asyncio
+async def test_job_generation_validation_bounds():
+    """Verify GenerateJobDraftRequest rejects invalid idea lengths and department lengths."""
+    settings = get_settings()
+    headers = {"X-Internal-AI-Secret": settings.INTERNAL_AI_SECRET}
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Idea > 1000 chars
+        resp_long_idea = await client.post(
+            "/internal/v1/jobs/generate",
+            headers=headers,
+            json={"idea": "a" * 1001, "department": "Computer Science"},
+        )
+        assert resp_long_idea.status_code == 422
+
+        # Idea < 3 chars
+        resp_short_idea = await client.post(
+            "/internal/v1/jobs/generate",
+            headers=headers,
+            json={"idea": "ab", "department": "Computer Science"},
+        )
+        assert resp_short_idea.status_code == 422
+
+        # Department > 100 chars
+        resp_long_dept = await client.post(
+            "/internal/v1/jobs/generate",
+            headers=headers,
+            json={"idea": "Build a React portfolio", "department": "a" * 101},
+        )
+        assert resp_long_dept.status_code == 422
+
