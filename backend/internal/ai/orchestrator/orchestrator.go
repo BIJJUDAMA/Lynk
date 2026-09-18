@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lynk/backend/internal/ai/client"
@@ -22,6 +23,11 @@ const (
 	DefaultModerationTimeout      = 3 * time.Second
 	DefaultReviewTimeout          = 4 * time.Second
 	DefaultSkillAnalyticsTimeout  = 5 * time.Second
+
+	// CircuitBreakerThreshold is the number of consecutive upstream failures before tripping.
+	CircuitBreakerThreshold = 5
+	// CircuitBreakerOpenDuration is the cooldown window during which calls are bypassed.
+	CircuitBreakerOpenDuration = 30 * time.Second
 )
 
 // FeatureFlags controls activation of AI features across the application.
@@ -73,6 +79,10 @@ type Orchestrator struct {
 	client *client.Client
 	flags  FeatureFlags
 	logger *slog.Logger
+
+	circuitMu           sync.RWMutex
+	consecutiveFailures int
+	circuitOpenUntil    time.Time
 }
 
 // NewOrchestrator creates a new AI orchestrator.
@@ -97,6 +107,60 @@ func (o *Orchestrator) Client() *client.Client {
 	return o.client
 }
 
+// isCircuitOpen reports whether the circuit breaker is currently open (tripped).
+func (o *Orchestrator) isCircuitOpen() bool {
+	o.circuitMu.RLock()
+	defer o.circuitMu.RUnlock()
+	if o.circuitOpenUntil.IsZero() {
+		return false
+	}
+	return time.Now().Before(o.circuitOpenUntil)
+}
+
+// recordSuccess resets the consecutive failures counter and closes the circuit.
+func (o *Orchestrator) recordSuccess() {
+	o.circuitMu.Lock()
+	defer o.circuitMu.Unlock()
+	o.consecutiveFailures = 0
+	o.circuitOpenUntil = time.Time{}
+}
+
+// recordFailure increments consecutive failures and trips the circuit if threshold is reached.
+func (o *Orchestrator) recordFailure() {
+	o.circuitMu.Lock()
+	defer o.circuitMu.Unlock()
+	o.consecutiveFailures++
+	if o.consecutiveFailures >= CircuitBreakerThreshold {
+		o.circuitOpenUntil = time.Now().Add(CircuitBreakerOpenDuration)
+		o.logger.Warn("ai circuit breaker tripped",
+			"consecutive_failures", o.consecutiveFailures,
+			"open_duration", CircuitBreakerOpenDuration,
+		)
+	}
+}
+
+// IsCircuitOpen reports whether the circuit breaker is currently open.
+func (o *Orchestrator) IsCircuitOpen() bool {
+	return o.isCircuitOpen()
+}
+
+// RecordSuccess resets the circuit breaker and failure count.
+func (o *Orchestrator) RecordSuccess() {
+	o.recordSuccess()
+}
+
+// RecordFailure records a failure and trips the circuit if threshold is reached.
+func (o *Orchestrator) RecordFailure() {
+	o.recordFailure()
+}
+
+// ConsecutiveFailures returns the current consecutive failure count.
+func (o *Orchestrator) ConsecutiveFailures() int {
+	o.circuitMu.RLock()
+	defer o.circuitMu.RUnlock()
+	return o.consecutiveFailures
+}
+
 // NormalizeSkill attempts to canonicalize a skill using the AI service.
 // If AI is disabled, unconfigured, or fails, it safely falls back to the original raw skill string.
 func (o *Orchestrator) NormalizeSkill(ctx context.Context, rawSkill string) (string, error) {
@@ -110,17 +174,24 @@ func (o *Orchestrator) NormalizeSkill(ctx context.Context, rawSkill string) (str
 		return trimmed, nil
 	}
 
+	if o.isCircuitOpen() {
+		o.logger.WarnContext(ctx, "ai skill normalization bypassed: circuit open", "skill", trimmed)
+		return trimmed, nil
+	}
+
 	callCtx, cancel := context.WithTimeout(ctx, DefaultSkillTimeout)
 	defer cancel()
 
 	resp, err := o.client.NormalizeSkill(callCtx, trimmed)
 	if err != nil {
+		o.recordFailure()
 		o.logger.WarnContext(ctx, "ai skill normalization failed, falling back to raw skill",
 			"skill", trimmed,
 			"error", err,
 		)
 		return trimmed, nil
 	}
+	o.recordSuccess()
 
 	if resp != nil && resp.CanonicalName != "" {
 		return resp.CanonicalName, nil
@@ -141,16 +212,23 @@ func (o *Orchestrator) ExtractSkills(ctx context.Context, text string) ([]models
 		return nil, nil
 	}
 
+	if o.isCircuitOpen() {
+		o.logger.WarnContext(ctx, "ai skill extraction bypassed: circuit open", "text_len", len(trimmed))
+		return nil, nil
+	}
+
 	callCtx, cancel := context.WithTimeout(ctx, DefaultSkillTimeout)
 	defer cancel()
 
 	resp, err := o.client.ExtractSkills(callCtx, trimmed)
 	if err != nil {
+		o.recordFailure()
 		o.logger.WarnContext(ctx, "ai skill extraction failed, falling back to empty list",
 			"error", err,
 		)
 		return nil, nil
 	}
+	o.recordSuccess()
 
 	if resp == nil {
 		return nil, nil
@@ -170,11 +248,17 @@ func (o *Orchestrator) HybridSearch(ctx context.Context, req models.HybridSearch
 		return nil, ErrAIBypassed
 	}
 
+	if o.isCircuitOpen() {
+		o.logger.WarnContext(ctx, "ai hybrid search bypassed: circuit open", "query", req.Query)
+		return nil, ErrAIBypassed
+	}
+
 	callCtx, cancel := context.WithTimeout(ctx, DefaultSearchTimeout)
 	defer cancel()
 
 	resp, err := o.client.HybridSearch(callCtx, req)
 	if err != nil {
+		o.recordFailure()
 		o.logger.WarnContext(ctx, "ai hybrid search failed",
 			"query", req.Query,
 			"entity_type", req.EntityType,
@@ -182,6 +266,7 @@ func (o *Orchestrator) HybridSearch(ctx context.Context, req models.HybridSearch
 		)
 		return nil, err
 	}
+	o.recordSuccess()
 
 	return resp, nil
 }
@@ -194,17 +279,24 @@ func (o *Orchestrator) GetProfileRecommendations(ctx context.Context, req models
 		return nil, ErrAIBypassed
 	}
 
+	if o.isCircuitOpen() {
+		o.logger.WarnContext(ctx, "ai profile recommendations bypassed: circuit open", "user_id", req.UserID)
+		return nil, ErrAIBypassed
+	}
+
 	callCtx, cancel := context.WithTimeout(ctx, DefaultRecommendationsTimeout)
 	defer cancel()
 
 	resp, err := o.client.GetProfileRecommendations(callCtx, req)
 	if err != nil {
+		o.recordFailure()
 		o.logger.WarnContext(ctx, "ai profile recommendations failed",
 			"user_id", req.UserID,
 			"error", err,
 		)
 		return nil, err
 	}
+	o.recordSuccess()
 
 	return resp, nil
 }
@@ -217,17 +309,24 @@ func (o *Orchestrator) RankCandidates(ctx context.Context, req models.RankCandid
 		return nil, ErrAIBypassed
 	}
 
+	if o.isCircuitOpen() {
+		o.logger.WarnContext(ctx, "ai application ranking bypassed: circuit open", "job_id", req.JobID)
+		return nil, ErrAIBypassed
+	}
+
 	callCtx, cancel := context.WithTimeout(ctx, DefaultRankingTimeout)
 	defer cancel()
 
 	resp, err := o.client.RankCandidates(callCtx, req)
 	if err != nil {
+		o.recordFailure()
 		o.logger.WarnContext(ctx, "ai application ranking failed",
 			"job_id", req.JobID,
 			"error", err,
 		)
 		return nil, err
 	}
+	o.recordSuccess()
 
 	return resp, nil
 }
@@ -247,11 +346,23 @@ func (o *Orchestrator) CheckModeration(ctx context.Context, req models.Moderatio
 		}, nil
 	}
 
+	if o.isCircuitOpen() {
+		o.logger.WarnContext(ctx, "ai moderation bypassed: circuit open", "entity_id", req.EntityID)
+		return &models.ModerationCheckResponse{
+			RiskScore:       0.0,
+			Decision:        "allow",
+			Signals:         []string{},
+			Confidence:      0.5,
+			PipelineVersion: "moderation-fallback",
+		}, nil
+	}
+
 	callCtx, cancel := context.WithTimeout(ctx, DefaultModerationTimeout)
 	defer cancel()
 
 	resp, err := o.client.CheckModeration(callCtx, req)
 	if err != nil {
+		o.recordFailure()
 		o.logger.WarnContext(ctx, "ai moderation failed, falling back to allow",
 			"entity_id", req.EntityID,
 			"error", err,
@@ -264,6 +375,7 @@ func (o *Orchestrator) CheckModeration(ctx context.Context, req models.Moderatio
 			PipelineVersion: "moderation-fallback",
 		}, nil
 	}
+	o.recordSuccess()
 
 	return resp, nil
 }
@@ -276,17 +388,24 @@ func (o *Orchestrator) GetReviewInsights(ctx context.Context, req models.Analyze
 		return nil, ErrAIBypassed
 	}
 
+	if o.isCircuitOpen() {
+		o.logger.WarnContext(ctx, "ai review insights bypassed: circuit open", "user_id", req.UserID)
+		return nil, ErrAIBypassed
+	}
+
 	callCtx, cancel := context.WithTimeout(ctx, DefaultReviewTimeout)
 	defer cancel()
 
 	resp, err := o.client.AnalyzeReviews(callCtx, req)
 	if err != nil {
+		o.recordFailure()
 		o.logger.WarnContext(ctx, "ai review insights failed",
 			"user_id", req.UserID,
 			"error", err,
 		)
 		return nil, err
 	}
+	o.recordSuccess()
 
 	return resp, nil
 }
@@ -298,17 +417,24 @@ func (o *Orchestrator) GetSkillDemandAnalytics(ctx context.Context, req models.S
 		return nil, ErrAIBypassed
 	}
 
+	if o.isCircuitOpen() {
+		o.logger.WarnContext(ctx, "ai skill demand analytics bypassed: circuit open", "period", req.Period)
+		return nil, ErrAIBypassed
+	}
+
 	callCtx, cancel := context.WithTimeout(ctx, DefaultSkillAnalyticsTimeout)
 	defer cancel()
 
 	resp, err := o.client.GetSkillDemandAnalytics(callCtx, req)
 	if err != nil {
+		o.recordFailure()
 		o.logger.WarnContext(ctx, "ai skill demand analytics failed",
 			"period", req.Period,
 			"error", err,
 		)
 		return nil, err
 	}
+	o.recordSuccess()
 
 	return resp, nil
 }
@@ -320,16 +446,23 @@ func (o *Orchestrator) GenerateJobDraft(ctx context.Context, req models.Generate
 		return nil, ErrAIBypassed
 	}
 
+	if o.isCircuitOpen() {
+		o.logger.WarnContext(ctx, "ai job generation bypassed: circuit open", "idea", req.Idea)
+		return nil, ErrAIBypassed
+	}
+
 	callCtx, cancel := context.WithTimeout(ctx, DefaultGenerationTimeout)
 	defer cancel()
 
 	resp, err := o.client.GenerateJobDraft(callCtx, req)
 	if err != nil {
+		o.recordFailure()
 		o.logger.WarnContext(ctx, "ai job generation failed",
 			"error", err,
 		)
 		return nil, err
 	}
+	o.recordSuccess()
 
 	return resp, nil
 }

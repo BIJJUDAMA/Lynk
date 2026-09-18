@@ -3,10 +3,12 @@ package orchestrator_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -223,5 +225,113 @@ func TestOrchestrator_RankCandidates(t *testing.T) {
 	_, err = disabledOrch.RankCandidates(context.Background(), models.RankCandidatesRequest{JobID: "job-123"})
 	if err != orchestrator.ErrAIBypassed {
 		t.Fatalf("expected ErrAIBypassed, got %v", err)
+	}
+}
+
+func TestOrchestrator_CircuitBreaker_TripsAndBypasses(t *testing.T) {
+	var requestCount int32
+	var shouldFail int32 = 1
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requestCount, 1)
+		if atomic.LoadInt32(&shouldFail) == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"internal server failure"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(models.RankCandidatesResponse{
+			Results: []models.CandidateRankResult{
+				{ApplicationID: "app-1", Score: 95.0},
+			},
+		})
+	}))
+	defer server.Close()
+
+	c := client.NewClient(client.Config{
+		BaseURL:        server.URL,
+		InternalSecret: "test-secret",
+	})
+
+	flags := orchestrator.FeatureFlags{
+		AIEnabled:          true,
+		ApplicationRanking: true,
+		SkillNormalization: true,
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	orch := orchestrator.NewOrchestrator(c, flags, logger)
+	ctx := context.Background()
+
+	// Initial state: circuit is closed and 0 failures
+	if orch.IsCircuitOpen() {
+		t.Fatalf("expected circuit to be closed initially")
+	}
+	if orch.ConsecutiveFailures() != 0 {
+		t.Fatalf("expected 0 consecutive failures initially, got %d", orch.ConsecutiveFailures())
+	}
+
+	// 1. Perform 5 consecutive failing calls to trip circuit breaker
+	for i := 1; i <= 5; i++ {
+		_, err := orch.RankCandidates(ctx, models.RankCandidatesRequest{JobID: "job-1"})
+		if err == nil {
+			t.Fatalf("call %d: expected error from failing server", i)
+		}
+		if orch.ConsecutiveFailures() != i {
+			t.Fatalf("call %d: expected consecutive failures %d, got %d", i, i, orch.ConsecutiveFailures())
+		}
+	}
+
+	// Verify circuit is now open after 5 consecutive failures
+	if !orch.IsCircuitOpen() {
+		t.Fatalf("expected circuit to be tripped after 5 consecutive failures")
+	}
+	if atomic.LoadInt32(&requestCount) != 5 {
+		t.Fatalf("expected exactly 5 requests sent to server, got %d", atomic.LoadInt32(&requestCount))
+	}
+
+	// 2. 6th call is fast-bypassed immediately without making an HTTP request
+	_, err := orch.RankCandidates(ctx, models.RankCandidatesRequest{JobID: "job-1"})
+	if !errors.Is(err, orchestrator.ErrAIBypassed) {
+		t.Fatalf("expected ErrAIBypassed on 6th call, got %v", err)
+	}
+	if atomic.LoadInt32(&requestCount) != 5 {
+		t.Fatalf("expected requestCount to remain 5 (no network request made), got %d", atomic.LoadInt32(&requestCount))
+	}
+
+	// Also verify fallback methods like NormalizeSkill are fast-bypassed without network calls
+	skill, err := orch.NormalizeSkill(ctx, "k8s")
+	if err != nil {
+		t.Fatalf("unexpected error on bypassed NormalizeSkill: %v", err)
+	}
+	if skill != "k8s" {
+		t.Fatalf("expected fallback 'k8s', got %q", skill)
+	}
+	if atomic.LoadInt32(&requestCount) != 5 {
+		t.Fatalf("expected requestCount to remain 5, got %d", atomic.LoadInt32(&requestCount))
+	}
+
+	// 3. recordSuccess() resets failures and closes the circuit
+	orch.RecordSuccess()
+	if orch.IsCircuitOpen() {
+		t.Fatalf("expected circuit to be closed after recordSuccess()")
+	}
+	if orch.ConsecutiveFailures() != 0 {
+		t.Fatalf("expected 0 consecutive failures after recordSuccess(), got %d", orch.ConsecutiveFailures())
+	}
+
+	// 4. Verify that requests now hit the server again and successful client call resets failure counter
+	atomic.StoreInt32(&shouldFail, 0)
+	resp, err := orch.RankCandidates(ctx, models.RankCandidatesRequest{JobID: "job-1"})
+	if err != nil {
+		t.Fatalf("unexpected error after circuit reset: %v", err)
+	}
+	if len(resp.Results) != 1 || resp.Results[0].Score != 95.0 {
+		t.Fatalf("unexpected response after circuit reset: %+v", resp)
+	}
+	if atomic.LoadInt32(&requestCount) != 6 {
+		t.Fatalf("expected requestCount to be 6 after successful call, got %d", atomic.LoadInt32(&requestCount))
+	}
+	if orch.ConsecutiveFailures() != 0 {
+		t.Fatalf("expected consecutive failures to remain 0 after success, got %d", orch.ConsecutiveFailures())
 	}
 }
