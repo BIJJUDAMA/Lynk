@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lynk/backend/internal/database"
@@ -63,6 +64,52 @@ func TestMigrationFilesExist(t *testing.T) {
 	}
 	if !foundDown4 {
 		t.Errorf("expected 000004_performance_and_contract_fixes.down.sql to exist")
+	}
+}
+
+func TestMigration000013_FilesExistAndSyntaxValid(t *testing.T) {
+	upPath := filepath.Join("..", "..", "migrations", "000013_ai_subsystem_constraints.up.sql")
+	downPath := filepath.Join("..", "..", "migrations", "000013_ai_subsystem_constraints.down.sql")
+
+	upBytes, err := os.ReadFile(upPath)
+	if err != nil {
+		t.Fatalf("failed to read 000013 up migration: %v", err)
+	}
+	upContent := string(upBytes)
+	if len(strings.TrimSpace(upContent)) == 0 {
+		t.Errorf("000013 up migration file is empty")
+	}
+
+	downBytes, err := os.ReadFile(downPath)
+	if err != nil {
+		t.Fatalf("failed to read 000013 down migration: %v", err)
+	}
+	downContent := string(downBytes)
+	if len(strings.TrimSpace(downContent)) == 0 {
+		t.Errorf("000013 down migration file is empty")
+	}
+
+	expectedConstraints := []string{
+		"chk_app_scores_score",
+		"chk_app_scores_confidence",
+		"chk_review_insights_score",
+		"chk_review_insights_confidence",
+		"chk_review_insights_sample_count",
+		"chk_ai_jobs_status",
+		"chk_ai_jobs_attempts",
+		"chk_ai_jobs_max_attempts",
+		"uq_ai_recommendations_user_type_title",
+		"chk_moderation_events_risk_score",
+		"chk_moderation_events_confidence",
+	}
+
+	for _, c := range expectedConstraints {
+		if !strings.Contains(upContent, c) {
+			t.Errorf("000013 up migration missing constraint: %s", c)
+		}
+		if !strings.Contains(downContent, c) {
+			t.Errorf("000013 down migration missing drop for constraint: %s", c)
+		}
 	}
 }
 

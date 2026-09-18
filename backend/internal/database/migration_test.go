@@ -598,4 +598,61 @@ func TestMigration000012_DownSQL_Structure(t *testing.T) {
 	}
 }
 
+func TestMigration000013_UpSQL_Structure(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000013_ai_subsystem_constraints.up.sql"))
+	if err != nil {
+		t.Fatalf("failed to read 000013 up migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	expectedFragments := []string{
+		"ALTER TABLE application_ai_scores ADD CONSTRAINT chk_app_scores_score CHECK (score >= 0.0 AND score <= 100.0);",
+		"ALTER TABLE application_ai_scores ADD CONSTRAINT chk_app_scores_confidence CHECK (confidence >= 0.0 AND confidence <= 1.0);",
+		"ALTER TABLE review_insights ADD CONSTRAINT chk_review_insights_score CHECK (score >= 1.0 AND score <= 5.0);",
+		"ALTER TABLE review_insights ADD CONSTRAINT chk_review_insights_confidence CHECK (confidence >= 0.0 AND confidence <= 1.0);",
+		"ALTER TABLE review_insights ADD CONSTRAINT chk_review_insights_sample_count CHECK (sample_count >= 1);",
+		"ALTER TABLE ai_jobs ADD CONSTRAINT chk_ai_jobs_status CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'dead_letter'));",
+		"ALTER TABLE ai_jobs ADD CONSTRAINT chk_ai_jobs_attempts CHECK (attempts >= 0);",
+		"ALTER TABLE ai_jobs ADD CONSTRAINT chk_ai_jobs_max_attempts CHECK (max_attempts > 0);",
+		"ALTER TABLE ai_recommendations ADD CONSTRAINT uq_ai_recommendations_user_type_title UNIQUE (user_id, type, title);",
+		"ALTER TABLE moderation_events ADD CONSTRAINT chk_moderation_events_risk_score CHECK (risk_score >= 0.0 AND risk_score <= 1.0);",
+		"ALTER TABLE moderation_events ADD CONSTRAINT chk_moderation_events_confidence CHECK (confidence >= 0.0 AND confidence <= 1.0);",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(content, fragment) {
+			t.Errorf("000013 up migration missing fragment: %s", fragment)
+		}
+	}
+}
+
+func TestMigration000013_DownSQL_Structure(t *testing.T) {
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000013_ai_subsystem_constraints.down.sql"))
+	if err != nil {
+		t.Fatalf("failed to read 000013 down migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	expectedFragments := []string{
+		"ALTER TABLE application_ai_scores DROP CONSTRAINT IF EXISTS chk_app_scores_score;",
+		"ALTER TABLE application_ai_scores DROP CONSTRAINT IF EXISTS chk_app_scores_confidence;",
+		"ALTER TABLE review_insights DROP CONSTRAINT IF EXISTS chk_review_insights_score;",
+		"ALTER TABLE review_insights DROP CONSTRAINT IF EXISTS chk_review_insights_confidence;",
+		"ALTER TABLE review_insights DROP CONSTRAINT IF EXISTS chk_review_insights_sample_count;",
+		"ALTER TABLE ai_jobs DROP CONSTRAINT IF EXISTS chk_ai_jobs_status;",
+		"ALTER TABLE ai_jobs DROP CONSTRAINT IF EXISTS chk_ai_jobs_attempts;",
+		"ALTER TABLE ai_jobs DROP CONSTRAINT IF EXISTS chk_ai_jobs_max_attempts;",
+		"ALTER TABLE ai_recommendations DROP CONSTRAINT IF EXISTS uq_ai_recommendations_user_type_title;",
+		"ALTER TABLE moderation_events DROP CONSTRAINT IF EXISTS chk_moderation_events_risk_score;",
+		"ALTER TABLE moderation_events DROP CONSTRAINT IF EXISTS chk_moderation_events_confidence;",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(content, fragment) {
+			t.Errorf("000013 down migration missing fragment: %s", fragment)
+		}
+	}
+}
+
+
 
