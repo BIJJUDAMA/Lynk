@@ -54,7 +54,7 @@ func (m *mockReviewRepo) HasUserReviewedContract(ctx context.Context, contractID
 	return false, nil
 }
 
-func TestReview_GetUserAIInsights_Success(t *testing.T) {
+func TestGetUserAIInsights_Success(t *testing.T) {
 	aiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		if r.URL.Path != "/internal/v1/reviews/analyze" {
@@ -155,7 +155,7 @@ func TestReview_GetUserAIInsights_Success(t *testing.T) {
 	}
 }
 
-func TestReview_GetUserAIInsights_UserNotFound(t *testing.T) {
+func TestGetUserAIInsights_UserNotFound(t *testing.T) {
 	userRepo := &mockUserRepo{
 		profiles: make(map[string]*user.Profile),
 	}
@@ -174,7 +174,7 @@ func TestReview_GetUserAIInsights_UserNotFound(t *testing.T) {
 	}
 }
 
-func TestReview_GetUserAIInsights_FallbackWhenAIError(t *testing.T) {
+func TestGetUserAIInsights_FallbackWhenAIError(t *testing.T) {
 	aiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))

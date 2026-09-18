@@ -243,7 +243,7 @@ func TestResume_GetPresignedURL(t *testing.T) {
 // TestResume_MultipartCleanup verifies that UploadResume cleans up multipart temp files
 // by calling RemoveAll on r.MultipartForm (SEC-09).
 // We cannot introspect the deferred call directly in a black-box test, but we can confirm the
-// full success path completes without error and the file is correctly processed—meaning the
+// full success path completes without error and the file is correctly processed--meaning the
 // defer branch that calls RemoveAll ran without panic or side-effect.
 func TestResume_MultipartCleanup(t *testing.T) {
 	repo := newMockUserRepository()
@@ -380,7 +380,7 @@ func TestResume_GetMemberResumeURL_NotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
-	// Target has no profile/resume row at all → 404.
+	// Target has no profile/resume row at all -> 404.
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected 404 for missing resume, got %d: %s", rec.Code, rec.Body.String())
 	}

@@ -111,6 +111,35 @@ async def test_internal_ping_valid_secret():
 
 
 @pytest.mark.asyncio
+async def test_internal_ping_timing_safe_secret_comparison():
+    transport = ASGITransport(app=app)
+    settings = get_settings()
+    valid = settings.INTERNAL_AI_SECRET
+
+    cases = [
+        (valid, 200),
+        ("", 401),
+        ("too-short", 401),
+        (valid + "-extra-bytes", 401),
+        (valid[:-1] + ("0" if valid[-1] != "0" else "1"), 401),
+        ("totally-mismatched-secret-key-string", 401),
+    ]
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        for secret_val, expected_status in cases:
+            response = await client.get(
+                "/internal/v1/ping",
+                headers={"X-Internal-AI-Secret": secret_val}
+            )
+            assert response.status_code == expected_status, f"Expected {expected_status} for {secret_val}"
+            if expected_status == 200:
+                assert response.json() == {"status": "pong"}
+            else:
+                assert response.json() == {"detail": "Invalid or missing internal AI secret"}
+
+
+@pytest.mark.asyncio
 async def test_lifespan_degraded_startup():
     async with lifespan(app):
         assert hasattr(app.state, "db_pool")
+
