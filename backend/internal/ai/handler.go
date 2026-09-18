@@ -208,16 +208,67 @@ func (h *AIHandler) SearchPeople(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AIHandler) resolveJobs(ctx context.Context, items []models.SearchResultItem) []JobSearchResult {
-	results := make([]JobSearchResult, 0, len(items))
+	if len(items) == 0 {
+		return []JobSearchResult{}
+	}
+
+	uuids := make([]uuid.UUID, 0, len(items))
+	itemMap := make(map[uuid.UUID]models.SearchResultItem, len(items))
 	for _, item := range items {
 		jobUUID, err := uuid.Parse(item.EntityID)
-		if err != nil {
-			continue
+		if err == nil {
+			uuids = append(uuids, jobUUID)
+			itemMap[jobUUID] = item
 		}
+	}
 
+	if len(uuids) == 0 {
+		return []JobSearchResult{}
+	}
+
+	if h.db != nil {
+		sql := `
+			SELECT id, created_by, title, description, required_skills, department, deadline, status, created_at, updated_at
+			FROM jobs
+			WHERE id = ANY($1) AND status = 'open';
+		`
+		rows, err := h.db.Query(ctx, sql, uuids)
+		if err == nil {
+			jobMap := make(map[uuid.UUID]*job.Job, len(uuids))
+			for rows.Next() {
+				var j job.Job
+				if scanErr := rows.Scan(
+					&j.ID, &j.CreatedBy, &j.Title, &j.Description, &j.RequiredSkills,
+					&j.Department, &j.Deadline, &j.Status, &j.CreatedAt, &j.UpdatedAt,
+				); scanErr == nil {
+					jobMap[j.ID] = &j
+				}
+			}
+			rows.Close()
+
+			results := make([]JobSearchResult, 0, len(uuids))
+			for _, u := range uuids {
+				if j, found := jobMap[u]; found {
+					item := itemMap[u]
+					results = append(results, JobSearchResult{
+						Job:           j,
+						Score:         item.Score,
+						Snippet:       item.Snippet,
+						MatchedSkills: item.MatchedSkills,
+					})
+				}
+			}
+			return results
+		}
+	}
+
+	// Fallback to jobRepo iterative lookup if db is nil or query fails
+	results := make([]JobSearchResult, 0, len(uuids))
+	for _, u := range uuids {
 		if h.jobRepo != nil {
-			j, err := h.jobRepo.GetJobByID(ctx, jobUUID)
+			j, err := h.jobRepo.GetJobByID(ctx, u)
 			if err == nil && j != nil && j.Status == "open" {
+				item := itemMap[u]
 				results = append(results, JobSearchResult{
 					Job:           j,
 					Score:         item.Score,
@@ -575,13 +626,13 @@ func (h *AIHandler) RankApplicants(w http.ResponseWriter, r *http.Request) {
 		`
 		rows, err := h.db.Query(r.Context(), sql, jobUUID)
 		if err == nil {
-			defer rows.Close()
 			for rows.Next() {
 				var item rawApp
 				if err := rows.Scan(&item.ID, &item.CoverLetter, &item.Skills, &item.Bio, &item.Department); err == nil {
 					rawApps = append(rawApps, item)
 				}
 			}
+			rows.Close()
 		}
 	}
 
@@ -798,15 +849,15 @@ func (h *AIHandler) GetUserAIInsights(w http.ResponseWriter, r *http.Request) {
 			reviews = summary.Reviews
 		}
 	} else if h.db != nil {
-		rows, err := h.db.Query(ctx, `SELECT rating, comment FROM reviews WHERE reviewee_id = $1`, targetUserID)
+		rows, err := h.db.Query(ctx, `SELECT rating, comment FROM reviews WHERE reviewee_id = $1 ORDER BY created_at DESC LIMIT 100`, targetUserID)
 		if err == nil {
-			defer rows.Close()
 			for rows.Next() {
 				var r review.Review
 				if err := rows.Scan(&r.Rating, &r.Comment); err == nil {
 					reviews = append(reviews, &r)
 				}
 			}
+			rows.Close()
 		}
 	}
 
