@@ -63,7 +63,7 @@ API_BASE_URL="${API_BASE_URL:-http://localhost:8080}"
 SUPERTOKENS_URL="${SUPERTOKENS_URL:-http://localhost:3567}"
 SUPERTOKENS_API_KEY="${SUPERTOKENS_API_KEY:-lynk-supertokens-secret-api-key-2026}"
 MINIO_URL="${MINIO_URL:-http://localhost:9000}"
-AI_BASE_URL="${AI_BASE_URL:-http://localhost:8000}"
+AI_BASE_URL="${AI_BASE_URL:-${AI_API_URL:-http://localhost:8000}}"
 
 EMPLOYER_EMAIL="${EMPLOYER_EMAIL:-${EMPLOYER_USERNAME:-poster@campus.edu}}"
 EMPLOYER_PASSWORD="${EMPLOYER_PASSWORD:-password123}"
@@ -1022,7 +1022,10 @@ EOF
 )
 
 DRAFT_RESP=$(http_request "POST" "/api/v1/jobs/generate" "$EMPLOYER_TOKEN" "$DRAFT_PAYLOAD" "200")
-DRAFT_TITLE=$(json_extract "$DRAFT_RESP" ".data.title")
+DRAFT_TITLE=$(json_extract "$DRAFT_RESP" ".data.draft.title")
+if [ -z "$DRAFT_TITLE" ] || [ "$DRAFT_TITLE" = "null" ]; then
+    DRAFT_TITLE=$(json_extract "$DRAFT_RESP" ".data.title")
+fi
 if [ -z "$DRAFT_TITLE" ] || [ "$DRAFT_TITLE" = "null" ]; then
     log_fail "AI job draft missing title: $DRAFT_RESP"
     exit 1
