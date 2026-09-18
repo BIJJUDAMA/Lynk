@@ -11,6 +11,7 @@ ethnicity) are strictly excluded from all features, schemas, and scoring calcula
 Traces every evaluation run in PostgreSQL ai_runs via track_ai_run.
 """
 
+import asyncio
 import logging
 from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -254,7 +255,11 @@ class CandidateRanker:
         ) as tracker:
             # 1. Embed job text
             job_text = f"{job_title} {job_description}".strip()
-            job_vec = self.embedding_provider.embed(job_text) if job_text else []
+            job_vec = (
+                await asyncio.to_thread(self.embedding_provider.embed, job_text)
+                if job_text
+                else []
+            )
 
             # 2. Canonicalize required skills for robust matching
             normalized_req_skills: list[str] = []
@@ -262,9 +267,21 @@ class CandidateRanker:
                 norm = self.skill_normalizer.normalize(s)
                 normalized_req_skills.append(norm.canonical_name.lower())
 
+            # Pre-compute candidate text embeddings in batch
+            cand_texts = [f"{c.bio or ''} {c.cover_letter or ''}".strip() for c in candidates]
+            non_empty_indices = [i for i, t in enumerate(cand_texts) if t]
+            cand_vec_map: dict[int, list[float]] = {}
+            if non_empty_indices and job_vec:
+                batch_texts = [cand_texts[i] for i in non_empty_indices]
+                batch_vecs = await asyncio.to_thread(
+                    self.embedding_provider.embed_batch, batch_texts
+                )
+                for idx, vec in zip(non_empty_indices, batch_vecs):
+                    cand_vec_map[idx] = vec
+
             results: list[CandidateRankResult] = []
 
-            for cand in candidates:
+            for i, cand in enumerate(candidates):
                 # Feature 1: Skill overlap score (weight: 0.45)
                 cand_skill_norms: set[str] = set()
                 for cs in cand.skills:
@@ -288,11 +305,10 @@ class CandidateRanker:
                     skill_overlap = 1.0
 
                 # Feature 2: Semantic embedding similarity (weight: 0.35)
-                cand_text = f"{cand.bio or ''} {cand.cover_letter or ''}".strip()
-                if cand_text and job_vec:
-                    cand_vec = self.embedding_provider.embed(cand_text)
+                cand_vec = cand_vec_map.get(i)
+                if cand_vec and job_vec:
                     semantic_sim = self._compute_semantic_similarity(
-                        job_text, cand_text, job_vec, cand_vec
+                        job_text, cand_texts[i], job_vec, cand_vec
                     )
                 else:
                     semantic_sim = 0.0

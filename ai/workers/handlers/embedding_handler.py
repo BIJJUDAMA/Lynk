@@ -1,5 +1,6 @@
 """Asynchronous handler for generating and indexing vector embeddings."""
 
+import asyncio
 import logging
 from typing import Any, Optional
 
@@ -37,7 +38,7 @@ class EmbeddingJobHandler:
             raise ValueError("Empty text payload for embedding generation")
 
         content_hash = compute_content_hash(text)
-        vector = self.provider.embed(text)
+        vector = await asyncio.to_thread(self.provider.embed, text)
 
         if self.db_pool is not None:
             try:

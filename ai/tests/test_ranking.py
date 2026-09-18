@@ -203,3 +203,40 @@ async def test_ranking_api_success():
         assert data["model_name"] == "lynk-candidate-ranker"
         assert data["model_version"] == "1.0.0"
         assert data["pipeline_version"] == "ranking-v1"
+
+
+@pytest.mark.asyncio
+async def test_ranking_batch_embedding_vectorization():
+    """Verify embed_batch is called for multiple candidates rather than iterative embed calls."""
+    from unittest.mock import MagicMock
+    from ai.models.embeddings.provider import MockEmbeddingProvider
+
+    mock_provider = MockEmbeddingProvider()
+    mock_provider.embed_batch = MagicMock(wraps=mock_provider.embed_batch)
+
+    ranker = CandidateRanker(embedding_provider=mock_provider)
+
+    candidates = [
+        CandidateRankInput(
+            application_id=f"app-{i}",
+            skills=["Python"],
+            bio=f"Bio for candidate {i}",
+            cover_letter=f"Cover letter for candidate {i}",
+        )
+        for i in range(5)
+    ]
+
+    results = await ranker.rank_candidates(
+        job_id="job-batch-test",
+        job_title="Software Engineer",
+        job_description="Seeking developers",
+        job_department="Computer Science",
+        required_skills=["Python"],
+        candidates=candidates,
+    )
+
+    assert len(results) == 5
+    # embed_batch should be invoked exactly once for the batch of 5 candidates
+    mock_provider.embed_batch.assert_called_once()
+    assert len(mock_provider.embed_batch.call_args[0][0]) == 5
+
