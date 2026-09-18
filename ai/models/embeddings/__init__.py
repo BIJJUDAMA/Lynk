@@ -6,6 +6,7 @@ from ai.models.embeddings.provider import (
     SentenceTransformerEmbeddingProvider,
     compute_content_hash,
     get_embedding_provider,
+    clear_provider_cache,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "SentenceTransformerEmbeddingProvider",
     "compute_content_hash",
     "get_embedding_provider",
+    "clear_provider_cache",
 ]

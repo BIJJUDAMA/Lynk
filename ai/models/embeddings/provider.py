@@ -5,6 +5,7 @@ import logging
 import math
 import random
 import sys
+import threading
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
@@ -223,29 +224,77 @@ class SentenceTransformerEmbeddingProvider(BaseEmbeddingProvider):
         return [[float(x) for x in vec] for vec in raw.tolist()]
 
 
+
+_PROVIDER_CACHE: dict[tuple[str, tuple[tuple[str, Any], ...]], BaseEmbeddingProvider] = {}
+_CACHE_LOCK = threading.Lock()
+
+
+def _freeze_kwargs(kwargs: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
+    """Convert kwargs dict to a sorted, hashable tuple of key-value pairs."""
+    items: list[tuple[str, Any]] = []
+    for k, v in sorted(kwargs.items()):
+        if isinstance(v, list):
+            v = tuple(v)
+        elif isinstance(v, dict):
+            v = _freeze_kwargs(v)
+        items.append((k, v))
+    return tuple(items)
+
+
+def clear_provider_cache() -> None:
+    """Clear all cached embedding provider singletons."""
+    with _CACHE_LOCK:
+        _PROVIDER_CACHE.clear()
+
+
 def get_embedding_provider(
     provider_type: str = "sentence-transformer",
     **kwargs: Any,
 ) -> BaseEmbeddingProvider:
-    """Factory function to acquire an embedding provider instance.
+    """Factory function to acquire a cached singleton embedding provider instance.
+
+    Providers are cached by canonical provider type and configuration kwargs
+    so repeated calls return the same singleton instance, eliminating redundant
+    PyTorch/transformer model reloads.
 
     Args:
         provider_type: Type of provider ('sentence-transformer', 'mock').
         **kwargs: Additional arguments passed to provider constructor.
 
     Returns:
-        Instance conforming to BaseEmbeddingProvider.
+        Cached instance conforming to BaseEmbeddingProvider.
 
     Raises:
         ValueError: If provider_type is unsupported.
     """
     normalized_type = provider_type.strip().lower()
     if normalized_type in ("sentence-transformer", "sentence_transformer", "st"):
-        return SentenceTransformerEmbeddingProvider(**kwargs)
+        canonical_type = "sentence-transformer"
     elif normalized_type in ("mock", "test", "deterministic"):
-        return MockEmbeddingProvider(**kwargs)
+        canonical_type = "mock"
     else:
         raise ValueError(
             f"Unknown embedding provider type: '{provider_type}'. "
             "Supported providers: 'sentence-transformer', 'mock'."
         )
+
+    cache_key = (canonical_type, _freeze_kwargs(kwargs))
+
+    # Fast path: check cache before acquiring lock
+    cached_instance = _PROVIDER_CACHE.get(cache_key)
+    if cached_instance is not None:
+        return cached_instance
+
+    with _CACHE_LOCK:
+        # Double-check inside lock
+        if cache_key in _PROVIDER_CACHE:
+            return _PROVIDER_CACHE[cache_key]
+
+        if canonical_type == "sentence-transformer":
+            instance: BaseEmbeddingProvider = SentenceTransformerEmbeddingProvider(**kwargs)
+        else:
+            instance = MockEmbeddingProvider(**kwargs)
+
+        _PROVIDER_CACHE[cache_key] = instance
+        return instance
+

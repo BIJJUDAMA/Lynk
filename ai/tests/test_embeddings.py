@@ -8,6 +8,7 @@ from ai.models.embeddings.provider import (
     MockEmbeddingProvider,
     compute_content_hash,
     get_embedding_provider,
+    clear_provider_cache,
 )
 
 
@@ -124,3 +125,33 @@ def test_mock_determinism_and_differentiation():
 def test_invalid_provider_type():
     with pytest.raises(ValueError, match="Unknown embedding provider type"):
         get_embedding_provider("unsupported-unknown-provider")
+
+
+def test_embedding_provider_is_singleton():
+    p1 = get_embedding_provider("sentence-transformer")
+    p2 = get_embedding_provider("sentence-transformer")
+    assert p1 is p2
+
+    p_default = get_embedding_provider()
+    assert p_default is p1
+
+    p_alias = get_embedding_provider("sentence_transformer")
+    assert p_alias is p1
+
+    m1 = get_embedding_provider("mock")
+    m2 = get_embedding_provider("mock")
+    assert m1 is m2
+
+    m_kw1 = get_embedding_provider("mock", dimension=256)
+    m_kw2 = get_embedding_provider("mock", dimension=256)
+    assert m_kw1 is m_kw2
+    assert m_kw1 is not m1
+
+
+def test_clear_provider_cache():
+    p1 = get_embedding_provider("mock")
+    clear_provider_cache()
+    p2 = get_embedding_provider("mock")
+    assert p1 is not p2
+
+
