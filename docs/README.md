@@ -148,6 +148,7 @@ The documentation suite is structured into dedicated modular domains under [`arc
 | **Object Storage Architecture & MinIO Policies** | [`architecture/object-storage.md`](architecture/object-storage.md) | MinIO S3 bucket configuration (`resumes`), bucket isolation, streaming uploads, MIME type validation (`application/pdf`, `msword`), pre-signed download URLs, and storage security. | Cloud Engineers, Backend Engineers, DevOps |
 | **Operations, Runbook & Local Developer Guide** | [`development/runbook-and-operations.md`](development/runbook-and-operations.md) | First-time setup, Docker Compose lifecycle, environment variable matrices, database seed scripts, troubleshooting runbook, disaster recovery, and operational procedures. | All Developers, DevOps, Site Reliability Engineers |
 | **Testing, Quality Assurance & Verification Strategy** | [`development/testing-strategy.md`](development/testing-strategy.md) | Testing pyramid (unit, integration, HTTP handler, frontend), test execution commands, coverage targets, CI/CD pipeline specifications, and pre-release gates. | QA Engineers, Backend Engineers, Frontend Engineers |
+| **Permanent Tooling Architecture & CI Strategy** | [`TOOLING.md`](TOOLING.md) | Universal multi-language linting, formatting, type checking, security scanning, pre-commit boundaries, and parallel GitHub Actions matrix across Go, Python, and TypeScript. | All Developers, DevOps, Platform Engineers |
 
 ---
 
