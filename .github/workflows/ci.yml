@@ -6,7 +6,81 @@ on:
   pull_request:
 
 jobs:
+  tooling-matrix:
+    name: Tooling (${{ matrix.tool.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tool:
+          - name: Go Format & Lint
+            target: backend
+          - name: Python Format, Lint & Types
+            target: ai
+          - name: TypeScript Format & Lint
+            target: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      # Go Subsystem Tooling
+      - if: matrix.tool.target == 'backend'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: backend/go.sum
+      - if: matrix.tool.target == 'backend'
+        name: Check Go Formatting (gofmt)
+        run: |
+          cd backend
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted Go files found:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - if: matrix.tool.target == 'backend'
+        name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          working-directory: backend
+          version: v2.4.0
+
+      # Python Subsystem Tooling
+      - if: matrix.tool.target == 'ai'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - if: matrix.tool.target == 'ai'
+        name: Install Python Tooling (Ruff & Mypy)
+        run: pip install ruff mypy
+      - if: matrix.tool.target == 'ai'
+        name: Ruff Format Check
+        run: ruff format --check ai/
+      - if: matrix.tool.target == 'ai'
+        name: Ruff Lint Check
+        run: ruff check ai/
+      - if: matrix.tool.target == 'ai'
+        name: Mypy Type Check
+        run: mypy --config-file ai/pyproject.toml ai/
+
+      # Frontend Subsystem Tooling
+      - if: matrix.tool.target == 'frontend'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - if: matrix.tool.target == 'frontend'
+        run: cd frontend && npm ci
+      - if: matrix.tool.target == 'frontend'
+        name: Prettier Format Check
+        run: cd frontend && npm run format:check
+      - if: matrix.tool.target == 'frontend'
+        name: Oxlint Fast Static Analysis
+        run: cd frontend && npm run lint:ox
+
   backend:
+    name: Backend Test Suite
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -30,13 +104,6 @@ jobs:
         with:
           go-version: "1.25.x"
           cache-dependency-path: backend/go.sum
-      # golangci-lint v1 binaries are built with Go 1.24 and reject go.mod go 1.25.
-      # v2.4+ (via action v9) is required for Go 1.25 support.
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          working-directory: backend
-          version: v2.4.0
       - name: Verify SQL migrations up and rollback (throwaway database)
         env:
           PGPASSWORD: lynk_password
@@ -46,11 +113,8 @@ jobs:
           go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.17.1
           psql -h localhost -U lynk_user -d lynk_db -c "DROP DATABASE IF EXISTS lynk_migrate_check;"
           psql -h localhost -U lynk_user -d lynk_db -c "CREATE DATABASE lynk_migrate_check;"
-          # 1. Verify forward migrations
           migrate -path backend/migrations -database "postgres://lynk_user:lynk_password@localhost:5432/lynk_migrate_check?sslmode=disable" up
-          # 2. Verify rollback down migrations
           migrate -path backend/migrations -database "postgres://lynk_user:lynk_password@localhost:5432/lynk_migrate_check?sslmode=disable" down -all
-          # 3. Verify re-application idempotency
           migrate -path backend/migrations -database "postgres://lynk_user:lynk_password@localhost:5432/lynk_migrate_check?sslmode=disable" up
           psql -h localhost -U lynk_user -d lynk_db -c "DROP DATABASE lynk_migrate_check;"
       - name: Apply application migrations
@@ -61,6 +125,7 @@ jobs:
         run: go test -race -count=1 ./...
 
   frontend:
+    name: Frontend Test Suite
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -69,7 +134,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # npm test uses node --experimental-strip-types (Node 22+)
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
@@ -84,21 +148,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: ai/requirements.txt
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r ai/requirements.txt
-
       - name: Run Pytest Suite
         run: python -m pytest ai/tests/ -v
-
       - name: Run Offline IR Evaluation Harness
         run: python -m ai.evaluation.harness
