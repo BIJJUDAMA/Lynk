@@ -5,12 +5,13 @@
 **Architecture, specifications, and runbooks for the Lynk campus work platform.**
 
 <p align="center">
-  <a href="https://github.com/BIJJUDAMA/Lynk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/BIJJUDAMA/Lynk/ci.yml?branch=main&label=CI&style=flat-square" alt="CI Status" /></a>
-  <a href="https://github.com/BIJJUDAMA/Lynk/actions/workflows/smoke-test.yml"><img src="https://img.shields.io/github/actions/workflow/status/BIJJUDAMA/Lynk/smoke-test.yml?branch=main&label=E2E%20Smoke%20Test&style=flat-square" alt="E2E Smoke Test" /></a>
-  <a href="https://github.com/BIJJUDAMA/Lynk/actions/workflows/docker-build.yml"><img src="https://img.shields.io/github/actions/workflow/status/BIJJUDAMA/Lynk/docker-build.yml?branch=main&label=Docker%20Build&style=flat-square" alt="Docker Build" /></a>
-  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
-  <img src="https://img.shields.io/badge/PostgreSQL-16%20%7C%20pgvector-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/TypeScript-5.6+-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
+  <img src="https://img.shields.io/badge/Next.js-14+-black?style=flat-square&logo=next.js&logoColor=white" alt="Next.js" />
+  <img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/pgvector-Enabled-336791?style=flat-square" alt="pgvector" />
 </p>
 
 </div>
