@@ -11,9 +11,3 @@ linters:
     - staticcheck
     - unused
     - gosec
-
-linters-settings:
-  gosec:
-    excludes:
-      - G104
-      - G115
