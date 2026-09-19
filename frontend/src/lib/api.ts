@@ -65,12 +65,7 @@ export class ApiClientError extends Error {
   readonly status: number;
   readonly details?: unknown;
 
-  constructor(
-    message: string,
-    code = "API_ERROR",
-    status = 500,
-    details?: unknown
-  ) {
+  constructor(message: string, code = "API_ERROR", status = 500, details?: unknown) {
     super(message);
     this.name = "ApiClientError";
     this.code = code;
@@ -86,8 +81,7 @@ export class ApiClientError extends Error {
 
   get isEmailNotVerified(): boolean {
     return (
-      this.code === "EMAIL_NOT_VERIFIED" ||
-      (this.status === 403 && this.code.includes("EMAIL"))
+      this.code === "EMAIL_NOT_VERIFIED" || (this.status === 403 && this.code.includes("EMAIL"))
     );
   }
 
@@ -96,11 +90,7 @@ export class ApiClientError extends Error {
   }
 
   get isNotFound(): boolean {
-    return (
-      this.code === "NOT_FOUND" ||
-      this.code.endsWith("_NOT_FOUND") ||
-      this.status === 404
-    );
+    return this.code === "NOT_FOUND" || this.code.endsWith("_NOT_FOUND") || this.status === 404;
   }
 }
 
@@ -181,9 +171,7 @@ export function createApiClient(
 
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
 
-  async function resolveHeaders(
-    customHeaders?: HeadersInit
-  ): Promise<Record<string, string>> {
+  async function resolveHeaders(customHeaders?: HeadersInit): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       Accept: "application/json",
     };
@@ -250,11 +238,7 @@ export function createApiClient(
 
     const headers = await resolveHeaders(options.headers);
 
-    if (
-      options.body &&
-      !(options.body instanceof FormData) &&
-      !headers["Content-Type"]
-    ) {
+    if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
       headers["Content-Type"] = "application/json";
     }
 
@@ -267,9 +251,7 @@ export function createApiClient(
       });
     } catch (err: unknown) {
       const msg =
-        err instanceof Error
-          ? err.message
-          : "Network request failed or server unreachable";
+        err instanceof Error ? err.message : "Network request failed or server unreachable";
       throw new ApiClientError(msg, "NETWORK_ERROR", 0, err);
     }
 
@@ -287,10 +269,10 @@ export function createApiClient(
           response.status === 401
             ? "UNAUTHORIZED"
             : response.status === 403
-            ? "FORBIDDEN"
-            : response.status === 404
-            ? "NOT_FOUND"
-            : "API_ERROR";
+              ? "FORBIDDEN"
+              : response.status === 404
+                ? "NOT_FOUND"
+                : "API_ERROR";
         throw new ApiClientError(
           text || response.statusText || "Request failed",
           defaultCode,
@@ -314,10 +296,8 @@ export function createApiClient(
     }
 
     const envelope = parsed as ApiResponse<T>;
-    const isSuccessEnvelope =
-      envelope && typeof envelope === "object" && envelope.success === true;
-    const isErrorEnvelope =
-      envelope && typeof envelope === "object" && envelope.success === false;
+    const isSuccessEnvelope = envelope && typeof envelope === "object" && envelope.success === true;
+    const isErrorEnvelope = envelope && typeof envelope === "object" && envelope.success === false;
 
     if (!response.ok || isErrorEnvelope) {
       const errorObj = isErrorEnvelope ? envelope.error : null;
@@ -337,8 +317,7 @@ export function createApiClient(
         }
       }
 
-      const message =
-        errorObj?.message || response.statusText || "Request failed";
+      const message = errorObj?.message || response.statusText || "Request failed";
 
       throw new ApiClientError(message, code, response.status, errorObj ?? parsed);
     }
@@ -380,11 +359,7 @@ export function createApiClient(
       return executeRequest<T>(path, { method: "DELETE" });
     },
 
-    uploadFile<T>(
-      path: string,
-      file: File,
-      fieldName = "resume"
-    ): Promise<T> {
+    uploadFile<T>(path: string, file: File, fieldName = "resume"): Promise<T> {
       const formData = new FormData();
       formData.append(fieldName, file, file.name);
       return executeRequest<T>(path, {
@@ -409,18 +384,14 @@ export async function syncUser(
   return client.post<User>("/auth/sync", data);
 }
 
-export async function getMe(
-  client: ApiClient = apiClient
-): Promise<UserProfileSummary> {
+export async function getMe(client: ApiClient = apiClient): Promise<UserProfileSummary> {
   return client.get<UserProfileSummary>("/auth/me");
 }
 
 /**
  * Retrieves the current authenticated campus member's profile.
  */
-export async function getMyProfile(
-  client: ApiClient = apiClient
-): Promise<Profile> {
+export async function getMyProfile(client: ApiClient = apiClient): Promise<Profile> {
   return client.get<Profile>("/profile/me");
 }
 
@@ -441,13 +412,9 @@ export interface BuildProfilePayloadInput {
  * Builds an UpdateProfileRequest payload ensuring optional fields retain empty strings
  * or 0 rather than undefined, allowing users to clear existing values in PostgreSQL.
  */
-export function buildProfileUpdatePayload(
-  input: BuildProfilePayloadInput
-): UpdateProfileRequest {
+export function buildProfileUpdatePayload(input: BuildProfilePayloadInput): UpdateProfileRequest {
   const effectiveDepartment =
-    input.department === "Other"
-      ? (input.customDepartment || "").trim()
-      : input.department.trim();
+    input.department === "Other" ? (input.customDepartment || "").trim() : input.department.trim();
 
   return {
     first_name: input.firstName.trim(),
@@ -475,17 +442,12 @@ export async function updateMyProfile(
 /**
  * Retrieves public view of a campus member's profile by ID.
  */
-export async function getProfileById(
-  id: string,
-  client: ApiClient = apiClient
-): Promise<Profile> {
+export async function getProfileById(id: string, client: ApiClient = apiClient): Promise<Profile> {
   return client.get<Profile>(`/profile/${id}`);
 }
 
 // Backward-compatible aliases
-export async function getStudentProfile(
-  client: ApiClient = apiClient
-): Promise<StudentProfile> {
+export async function getStudentProfile(client: ApiClient = apiClient): Promise<StudentProfile> {
   return getMyProfile(client);
 }
 
@@ -496,9 +458,7 @@ export async function updateStudentProfile(
   return updateMyProfile(data, client);
 }
 
-export async function getEmployerProfile(
-  client: ApiClient = apiClient
-): Promise<EmployerProfile> {
+export async function getEmployerProfile(client: ApiClient = apiClient): Promise<EmployerProfile> {
   return getMyProfile(client);
 }
 
@@ -524,11 +484,7 @@ export async function uploadResume(
   file: File,
   client: ApiClient = apiClient
 ): Promise<ResumeUploadResponse> {
-  return client.uploadFile<ResumeUploadResponse>(
-    "/profile/resume",
-    file,
-    "resume"
-  );
+  return client.uploadFile<ResumeUploadResponse>("/profile/resume", file, "resume");
 }
 
 /**
@@ -561,10 +517,7 @@ export async function getStudentResumeUrl(
 // Typed Domain Functions: Jobs
 // ============================================================================
 
-export async function listJobs(
-  filters?: JobFilter,
-  client: ApiClient = apiClient
-): Promise<Job[]> {
+export async function listJobs(filters?: JobFilter, client: ApiClient = apiClient): Promise<Job[]> {
   const queryParams: Record<string, unknown> = {};
 
   if (filters) {
@@ -583,16 +536,11 @@ export async function listJobs(
   return client.get<Job[]>("/jobs", queryParams);
 }
 
-export async function getMyJobs(
-  client: ApiClient = apiClient
-): Promise<Job[]> {
+export async function getMyJobs(client: ApiClient = apiClient): Promise<Job[]> {
   return client.get<Job[]>("/jobs/mine");
 }
 
-export async function getJobById(
-  id: string,
-  client: ApiClient = apiClient
-): Promise<Job> {
+export async function getJobById(id: string, client: ApiClient = apiClient): Promise<Job> {
   return client.get<Job>(`/jobs/${id}`);
 }
 
@@ -673,9 +621,7 @@ export async function updateApplicationStatus(
 // Typed Domain Functions: Contracts
 // ============================================================================
 
-export async function listContracts(
-  client: ApiClient = apiClient
-): Promise<ContractWithDetails[]> {
+export async function listContracts(client: ApiClient = apiClient): Promise<ContractWithDetails[]> {
   return client.get<ContractWithDetails[]>("/contracts");
 }
 

@@ -64,8 +64,8 @@ export default function HomePage() {
               </h1>
 
               <p className="mt-6 text-lg leading-8 text-slate-600 dark:text-slate-300">
-                Lynk connects verified university students with freelance opportunities,
-                clear deliverable contracts, and peer reviews.
+                Lynk connects verified university students with freelance opportunities, clear
+                deliverable contracts, and peer reviews.
               </p>
 
               <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
@@ -124,7 +124,10 @@ export default function HomePage() {
                 ))}
               </div>
             ) : featuredJobs.length > 0 ? (
-              <div ref={jobsGridRef} className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <div
+                ref={jobsGridRef}
+                className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3"
+              >
                 {featuredJobs.map((job) => (
                   <JobCard key={job.id} job={job} />
                 ))}
@@ -174,7 +177,8 @@ export default function HomePage() {
                 The Lynk Standard
               </h2>
               <p className="mt-4 text-base text-slate-600 dark:text-slate-400">
-                Freelance marketplaces often struggle with unverified accounts and payment disputes. Lynk provides verified identity, structured contracts, and authenticated reviews.
+                Freelance marketplaces often struggle with unverified accounts and payment disputes.
+                Lynk provides verified identity, structured contracts, and authenticated reviews.
               </p>
             </div>
 
@@ -188,7 +192,8 @@ export default function HomePage() {
                   Institutional Email Verification
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                  Every student must verify an active university email address before submitting proposals or sharing credentials.
+                  Every student must verify an active university email address before submitting
+                  proposals or sharing credentials.
                 </p>
                 <ul className="mt-4 space-y-2 text-xs text-slate-500 dark:text-slate-400">
                   <li className="flex items-center gap-2">
@@ -211,7 +216,8 @@ export default function HomePage() {
                   Binding Campus Contracts
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                  Accepted proposals automatically create structured contracts that track project status from active work through completion.
+                  Accepted proposals automatically create structured contracts that track project
+                  status from active work through completion.
                 </p>
                 <ul className="mt-4 space-y-2 text-xs text-slate-500 dark:text-slate-400">
                   <li className="flex items-center gap-2">
@@ -234,12 +240,12 @@ export default function HomePage() {
                   Authentic Mutual Feedback
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                  Ratings and reviews can only be submitted once contracts reach completion, ensuring a genuine record of collaboration.
+                  Ratings and reviews can only be submitted once contracts reach completion,
+                  ensuring a genuine record of collaboration.
                 </p>
                 <ul className="mt-4 space-y-2 text-xs text-slate-500 dark:text-slate-400">
                   <li className="flex items-center gap-2">
-                    <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    1 to 5 star verified reviews
+                    <Check className="h-3.5 w-3.5 text-emerald-500" />1 to 5 star verified reviews
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="h-3.5 w-3.5 text-emerald-500" />
@@ -252,7 +258,10 @@ export default function HomePage() {
         </section>
 
         {/* How It Works Section */}
-        <section id="features" className="border-t border-slate-200 bg-slate-100/60 py-20 dark:border-slate-800 dark:bg-slate-900/40">
+        <section
+          id="features"
+          className="border-t border-slate-200 bg-slate-100/60 py-20 dark:border-slate-800 dark:bg-slate-900/40"
+        >
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-2xl text-center">
               <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
@@ -274,7 +283,9 @@ export default function HomePage() {
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                       For University Students
                     </h3>
-                    <p className="text-xs text-slate-500">Find vetted opportunities across campus</p>
+                    <p className="text-xs text-slate-500">
+                      Find vetted opportunities across campus
+                    </p>
                   </div>
                 </div>
 
@@ -284,7 +295,9 @@ export default function HomePage() {
                       1
                     </span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white">Sign up with your university email</strong>
+                      <strong className="text-slate-900 dark:text-white">
+                        Sign up with your university email
+                      </strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                         Register with your institutional address to access campus opportunities.
                       </p>
@@ -295,7 +308,9 @@ export default function HomePage() {
                       2
                     </span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white">Build your profile and resume</strong>
+                      <strong className="text-slate-900 dark:text-white">
+                        Build your profile and resume
+                      </strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                         Highlight coursework, skills, portfolio links, and your current resume.
                       </p>
@@ -306,7 +321,9 @@ export default function HomePage() {
                       3
                     </span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white">Apply and deliver under contract</strong>
+                      <strong className="text-slate-900 dark:text-white">
+                        Apply and deliver under contract
+                      </strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                         Submit proposals, deliver agreed project scope, and earn authentic feedback.
                       </p>
@@ -335,7 +352,9 @@ export default function HomePage() {
                       1
                     </span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white">Post your opportunity</strong>
+                      <strong className="text-slate-900 dark:text-white">
+                        Post your opportunity
+                      </strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                         Define project deliverables, required skills, compensation, and deadline.
                       </p>
@@ -346,7 +365,9 @@ export default function HomePage() {
                       2
                     </span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white">Review student proposals</strong>
+                      <strong className="text-slate-900 dark:text-white">
+                        Review student proposals
+                      </strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                         Evaluate proposals, inspect student resumes, and review past feedback.
                       </p>
@@ -357,9 +378,12 @@ export default function HomePage() {
                       3
                     </span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white">Coordinate work and provide feedback</strong>
+                      <strong className="text-slate-900 dark:text-white">
+                        Coordinate work and provide feedback
+                      </strong>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Accept proposals to initiate contracts, monitor deliverables, and leave mutual reviews.
+                        Accept proposals to initiate contracts, monitor deliverables, and leave
+                        mutual reviews.
                       </p>
                     </div>
                   </li>
@@ -377,7 +401,8 @@ export default function HomePage() {
                 Ready to explore campus opportunities?
               </h2>
               <p className="mx-auto mt-4 max-w-xl text-sm sm:text-base text-emerald-100">
-                Join verified students and university teams collaborating across research, engineering, and creative projects.
+                Join verified students and university teams collaborating across research,
+                engineering, and creative projects.
               </p>
               <div className="mt-8 flex flex-wrap justify-center gap-4">
                 <Link

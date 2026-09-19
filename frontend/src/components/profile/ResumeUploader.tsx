@@ -85,8 +85,7 @@ export function ResumeUploader({
     const isPdf = lowerName.endsWith(".pdf") || file.type === "application/pdf";
     const isDocx =
       lowerName.endsWith(".docx") ||
-      file.type ===
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
     if (!isPdf && !isDocx) {
       return "Invalid file format. Only PDF (.pdf) and Word (.docx) documents are accepted.";
@@ -211,7 +210,8 @@ export function ResumeUploader({
             <h4 className="font-semibold">Institutional .edu Verification Required</h4>
             <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5 leading-relaxed">
               Resume uploads are gated for verified university students. Please verify your
-              institutional email address via your university login to enable resume storage and job applications.
+              institutional email address via your university login to enable resume storage and job
+              applications.
             </p>
           </div>
         </div>
@@ -258,9 +258,7 @@ export function ResumeUploader({
                 <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
                   <span>{formatFileSize(currentResume.byteSize)}</span>
                   <span>•</span>
-                  <span>
-                    Uploaded {formatJobDate(currentResume.updatedAt)}
-                  </span>
+                  <span>Uploaded {formatJobDate(currentResume.updatedAt)}</span>
                   <span>•</span>
                   <span className="text-emerald-600 dark:text-emerald-400 font-medium">
                     Uploaded & Active
@@ -323,15 +321,13 @@ export function ResumeUploader({
             !isVerified
               ? "cursor-not-allowed border-border bg-secondary/50 opacity-70"
               : isDragging
-              ? "cursor-copy border-primary bg-accent/40 scale-[1.01]"
-              : "cursor-pointer border-border bg-card hover:border-primary hover:bg-accent/20"
+                ? "cursor-copy border-primary bg-accent/40 scale-[1.01]"
+                : "cursor-pointer border-border bg-card hover:border-primary hover:bg-accent/20"
           }`}
         >
           <div
             className={`flex h-14 w-14 items-center justify-center rounded-[10px] shadow-sm transition ${
-              isDragging
-                ? "bg-primary text-primary-foreground scale-110"
-                : "bg-accent text-primary"
+              isDragging ? "bg-primary text-primary-foreground scale-110" : "bg-accent text-primary"
             }`}
           >
             {isUploading ? (
@@ -346,8 +342,8 @@ export function ResumeUploader({
               {isUploading
                 ? "Uploading resume..."
                 : isDragging
-                ? "Drop your resume file here"
-                : "Drag & drop your resume, or browse files"}
+                  ? "Drop your resume file here"
+                  : "Drag & drop your resume, or browse files"}
             </h4>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               PDF or DOCX documents up to 5MB

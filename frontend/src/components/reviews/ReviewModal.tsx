@@ -1,14 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import {
-  Star,
-  X,
-  AlertCircle,
-  Loader2,
-  CheckCircle2,
-  ShieldCheck,
-} from "lucide-react";
+import { Star, X, AlertCircle, Loader2, CheckCircle2, ShieldCheck } from "lucide-react";
 import { createReview, ApiClientError, createApiClient } from "@/lib/api";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { animateModal } from "@/lib/animations";
@@ -90,7 +83,10 @@ export function ReviewModal({
   if (!isOpen) return null;
 
   const currentDisplayRating = hoveredRating || rating;
-  const ratingText = currentDisplayRating > 0 ? RATING_LABELS[currentDisplayRating] : "Select a rating (1 to 5 stars)";
+  const ratingText =
+    currentDisplayRating > 0
+      ? RATING_LABELS[currentDisplayRating]
+      : "Select a rating (1 to 5 stars)";
   const trimmedComment = comment.trim();
   const isFormValid = rating >= 1 && rating <= 5 && trimmedComment.length >= 5;
 
@@ -133,7 +129,10 @@ export function ReviewModal({
       if (err instanceof ApiClientError) {
         if (err.code === "DUPLICATE_REVIEW" || err.status === 409) {
           setErrorMessage("You have already submitted a review for this contract.");
-        } else if (err.code === "CONTRACT_NOT_COMPLETED" || (err.status === 400 && err.message.toLowerCase().includes("completed"))) {
+        } else if (
+          err.code === "CONTRACT_NOT_COMPLETED" ||
+          (err.status === 400 && err.message.toLowerCase().includes("completed"))
+        ) {
           setErrorMessage("Reviews can only be submitted for completed contracts.");
         } else if (err.code === "FORBIDDEN" || err.status === 403) {
           setErrorMessage("Only participants of this contract are permitted to submit reviews.");
@@ -180,7 +179,12 @@ export function ReviewModal({
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {jobTitle ? (
-                  <span>For <strong className="font-semibold text-slate-700 dark:text-slate-300">{jobTitle}</strong></span>
+                  <span>
+                    For{" "}
+                    <strong className="font-semibold text-slate-700 dark:text-slate-300">
+                      {jobTitle}
+                    </strong>
+                  </span>
                 ) : (
                   "Share your feedback with your project collaborator"
                 )}
@@ -227,10 +231,7 @@ export function ReviewModal({
               Overall Rating <span className="text-rose-500">*</span>
             </label>
             <div className="flex items-center gap-2">
-              <div
-                className="flex items-center gap-1.5"
-                onMouseLeave={() => setHoveredRating(0)}
-              >
+              <div className="flex items-center gap-1.5" onMouseLeave={() => setHoveredRating(0)}>
                 {[1, 2, 3, 4, 5].map((starValue) => {
                   const isFilled = starValue <= currentDisplayRating;
                   return (
@@ -277,8 +278,8 @@ export function ReviewModal({
                   trimmedComment.length > 5000
                     ? "text-rose-600 font-semibold"
                     : trimmedComment.length >= 5
-                    ? "text-slate-500 dark:text-slate-400"
-                    : "text-amber-600 dark:text-amber-400"
+                      ? "text-slate-500 dark:text-slate-400"
+                      : "text-amber-600 dark:text-amber-400"
                 }`}
               >
                 {comment.length} / 5,000 characters (min 5)

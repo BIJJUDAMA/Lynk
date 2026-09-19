@@ -1,10 +1,5 @@
 import Link from "next/link";
-import {
-  Building2,
-  Calendar,
-  GraduationCap,
-  ArrowRight,
-} from "lucide-react";
+import { Building2, Calendar, GraduationCap, ArrowRight } from "lucide-react";
 import { Job, JobStatus } from "@/types/api";
 import { cn } from "@/lib/utils";
 
@@ -165,9 +160,7 @@ export function JobCard({ job, className }: JobCardProps) {
       <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4 dark:border-slate-800/80">
         <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
           <Calendar className="h-3.5 w-3.5 text-slate-400" />
-          <span>
-            {job.deadline ? `Due ${formatJobDate(job.deadline)}` : "Flexible deadline"}
-          </span>
+          <span>{job.deadline ? `Due ${formatJobDate(job.deadline)}` : "Flexible deadline"}</span>
         </div>
 
         <Link

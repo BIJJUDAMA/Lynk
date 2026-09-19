@@ -20,11 +20,7 @@ export function initSuperTokens() {
       apiDomain: API_URL,
       apiBasePath: "/api/v1/auth",
     },
-    recipeList: [
-      Session.init(),
-      EmailPassword.init(),
-      EmailVerification.init(),
-    ],
+    recipeList: [Session.init(), EmailPassword.init(), EmailVerification.init()],
   });
 
   initialized = true;

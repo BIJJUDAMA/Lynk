@@ -29,11 +29,7 @@ function mockFetch(
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
     const url =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-        ? input.toString()
-        : input.url;
+      typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     return Promise.resolve(handler(url, init));
   };
   return () => {
@@ -195,10 +191,7 @@ test("ApiClient extracts ApiClientError for EMAIL_NOT_VERIFIED error envelope", 
     assert.ok(err instanceof ApiClientError);
     assert.equal(err.code, "EMAIL_NOT_VERIFIED");
     assert.equal(err.status, 403);
-    assert.equal(
-      err.message,
-      "University email must be verified before performing this action"
-    );
+    assert.equal(err.message, "University email must be verified before performing this action");
     assert.equal(err.isEmailNotVerified, true);
     assert.equal(err.isUnauthorized, false);
     assert.equal(err.isForbidden, true);
@@ -334,10 +327,7 @@ test("Domain functions call expected endpoints with expected payloads and parame
     assert.equal(calls[0].method, "GET");
 
     // 2. listJobs with filters
-    await listJobs(
-      { search: "frontend", limit: 10 },
-      client
-    );
+    await listJobs({ search: "frontend", limit: 10 }, client);
     assert.match(calls[1].url, /jobs\?search=frontend/);
     assert.match(calls[1].url, /limit=10/);
     assert.equal(calls[1].method, "GET");
@@ -358,44 +348,25 @@ test("Domain functions call expected endpoints with expected payloads and parame
 
     // 4. applyToJob
     await applyToJob("job-abc", { cover_letter: "I am experienced" }, client);
-    assert.equal(
-      calls[3].url,
-      "http://localhost:8080/api/v1/jobs/job-abc/applications"
-    );
+    assert.equal(calls[3].url, "http://localhost:8080/api/v1/jobs/job-abc/applications");
     assert.equal(calls[3].method, "POST");
-    assert.equal(
-      (calls[3].body as { cover_letter: string }).cover_letter,
-      "I am experienced"
-    );
+    assert.equal((calls[3].body as { cover_letter: string }).cover_letter, "I am experienced");
 
     // 5. updateApplicationStatus
     await updateApplicationStatus("app-xyz", "accepted", client);
-    assert.equal(
-      calls[4].url,
-      "http://localhost:8080/api/v1/applications/app-xyz/status"
-    );
+    assert.equal(calls[4].url, "http://localhost:8080/api/v1/applications/app-xyz/status");
     assert.equal(calls[4].method, "PATCH");
     assert.deepEqual(calls[4].body, { status: "accepted" });
 
     // 6. updateContractStatus
     await updateContractStatus("contract-123", "active", client);
-    assert.equal(
-      calls[5].url,
-      "http://localhost:8080/api/v1/contracts/contract-123/status"
-    );
+    assert.equal(calls[5].url, "http://localhost:8080/api/v1/contracts/contract-123/status");
     assert.equal(calls[5].method, "PATCH");
     assert.deepEqual(calls[5].body, { status: "active" });
 
     // 7. createReview
-    await createReview(
-      "contract-123",
-      { rating: 5, comment: "Exceptional quality work!" },
-      client
-    );
-    assert.equal(
-      calls[6].url,
-      "http://localhost:8080/api/v1/contracts/contract-123/reviews"
-    );
+    await createReview("contract-123", { rating: 5, comment: "Exceptional quality work!" }, client);
+    assert.equal(calls[6].url, "http://localhost:8080/api/v1/contracts/contract-123/reviews");
     assert.equal(calls[6].method, "POST");
     assert.deepEqual(calls[6].body, {
       rating: 5,
@@ -464,7 +435,7 @@ test("updateMyProfile sends PUT /profile/me and preserves empty optional fields 
   }
 });
 
-test("buildProfileUpdatePayload preserves empty fields as \"\" and 0 for clearing", () => {
+test('buildProfileUpdatePayload preserves empty fields as "" and 0 for clearing', () => {
   // Clearing optional fields
   const emptyPayload = buildProfileUpdatePayload({
     firstName: "  John  ",
@@ -496,7 +467,10 @@ test("buildProfileUpdatePayload preserves empty fields as \"\" and 0 for clearin
   assert.ok(json.includes('"department":""'), "department should be preserved as empty string");
   assert.ok(json.includes('"graduation_year":0'), "graduation_year should be preserved as 0");
   assert.ok(json.includes('"organization":""'), "organization should be preserved as empty string");
-  assert.ok(json.includes('"organization_website":""'), "organization_website should be preserved as empty string");
+  assert.ok(
+    json.includes('"organization_website":""'),
+    "organization_website should be preserved as empty string"
+  );
   assert.ok(json.includes('"bio":""'), "bio should be preserved as empty string");
 
   // Custom department when "Other" is selected
@@ -518,5 +492,3 @@ test("buildProfileUpdatePayload preserves empty fields as \"\" and 0 for clearin
   assert.strictEqual(customPayload.organization, "AI Lab");
   assert.strictEqual(customPayload.organization_website, "https://ailab.edu");
 });
-
-

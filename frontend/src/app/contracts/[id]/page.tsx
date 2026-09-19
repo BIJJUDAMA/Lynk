@@ -31,16 +31,9 @@ import {
   ApiClientError,
 } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
-import {
-  formatJobDate,
-  getContractStatusBadgeClasses,
-} from "@/lib/formatters";
+import { formatJobDate, getContractStatusBadgeClasses } from "@/lib/formatters";
 import { ReviewModal } from "@/components/reviews/ReviewModal";
-import type {
-  ContractWithDetails,
-  Review,
-  ContractStatus,
-} from "@/types/api";
+import type { ContractWithDetails, Review, ContractStatus } from "@/types/api";
 
 export default function ContractDetailPage() {
   const params = useParams();
@@ -101,11 +94,17 @@ export default function ContractDetailPage() {
 
   const isFreelancer =
     Boolean(currentUserId && freelancerId === currentUserId) ||
-    Boolean(user?.email && (contract?.freelancer?.email === user.email || contract?.student?.email === user.email));
+    Boolean(
+      user?.email &&
+      (contract?.freelancer?.email === user.email || contract?.student?.email === user.email)
+    );
 
   const isClient =
     Boolean(currentUserId && clientId === currentUserId) ||
-    Boolean(user?.email && (contract?.client?.email === user.email || contract?.employer?.email === user.email));
+    Boolean(
+      user?.email &&
+      (contract?.client?.email === user.email || contract?.employer?.email === user.email)
+    );
 
   const isParticipant = isFreelancer || isClient;
 
@@ -115,7 +114,9 @@ export default function ContractDetailPage() {
     return reviews.find(
       (r) =>
         (currentUserId && r.reviewer_id === currentUserId) ||
-        (r.reviewer && user?.name && `${r.reviewer.first_name} ${r.reviewer.last_name}`.trim() === user.name)
+        (r.reviewer &&
+          user?.name &&
+          `${r.reviewer.first_name} ${r.reviewer.last_name}`.trim() === user.name)
     );
   }, [reviews, currentUserId, user]);
 
@@ -359,8 +360,8 @@ export default function ContractDetailPage() {
                   contract.status === "completed"
                     ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400"
                     : contract.status === "cancelled"
-                    ? "bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400"
-                    : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500"
+                      ? "bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400"
+                      : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500"
                 }`}
               >
                 {contract.status === "completed" ? (
@@ -376,15 +377,15 @@ export default function ContractDetailPage() {
                   {contract.status === "completed"
                     ? "Completed"
                     : contract.status === "cancelled"
-                    ? "Cancelled"
-                    : "Completion Target"}
+                      ? "Cancelled"
+                      : "Completion Target"}
                 </span>
                 <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">
                   {contract.completed_at
                     ? formatJobDate(contract.completed_at)
                     : contract.status === "active"
-                    ? "In Progress"
-                    : "-"}
+                      ? "In Progress"
+                      : "-"}
                 </p>
               </div>
             </div>
@@ -397,7 +398,8 @@ export default function ContractDetailPage() {
             <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
               <Info className="h-4 w-4 text-blue-500 shrink-0" />
               <span>
-                Work is active. Mark as completed once all deliverables are satisfied to unlock peer reviews.
+                Work is active. Mark as completed once all deliverables are satisfied to unlock peer
+                reviews.
               </span>
             </div>
 
@@ -435,7 +437,8 @@ export default function ContractDetailPage() {
                 <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span>
                   <strong>Contract Completed!</strong> Deliverables fulfilled on{" "}
-                  {formatJobDate(contract.completed_at)}. Both parties are now eligible to exchange peer reviews below.
+                  {formatJobDate(contract.completed_at)}. Both parties are now eligible to exchange
+                  peer reviews below.
                 </span>
               </div>
 
@@ -459,7 +462,8 @@ export default function ContractDetailPage() {
             <div className="flex items-center gap-2.5 text-xs text-rose-800 dark:text-rose-300">
               <XCircle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0" />
               <span>
-                <strong>Contract Cancelled.</strong> This agreement was terminated early. Peer reviews are disabled for cancelled contracts.
+                <strong>Contract Cancelled.</strong> This agreement was terminated early. Peer
+                reviews are disabled for cancelled contracts.
               </span>
             </div>
           </div>
@@ -685,7 +689,9 @@ export default function ContractDetailPage() {
                 {reviews.map((rev) => {
                   const isMyReview =
                     (currentUserId && rev.reviewer_id === currentUserId) ||
-                    (rev.reviewer && user?.name && `${rev.reviewer.first_name} ${rev.reviewer.last_name}`.trim() === user.name);
+                    (rev.reviewer &&
+                      user?.name &&
+                      `${rev.reviewer.first_name} ${rev.reviewer.last_name}`.trim() === user.name);
 
                   const reviewerDisplayName = rev.reviewer
                     ? `${rev.reviewer.first_name} ${rev.reviewer.last_name}`
@@ -797,7 +803,8 @@ export default function ContractDetailPage() {
             </h3>
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
               This confirms that all agreed project deliverables have been satisfactorily fulfilled.
-              Once completed, the contract moves to a <strong>permanent terminal status</strong> and unlocks mutual peer review submissions.
+              Once completed, the contract moves to a <strong>permanent terminal status</strong> and
+              unlocks mutual peer review submissions.
             </p>
 
             <div className="mt-6 flex items-center justify-end gap-3">
@@ -854,8 +861,9 @@ export default function ContractDetailPage() {
               Cancel This Contract?
             </h3>
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              Are you sure you want to cancel this contract? Cancellation terminates the agreement immediately.
-              This is a <strong>permanent terminal state</strong>; peer reviews will be disabled.
+              Are you sure you want to cancel this contract? Cancellation terminates the agreement
+              immediately. This is a <strong>permanent terminal state</strong>; peer reviews will be
+              disabled.
             </p>
 
             <div className="mt-6 flex items-center justify-end gap-3">

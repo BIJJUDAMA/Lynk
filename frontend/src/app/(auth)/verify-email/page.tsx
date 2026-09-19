@@ -3,13 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  CheckCircle2,
-  ShieldAlert,
-  ArrowRight,
-  Loader2,
-  Mail,
-} from "lucide-react";
+import { CheckCircle2, ShieldAlert, ArrowRight, Loader2, Mail } from "lucide-react";
 import { initSuperTokens, EmailVerification, Session } from "@/lib/supertokens";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { refreshSessionAfterEmailVerification } from "@/lib/verify-session";
@@ -21,9 +15,7 @@ function VerifyEmailContent() {
 
   const { isAuthenticated, resendVerificationEmail, setSession } = useAuth();
 
-  const [status, setStatus] = useState<"verifying" | "success" | "error">(
-    "verifying"
-  );
+  const [status, setStatus] = useState<"verifying" | "success" | "error">("verifying");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Resend state for unverified users
@@ -51,13 +43,17 @@ function VerifyEmailContent() {
       try {
         let res: { status: string };
         if (
-          typeof (EmailVerification as unknown as {
-            verifyEmailWithToken?: (args: { token: string }) => Promise<{ status: string }>;
-          }).verifyEmailWithToken === "function"
+          typeof (
+            EmailVerification as unknown as {
+              verifyEmailWithToken?: (args: { token: string }) => Promise<{ status: string }>;
+            }
+          ).verifyEmailWithToken === "function"
         ) {
-          res = await (EmailVerification as unknown as {
-            verifyEmailWithToken: (args: { token: string }) => Promise<{ status: string }>;
-          }).verifyEmailWithToken({ token });
+          res = await (
+            EmailVerification as unknown as {
+              verifyEmailWithToken: (args: { token: string }) => Promise<{ status: string }>;
+            }
+          ).verifyEmailWithToken({ token });
         } else {
           res = await EmailVerification.verifyEmail();
         }
@@ -128,9 +124,7 @@ function VerifyEmailContent() {
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
               <Loader2 className="h-7 w-7 animate-spin" />
             </div>
-            <h2 className="text-2xl font-bold tracking-tight text-foreground">
-              Verifying Email
-            </h2>
+            <h2 className="text-2xl font-bold tracking-tight text-foreground">Verifying Email</h2>
             <p className="text-sm text-muted-foreground">
               Verifying your campus institutional email...
             </p>
@@ -151,9 +145,7 @@ function VerifyEmailContent() {
               </span>
             </div>
 
-            <h2 className="text-2xl font-bold tracking-tight text-foreground">
-              Campus Verified ✓
-            </h2>
+            <h2 className="text-2xl font-bold tracking-tight text-foreground">Campus Verified ✓</h2>
 
             <p className="text-sm text-muted-foreground">
               Your university email has been verified. Full campus access unlocked!

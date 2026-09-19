@@ -2,14 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createDebounced, syncSearchDraftFromParent } from "@/lib/job-filters";
-import {
-  Search,
-  SlidersHorizontal,
-  X,
-  RotateCcw,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
+import { Search, SlidersHorizontal, X, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
 import { JobStatus } from "@/types/api";
 import { cn } from "@/lib/utils";
 
@@ -89,9 +82,9 @@ export function JobFilterBar({
   // Check if any filter is active
   const hasActiveFilters = Boolean(
     filters.search ||
-      filters.department ||
-      filters.skill ||
-      (filters.status && filters.status !== "open")
+    filters.department ||
+    filters.skill ||
+    (filters.status && filters.status !== "open")
   );
 
   const activeCount = [
@@ -101,10 +94,7 @@ export function JobFilterBar({
     Boolean(filters.status && filters.status !== "open"),
   ].filter(Boolean).length;
 
-  const updateField = <K extends keyof JobFilterValues>(
-    key: K,
-    value: JobFilterValues[K]
-  ) => {
+  const updateField = <K extends keyof JobFilterValues>(key: K, value: JobFilterValues[K]) => {
     onFilterChange({
       ...filters,
       [key]: value,
@@ -236,18 +226,14 @@ export function JobFilterBar({
 
           {/* Quick Skill Tags Pills */}
           <div className="mt-4 flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              Popular skills:
-            </span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">Popular skills:</span>
             {POPULAR_SKILLS.map((skill) => {
               const isSelected = filters.skill.toLowerCase() === skill.toLowerCase();
               return (
                 <button
                   key={skill}
                   type="button"
-                  onClick={() =>
-                    updateField("skill", isSelected ? "" : skill)
-                  }
+                  onClick={() => updateField("skill", isSelected ? "" : skill)}
                   className={cn(
                     "rounded-[10px] border px-2 py-0.5 text-[11px] font-medium transition",
                     isSelected
@@ -286,11 +272,7 @@ export function JobFilterBar({
             {filters.search && (
               <span className="inline-flex items-center gap-1 rounded-[10px] bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 Keyword: &ldquo;{filters.search}&rdquo;
-                <button
-                  type="button"
-                  onClick={clearSearch}
-                  className="hover:text-slate-900"
-                >
+                <button type="button" onClick={clearSearch} className="hover:text-slate-900">
                   <X className="h-3 w-3" />
                 </button>
               </span>

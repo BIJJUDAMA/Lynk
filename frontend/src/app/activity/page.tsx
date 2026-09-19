@@ -22,12 +22,7 @@ import {
   JobStatus,
   ContractStatus,
 } from "@/types/api";
-import {
-  getMyApplications,
-  getMyJobs,
-  listContracts,
-  ApiClientError,
-} from "@/lib/api";
+import { getMyApplications, getMyJobs, listContracts, ApiClientError } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -160,7 +155,8 @@ function ActivityContent() {
             Campus Sign In Required
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Sign in to access your unified workspace: applications submitted, opportunities posted, and active contracts.
+            Sign in to access your unified workspace: applications submitted, opportunities posted,
+            and active contracts.
           </p>
           <div className="mt-6 flex justify-center">
             <button
@@ -209,12 +205,12 @@ function ActivityContent() {
           )}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Applications Submitted</span>
+            <span className="text-xs font-medium text-muted-foreground">
+              Applications Submitted
+            </span>
             <FileText className="h-4 w-4 text-primary" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-foreground">
-            {appsList.length}
-          </div>
+          <div className="mt-2 text-2xl font-bold text-foreground">{appsList.length}</div>
           <p className="mt-1 text-[11px] text-muted-foreground">
             Gigs you applied to with your resume
           </p>
@@ -233,9 +229,7 @@ function ActivityContent() {
             <span className="text-xs font-medium text-muted-foreground">My Postings</span>
             <Briefcase className="h-4 w-4 text-primary" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-foreground">
-            {jobsList.length}
-          </div>
+          <div className="mt-2 text-2xl font-bold text-foreground">{jobsList.length}</div>
           <p className="mt-1 text-[11px] text-muted-foreground">
             Opportunities you posted on campus
           </p>
@@ -254,9 +248,7 @@ function ActivityContent() {
             <span className="text-xs font-medium text-muted-foreground">Active Contracts</span>
             <FileCheck className="h-4 w-4 text-primary" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-foreground">
-            {contractsList.length}
-          </div>
+          <div className="mt-2 text-2xl font-bold text-foreground">{contractsList.length}</div>
           <p className="mt-1 text-[11px] text-muted-foreground">
             {activeContractsCount} active contracts
           </p>
@@ -327,10 +319,7 @@ function ActivityContent() {
           ) : appsError ? (
             <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-center text-xs text-red-700 dark:text-red-300">
               <p>Failed to load applications: {appsError.message}</p>
-              <button
-                onClick={() => refetchApps()}
-                className="mt-2 font-semibold underline"
-              >
+              <button onClick={() => refetchApps()} className="mt-2 font-semibold underline">
                 Retry
               </button>
             </div>
@@ -414,7 +403,9 @@ function ActivityContent() {
 
                   {/* Proposal Snippet */}
                   <div className="mt-3 rounded-lg border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground">
-                    <p className="font-medium text-foreground text-[11px]">Proposal Cover Letter:</p>
+                    <p className="font-medium text-foreground text-[11px]">
+                      Proposal Cover Letter:
+                    </p>
                     <p className="mt-1 line-clamp-2">{app.cover_letter}</p>
                   </div>
                 </div>
@@ -434,10 +425,7 @@ function ActivityContent() {
           ) : jobsError ? (
             <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-center text-xs text-red-700 dark:text-red-300">
               <p>Failed to load postings: {jobsError.message}</p>
-              <button
-                onClick={() => refetchJobs()}
-                className="mt-2 font-semibold underline"
-              >
+              <button onClick={() => refetchJobs()} className="mt-2 font-semibold underline">
                 Retry
               </button>
             </div>
@@ -481,9 +469,7 @@ function ActivityContent() {
                           <span className={cn("h-1.5 w-1.5 rounded-full", statusStyles.dot)} />
                           {job.status.replace("_", " ")}
                         </span>
-                        <span className="text-xs text-muted-foreground">
-                          • {job.department}
-                        </span>
+                        <span className="text-xs text-muted-foreground">• {job.department}</span>
                       </div>
 
                       <Link
@@ -494,7 +480,8 @@ function ActivityContent() {
                       </Link>
 
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Posted {formatJobDate(job.created_at)} • Deadline: {formatJobDate(job.deadline)}
+                        Posted {formatJobDate(job.created_at)} • Deadline:{" "}
+                        {formatJobDate(job.deadline)}
                       </p>
                     </div>
 
@@ -532,10 +519,7 @@ function ActivityContent() {
           ) : contractsError ? (
             <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-center text-xs text-red-700 dark:text-red-300">
               <p>Failed to load contracts: {contractsError.message}</p>
-              <button
-                onClick={() => refetchContracts()}
-                className="mt-2 font-semibold underline"
-              >
+              <button onClick={() => refetchContracts()} className="mt-2 font-semibold underline">
                 Retry
               </button>
             </div>

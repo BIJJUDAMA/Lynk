@@ -3,14 +3,7 @@
 import { useState, useEffect, Suspense, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  Briefcase,
-  Sparkles,
-  AlertCircle,
-  RotateCcw,
-  ShieldCheck,
-  PlusCircle,
-} from "lucide-react";
+import { Briefcase, Sparkles, AlertCircle, RotateCcw, ShieldCheck, PlusCircle } from "lucide-react";
 import { Job, JobStatus } from "@/types/api";
 import { listJobs } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
@@ -18,10 +11,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { JobCard } from "@/components/jobs/JobCard";
 import { animateStaggerList } from "@/lib/animations";
 import { useRef } from "react";
-import {
-  JobFilterBar,
-  JobFilterValues,
-} from "@/components/jobs/JobFilterBar";
+import { JobFilterBar, JobFilterValues } from "@/components/jobs/JobFilterBar";
 
 function JobSearchContent() {
   const searchParams = useSearchParams();
@@ -99,7 +89,8 @@ function JobSearchContent() {
             Explore Campus Jobs & Gigs
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-400">
-            Find freelance projects, campus jobs, and research opportunities posted by verified university employers and departments.
+            Find freelance projects, campus jobs, and research opportunities posted by verified
+            university employers and departments.
           </p>
         </div>
 
@@ -120,7 +111,8 @@ function JobSearchContent() {
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <span>
-            <strong>High-Trust Guarantee:</strong> All job applications are strictly reserved for verified university students with institutional (.edu) credentials.
+            <strong>High-Trust Guarantee:</strong> All job applications are strictly reserved for
+            verified university students with institutional (.edu) credentials.
           </span>
         </div>
         {!isAuthenticated && (
@@ -215,7 +207,8 @@ function JobSearchContent() {
               No campus gigs match your filters
             </h2>
             <p className="mx-auto mt-2 max-w-sm text-xs text-slate-500 dark:text-slate-400">
-              Try adjusting your search criteria, clearing specific skill tags, or resetting all filters.
+              Try adjusting your search criteria, clearing specific skill tags, or resetting all
+              filters.
             </p>
             <div className="mt-6">
               <button

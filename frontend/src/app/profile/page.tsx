@@ -21,17 +21,9 @@ import {
   Briefcase,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import {
-  getMyProfile,
-  updateMyProfile,
-  ApiClientError,
-} from "@/lib/api";
+import { getMyProfile, updateMyProfile, ApiClientError } from "@/lib/api";
 import { useQuery, useMutation } from "@/lib/useApi";
-import {
-  COMMON_DEPARTMENTS,
-  POPULAR_SKILLS,
-  isValidUrl,
-} from "@/lib/formatters";
+import { COMMON_DEPARTMENTS, POPULAR_SKILLS, isValidUrl } from "@/lib/formatters";
 import { ResumeUploader } from "@/components/profile/ResumeUploader";
 import type { Profile, UpdateProfileRequest } from "@/types/api";
 
@@ -39,13 +31,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 const GRADUATION_YEARS = Array.from({ length: 9 }, (_, i) => CURRENT_YEAR - 2 + i);
 
 export default function ProfilePage() {
-  const {
-    user,
-    isVerified,
-    isAuthenticated,
-    isLoading: isAuthLoading,
-    login,
-  } = useAuth();
+  const { user, isVerified, isAuthenticated, isLoading: isAuthLoading, login } = useAuth();
 
   // Query unified campus profile
   const {
@@ -145,7 +131,9 @@ export default function ProfilePage() {
     }
 
     if (!isValidUrl(targetUrl)) {
-      setLinkError("Please enter a valid http:// or https:// URL (e.g. https://github.com/username)");
+      setLinkError(
+        "Please enter a valid http:// or https:// URL (e.g. https://github.com/username)"
+      );
       return;
     }
 
@@ -174,7 +162,8 @@ export default function ProfilePage() {
     setSuccessMessage(null);
     setErrorMessage(null);
 
-    const effectiveDepartment = department === "Other" ? customDepartment.trim() : department.trim();
+    const effectiveDepartment =
+      department === "Other" ? customDepartment.trim() : department.trim();
 
     const trimmedOrgWebsite = orgWebsite.trim();
     let validatedOrgWebsite = "";
@@ -188,7 +177,9 @@ export default function ProfilePage() {
         targetWebsite = "https://" + targetWebsite;
       }
       if (!isValidUrl(targetWebsite)) {
-        setErrorMessage("Please enter a valid organization website URL (must be http:// or https://)");
+        setErrorMessage(
+          "Please enter a valid organization website URL (must be http:// or https://)"
+        );
         return;
       }
       validatedOrgWebsite = targetWebsite;
@@ -196,7 +187,9 @@ export default function ProfilePage() {
 
     for (const link of portfolioLinks) {
       if (!isValidUrl(link)) {
-        setErrorMessage("One or more portfolio links are invalid. Only http:// and https:// URLs are allowed.");
+        setErrorMessage(
+          "One or more portfolio links are invalid. Only http:// and https:// URLs are allowed."
+        );
         return;
       }
     }
@@ -291,12 +284,8 @@ export default function ProfilePage() {
                   <Mail className="h-3 w-3" />
                   {user.email}
                 </span>
-                {profile?.department && (
-                  <span>• Department: {profile.department}</span>
-                )}
-                {profile?.organization && (
-                  <span>• Org / Lab: {profile.organization}</span>
-                )}
+                {profile?.department && <span>• Department: {profile.department}</span>}
+                {profile?.organization && <span>• Org / Lab: {profile.organization}</span>}
               </div>
             </div>
           </div>
@@ -334,18 +323,14 @@ export default function ProfilePage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Identity & Department */}
             <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-              <h2 className="text-base font-semibold text-foreground">
-                Campus Identity & Details
-              </h2>
+              <h2 className="text-base font-semibold text-foreground">Campus Identity & Details</h2>
               <p className="mt-1 text-xs text-muted-foreground">
                 Your personal details, academic department, and affiliation.
               </p>
 
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-xs font-medium text-foreground">
-                    First Name
-                  </label>
+                  <label className="block text-xs font-medium text-foreground">First Name</label>
                   <input
                     type="text"
                     value={firstName}
@@ -356,9 +341,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-foreground">
-                    Last Name
-                  </label>
+                  <label className="block text-xs font-medium text-foreground">Last Name</label>
                   <input
                     type="text"
                     value={lastName}
@@ -401,7 +384,9 @@ export default function ProfilePage() {
                   </label>
                   <select
                     value={graduationYear || ""}
-                    onChange={(e) => setGraduationYear(e.target.value ? Number(e.target.value) : undefined)}
+                    onChange={(e) =>
+                      setGraduationYear(e.target.value ? Number(e.target.value) : undefined)
+                    }
                     className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   >
                     <option value="">Not Applicable / Faculty / Staff</option>
@@ -444,15 +429,14 @@ export default function ProfilePage() {
             {/* Bio */}
             <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold text-foreground">
-                  About & Background
-                </h2>
+                <h2 className="text-base font-semibold text-foreground">About & Background</h2>
                 <span className="text-xs text-muted-foreground">
                   {bio.length} / 1000 characters
                 </span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Introduce yourself, your research interests, freelance offerings, or what projects you are hiring for.
+                Introduce yourself, your research interests, freelance offerings, or what projects
+                you are hiring for.
               </p>
 
               <textarea
@@ -519,7 +503,9 @@ export default function ProfilePage() {
 
               {/* Popular presets */}
               <div className="mt-4 pt-3 border-t border-border/50">
-                <span className="text-[11px] font-medium text-muted-foreground">Suggested Skills:</span>
+                <span className="text-[11px] font-medium text-muted-foreground">
+                  Suggested Skills:
+                </span>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {POPULAR_SKILLS.slice(0, 8).map((preset) => (
                     <button
@@ -573,9 +559,7 @@ export default function ProfilePage() {
               </div>
 
               {linkError && (
-                <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">
-                  {linkError}
-                </p>
+                <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{linkError}</p>
               )}
 
               <div className="mt-3 space-y-1.5">
@@ -635,12 +619,11 @@ export default function ProfilePage() {
           <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
-              <h2 className="text-base font-semibold text-foreground">
-                Resume Document
-              </h2>
+              <h2 className="text-base font-semibold text-foreground">Resume Document</h2>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Uploaded resumes are stored securely in dedicated object storage and streamed to prospective collaborators.
+              Uploaded resumes are stored securely in dedicated object storage and streamed to
+              prospective collaborators.
             </p>
 
             <div className="mt-4">
@@ -659,21 +642,26 @@ export default function ProfilePage() {
 
           {/* Verification Status Card */}
           <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-            <h3 className="text-sm font-semibold text-foreground">
-              Campus Account Trust
-            </h3>
+            <h3 className="text-sm font-semibold text-foreground">Campus Account Trust</h3>
             <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-              Lynk enforces institutional authenticity. One account allows you to post jobs, hire applicants, submit proposals, and sign deliverable contracts.
+              Lynk enforces institutional authenticity. One account allows you to post jobs, hire
+              applicants, submit proposals, and sign deliverable contracts.
             </p>
 
             <div className="mt-4 space-y-2 text-xs">
               <div className="flex items-center justify-between border-b border-border/60 pb-2">
                 <span className="text-muted-foreground">Institutional Email</span>
-                <span className="font-mono text-foreground truncate max-w-[150px]">{user.email}</span>
+                <span className="font-mono text-foreground truncate max-w-[150px]">
+                  {user.email}
+                </span>
               </div>
               <div className="flex items-center justify-between border-b border-border/60 pb-2">
                 <span className="text-muted-foreground">Verification Status</span>
-                <span className={isVerified ? "text-emerald-600 font-medium" : "text-amber-600 font-medium"}>
+                <span
+                  className={
+                    isVerified ? "text-emerald-600 font-medium" : "text-amber-600 font-medium"
+                  }
+                >
                   {isVerified ? "Verified" : "Pending"}
                 </span>
               </div>

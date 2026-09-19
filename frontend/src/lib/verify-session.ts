@@ -25,4 +25,3 @@ export async function syncStaleEmailVerification(
   }
   return emailVerified;
 }
-

@@ -23,11 +23,7 @@ import {
   Lock,
   Mail,
 } from "lucide-react";
-import {
-  Job,
-  ApplicationWithDetails,
-  ApplicationStatus,
-} from "@/types/api";
+import { Job, ApplicationWithDetails, ApplicationStatus } from "@/types/api";
 import {
   getJobById,
   listJobApplications,
@@ -51,14 +47,7 @@ export default function JobApplicantsPage() {
   const router = useRouter();
   const jobId = typeof params.id === "string" ? params.id : "";
 
-  const {
-    user,
-    backendUser,
-    isAuthenticated,
-    role,
-    isLoading: authLoading,
-    login,
-  } = useAuth();
+  const { user, backendUser, isAuthenticated, role, isLoading: authLoading, login } = useAuth();
 
   // State for active filter tab
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
@@ -174,8 +163,7 @@ export default function JobApplicantsPage() {
         : "Student";
 
       // Check if updated returned a contract or details
-      const contractId =
-        (updated as ApplicationWithDetails).contract?.id || undefined;
+      const contractId = (updated as ApplicationWithDetails).contract?.id || undefined;
 
       setAcceptanceSuccess({
         studentName,
@@ -257,7 +245,6 @@ export default function JobApplicantsPage() {
               onClick={() =>
                 login({
                   redirectPath: `/jobs/${jobId}/applicants`,
-                  
                 })
               }
               className="inline-flex items-center gap-2 rounded-[10px] bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary/90"
@@ -270,8 +257,6 @@ export default function JobApplicantsPage() {
       </div>
     );
   }
-
-
 
   // Job error
   if (jobError || !job) {
@@ -362,9 +347,7 @@ export default function JobApplicantsPage() {
           </Link>
         </div>
 
-        <span className="text-xs text-slate-400 dark:text-slate-500">
-          Applicant Management Hub
-        </span>
+        <span className="text-xs text-slate-400 dark:text-slate-500">Applicant Management Hub</span>
       </div>
 
       {/* Acceptance Success Banner */}
@@ -380,7 +363,8 @@ export default function JobApplicantsPage() {
                   🎉 Contract Initiated with {acceptanceSuccess.studentName}!
                 </h3>
                 <p className="mt-0.5 text-xs text-emerald-800 dark:text-emerald-300">
-                  The proposal has been accepted, this job is now marked as <strong>In Progress</strong>, and an active contract has been created.
+                  The proposal has been accepted, this job is now marked as{" "}
+                  <strong>In Progress</strong>, and an active contract has been created.
                 </p>
               </div>
             </div>
@@ -528,9 +512,7 @@ export default function JobApplicantsPage() {
           disabled={applicantsLoading}
           className="inline-flex items-center gap-1.5 self-start text-xs font-semibold text-slate-500 hover:text-primary sm:self-auto dark:text-slate-400 dark:hover:text-emerald-400"
         >
-          <RotateCcw
-            className={cn("h-3.5 w-3.5", applicantsLoading && "animate-spin")}
-          />
+          <RotateCcw className={cn("h-3.5 w-3.5", applicantsLoading && "animate-spin")} />
           <span>Refresh List</span>
         </button>
       </div>
@@ -638,8 +620,8 @@ export default function JobApplicantsPage() {
             const studentFullName = student
               ? `${student.first_name} ${student.last_name}`.trim() || student.email
               : applicantIdentifier
-              ? `Applicant ID: ${applicantIdentifier.slice(0, 8)}...`
-              : "Applicant";
+                ? `Applicant ID: ${applicantIdentifier.slice(0, 8)}...`
+                : "Applicant";
 
             const initials = student?.first_name
               ? `${student.first_name[0]}${student.last_name ? student.last_name[0] : ""}`.toUpperCase()
@@ -647,9 +629,7 @@ export default function JobApplicantsPage() {
 
             const statusStyles = getApplicationStatusBadgeClasses(app.status);
             const hasResume = Boolean(
-              app.resume_key ||
-                student?.resume_key ||
-                student?.resume_filename
+              app.resume_key || student?.resume_key || student?.resume_filename
             );
             const isDownloadingThisResume = downloadingResumeId === app.id;
 
@@ -771,8 +751,8 @@ export default function JobApplicantsPage() {
                           {isDownloadingThisResume
                             ? "Generating Secure Link..."
                             : student?.resume_filename
-                            ? `View Resume (${student.resume_filename})`
-                            : "View / Download Resume (PDF)"}
+                              ? `View Resume (${student.resume_filename})`
+                              : "View / Download Resume (PDF)"}
                         </span>
                         <ExternalLink className="h-3 w-3 text-slate-400" />
                       </button>
@@ -878,10 +858,12 @@ export default function JobApplicantsPage() {
                   An <strong>Active Contract</strong> will be generated immediately.
                 </li>
                 <li>
-                  This job will transition to <strong>In Progress</strong> and close to new applicants.
+                  This job will transition to <strong>In Progress</strong> and close to new
+                  applicants.
                 </li>
                 <li>
-                  All other pending proposals for this job will be <strong>automatically declined</strong>.
+                  All other pending proposals for this job will be{" "}
+                  <strong>automatically declined</strong>.
                 </li>
               </ul>
             </div>

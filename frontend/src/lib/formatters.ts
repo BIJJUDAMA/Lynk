@@ -195,4 +195,3 @@ export function getContractStatusBadgeClasses(status: ContractStatus): {
       };
   }
 }
-

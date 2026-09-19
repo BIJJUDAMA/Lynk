@@ -100,4 +100,3 @@ test("syncStaleEmailVerification handles server check errors gracefully", async 
   assert.equal(result, false);
   assert.equal(refreshCalled, false);
 });
-

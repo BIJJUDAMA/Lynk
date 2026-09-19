@@ -9,14 +9,7 @@
  * - Automatically utilizes getToken from useAuth() to instantiate authenticated ApiClient instances.
  */
 
-import {
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-  DependencyList,
-} from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, DependencyList } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { ApiClient, ApiClientError, createApiClient } from "./api";
 
@@ -79,16 +72,12 @@ export function useQuery<T>(
   const client = useMemo(() => createApiClient(getToken), [getToken]);
 
   const isOptionsObject =
-    depsOrOptions !== null &&
-    typeof depsOrOptions === "object" &&
-    !Array.isArray(depsOrOptions);
+    depsOrOptions !== null && typeof depsOrOptions === "object" && !Array.isArray(depsOrOptions);
 
-  const options: UseQueryOptions<T> = isOptionsObject
-    ? (depsOrOptions as UseQueryOptions<T>)
-    : {};
+  const options: UseQueryOptions<T> = isOptionsObject ? (depsOrOptions as UseQueryOptions<T>) : {};
 
   const deps: DependencyList = isOptionsObject
-    ? options.deps ?? []
+    ? (options.deps ?? [])
     : (depsOrOptions as DependencyList);
 
   const enabled = options.enabled ?? true;
@@ -127,11 +116,7 @@ export function useQuery<T>(
         const apiErr =
           err instanceof ApiClientError || err instanceof Error
             ? err
-            : new ApiClientError(
-                String(err) || "Unknown query error",
-                "UNKNOWN_ERROR",
-                500
-              );
+            : new ApiClientError(String(err) || "Unknown query error", "UNKNOWN_ERROR", 500);
         setError(apiErr);
         optionsRef.current.onError?.(apiErr);
       }
@@ -169,11 +154,7 @@ export function useQuery<T>(
           const apiErr =
             err instanceof ApiClientError || err instanceof Error
               ? err
-              : new ApiClientError(
-                  String(err) || "Unknown query error",
-                  "UNKNOWN_ERROR",
-                  500
-                );
+              : new ApiClientError(String(err) || "Unknown query error", "UNKNOWN_ERROR", 500);
           setError(apiErr);
           optionsRef.current.onError?.(apiErr);
           setIsLoading(false);
@@ -238,11 +219,7 @@ export function useMutation<TArgs, TResult>(
         const apiErr =
           err instanceof ApiClientError || err instanceof Error
             ? err
-            : new ApiClientError(
-                String(err) || "Unknown mutation error",
-                "UNKNOWN_ERROR",
-                500
-              );
+            : new ApiClientError(String(err) || "Unknown mutation error", "UNKNOWN_ERROR", 500);
         setError(apiErr);
         optionsRef.current?.onError?.(apiErr, args);
         optionsRef.current?.onSettled?.(null, apiErr, args);

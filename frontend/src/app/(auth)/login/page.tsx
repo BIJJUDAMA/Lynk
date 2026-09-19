@@ -25,15 +25,8 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const redirectPath = searchParams.get("redirect") || "/jobs";
 
-  const {
-    login,
-    register,
-    isAuthenticated,
-    user,
-    isVerified,
-    logout,
-    resendVerificationEmail,
-  } = useAuth();
+  const { login, register, isAuthenticated, user, isVerified, logout, resendVerificationEmail } =
+    useAuth();
 
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
@@ -52,10 +45,7 @@ function LoginContent() {
   const isEdu = isEduEmail(trimmedEmail);
   const showEduWarning = isRegistering && hasEmail && !isEdu;
 
-  const isFormValid =
-    trimmedEmail.length > 0 &&
-    password.length > 0 &&
-    (!isRegistering || isEdu);
+  const isFormValid = trimmedEmail.length > 0 && password.length > 0 && (!isRegistering || isEdu);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,7 +127,8 @@ function LoginContent() {
           </h2>
 
           <p className="mt-2 text-sm text-muted-foreground">
-            A verification link has been sent to your university inbox. Please verify your email to unlock campus opportunities.
+            A verification link has been sent to your university inbox. Please verify your email to
+            unlock campus opportunities.
           </p>
 
           {user?.email && (
@@ -214,13 +205,9 @@ function LoginContent() {
             <CheckCircle2 className="h-7 w-7" />
           </div>
 
-          <h2 className="mt-4 text-2xl font-bold tracking-tight text-foreground">
-            Signed In
-          </h2>
+          <h2 className="mt-4 text-2xl font-bold tracking-tight text-foreground">Signed In</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {user.name ? (
-              <span className="font-medium text-foreground">{user.name}</span>
-            ) : null}
+            {user.name ? <span className="font-medium text-foreground">{user.name}</span> : null}
             {user.name ? " • " : ""}
             <span>{user.email}</span>
           </p>
@@ -335,10 +322,7 @@ function LoginContent() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email Field */}
             <div className="space-y-1.5 text-left">
-              <label
-                htmlFor="email"
-                className="block text-xs font-medium text-foreground"
-              >
+              <label htmlFor="email" className="block text-xs font-medium text-foreground">
                 University Email Address
               </label>
               <div className="relative">
@@ -357,9 +341,7 @@ function LoginContent() {
                     if (errorMessage) setErrorMessage(null);
                   }}
                   placeholder={
-                    isRegistering
-                      ? "student@university.edu"
-                      : "your.name@university.edu"
+                    isRegistering ? "student@university.edu" : "your.name@university.edu"
                   }
                   className="block w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
@@ -370,7 +352,8 @@ function LoginContent() {
                 <div className="mt-1.5 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-300">
                   <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
                   <span>
-                    Only institutional <strong>.edu</strong> email addresses are eligible for campus membership.
+                    Only institutional <strong>.edu</strong> email addresses are eligible for campus
+                    membership.
                   </span>
                 </div>
               )}
@@ -378,10 +361,7 @@ function LoginContent() {
 
             {/* Password Field */}
             <div className="space-y-1.5 text-left">
-              <label
-                htmlFor="password"
-                className="block text-xs font-medium text-foreground"
-              >
+              <label htmlFor="password" className="block text-xs font-medium text-foreground">
                 Password
               </label>
               <div className="relative">
@@ -392,9 +372,7 @@ function LoginContent() {
                   id="password"
                   name="password"
                   type="password"
-                  autoComplete={
-                    isRegistering ? "new-password" : "current-password"
-                  }
+                  autoComplete={isRegistering ? "new-password" : "current-password"}
                   required
                   minLength={8}
                   value={password}
@@ -422,17 +400,11 @@ function LoginContent() {
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>
-                    {authMode === "login" ? "Signing In..." : "Creating Account..."}
-                  </span>
+                  <span>{authMode === "login" ? "Signing In..." : "Creating Account..."}</span>
                 </>
               ) : (
                 <>
-                  <span>
-                    {authMode === "login"
-                      ? "Sign In"
-                      : "Create Campus Account"}
-                  </span>
+                  <span>{authMode === "login" ? "Sign In" : "Create Campus Account"}</span>
                   <ArrowRight className="h-4 w-4" />
                 </>
               )}
@@ -444,18 +416,18 @@ function LoginContent() {
             <div className="flex items-start gap-3">
               <ShieldCheck className="h-4 w-4 shrink-0 text-primary mt-0.5" />
               <div className="space-y-1 text-xs text-muted-foreground leading-relaxed">
-                <p className="font-medium text-foreground">
-                  One Campus Identity
-                </p>
+                <p className="font-medium text-foreground">One Campus Identity</p>
                 <p>
-                  Every verified member can both post jobs and apply to campus opportunities. No separate student or employer profiles needed.
+                  Every verified member can both post jobs and apply to campus opportunities. No
+                  separate student or employer profiles needed.
                 </p>
               </div>
             </div>
           </div>
 
           <div className="mt-4 text-center text-xs text-muted-foreground">
-            Institutional <span className="font-medium text-foreground">.edu</span> email verification unlocks full publishing, applying, and resume features.
+            Institutional <span className="font-medium text-foreground">.edu</span> email
+            verification unlocks full publishing, applying, and resume features.
           </div>
         </div>
       </div>

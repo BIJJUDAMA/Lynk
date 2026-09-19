@@ -20,23 +20,13 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { listContracts } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
-import {
-  formatJobDate,
-  getContractStatusBadgeClasses,
-} from "@/lib/formatters";
+import { formatJobDate, getContractStatusBadgeClasses } from "@/lib/formatters";
 import type { ContractStatus, ContractWithDetails } from "@/types/api";
 
 type FilterStatus = "all" | ContractStatus;
 
 export default function ContractsPage() {
-  const {
-    user,
-    backendUser,
-    role,
-    isAuthenticated,
-    isLoading: isAuthLoading,
-    login,
-  } = useAuth();
+  const { user, backendUser, role, isAuthenticated, isLoading: isAuthLoading, login } = useAuth();
 
   const [activeFilter, setActiveFilter] = useState<FilterStatus>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -75,28 +65,25 @@ export default function ContractsPage() {
         return false;
       }
 
-        // Search filter (matches job title, client/employer, or freelancer/student)
+      // Search filter (matches job title, client/employer, or freelancer/student)
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
         const titleMatch = c.job?.title?.toLowerCase().includes(query) ?? false;
-        const companyMatch =
-          (c.client?.company_or_org ?? c.employer?.company_or_org ?? "").toLowerCase().includes(query);
-        const clientNameMatch =
-          (c.client?.contact_name ?? c.employer?.contact_name ?? "").toLowerCase().includes(query);
+        const companyMatch = (c.client?.company_or_org ?? c.employer?.company_or_org ?? "")
+          .toLowerCase()
+          .includes(query);
+        const clientNameMatch = (c.client?.contact_name ?? c.employer?.contact_name ?? "")
+          .toLowerCase()
+          .includes(query);
         const freelancerNameMatch =
           `${c.freelancer?.first_name ?? c.student?.first_name ?? ""} ${c.freelancer?.last_name ?? c.student?.last_name ?? ""}`
             .toLowerCase()
             .includes(query);
-        const deptMatch =
-          (c.freelancer?.department ?? c.student?.department ?? "").toLowerCase().includes(query);
+        const deptMatch = (c.freelancer?.department ?? c.student?.department ?? "")
+          .toLowerCase()
+          .includes(query);
 
-        return (
-          titleMatch ||
-          companyMatch ||
-          clientNameMatch ||
-          freelancerNameMatch ||
-          deptMatch
-        );
+        return titleMatch || companyMatch || clientNameMatch || freelancerNameMatch || deptMatch;
       }
 
       return true;
@@ -201,7 +188,9 @@ export default function ContractsPage() {
           <p className="mt-2 text-3xl font-bold text-emerald-700 dark:text-emerald-300">
             {isContractsLoading ? "-" : counts.completed}
           </p>
-          <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80">Fulfilled & reviewed</span>
+          <span className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80">
+            Fulfilled & reviewed
+          </span>
         </div>
 
         <div className="rounded-[10px] border border-rose-200/80 bg-rose-50/40 p-5 shadow-sm dark:border-rose-900/40 dark:bg-rose-950/20">
@@ -212,7 +201,9 @@ export default function ContractsPage() {
           <p className="mt-2 text-3xl font-bold text-rose-700 dark:text-rose-300">
             {isContractsLoading ? "-" : counts.cancelled}
           </p>
-          <span className="text-[11px] text-rose-600/80 dark:text-rose-400/80">Terminated early</span>
+          <span className="text-[11px] text-rose-600/80 dark:text-rose-400/80">
+            Terminated early
+          </span>
         </div>
       </div>
 
@@ -335,7 +326,8 @@ export default function ContractsPage() {
             No contracts yet
           </h3>
           <p className="mx-auto mt-2 max-w-md text-xs text-slate-500 dark:text-slate-400">
-            When an application is accepted, an active contract will appear here to track deliverables and peer reviews.
+            When an application is accepted, an active contract will appear here to track
+            deliverables and peer reviews.
           </p>
           <div className="mt-6 flex justify-center gap-3">
             <Link
@@ -390,15 +382,13 @@ export default function ContractsPage() {
             const currentUserId = backendUser?.id || user?.id;
             const freelancerId = contract.freelancer_id;
 
-
             const isFreelancer =
               Boolean(currentUserId && freelancerId === currentUserId) ||
               Boolean(
                 user?.email &&
-                  (contract.freelancer?.email === user.email ||
-                    contract.student?.email === user.email)
+                (contract.freelancer?.email === user.email ||
+                  contract.student?.email === user.email)
               );
-
 
             const counterpartyName = isFreelancer
               ? contract.client?.company_or_org ||
@@ -457,11 +447,12 @@ export default function ContractsPage() {
                             {counterpartyName}
                           </strong>
                         </span>
-                        {!isFreelancer && (contract.freelancer?.department || contract.student?.department) && (
-                          <span className="text-slate-400">
-                            • {contract.freelancer?.department || contract.student?.department}
-                          </span>
-                        )}
+                        {!isFreelancer &&
+                          (contract.freelancer?.department || contract.student?.department) && (
+                            <span className="text-slate-400">
+                              • {contract.freelancer?.department || contract.student?.department}
+                            </span>
+                          )}
                       </div>
 
                       {/* Started / Created Date */}
@@ -494,8 +485,8 @@ export default function ContractsPage() {
                         {contract.status === "completed"
                           ? "View & Reviews"
                           : contract.status === "active"
-                          ? "Manage Contract"
-                          : "View Details"}
+                            ? "Manage Contract"
+                            : "View Details"}
                       </span>
                       <ArrowRight className="h-3.5 w-3.5" />
                     </Link>

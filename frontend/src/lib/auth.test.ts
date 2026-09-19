@@ -1,10 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  decodeJwtClaims,
-  extractUserFromClaims,
-  syncUserWithBackend,
-} from "./auth.ts";
+import { decodeJwtClaims, extractUserFromClaims, syncUserWithBackend } from "./auth.ts";
 import type { JwtClaims } from "./auth.ts";
 
 test("decodeJwtClaims decodes valid JWT payload and handles malformed strings", () => {

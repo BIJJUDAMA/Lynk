@@ -94,10 +94,7 @@ export function decodeJwtClaims(token: string): JwtClaims | null {
  * Extracts a normalized AuthUser model from decoded JWT claims.
  */
 export function extractUserFromClaims(claims: JwtClaims): AuthUser {
-  const rawRoles = [
-    ...(claims.roles ?? []),
-    ...(claims.realm_access?.roles ?? []),
-  ];
+  const rawRoles = [...(claims.roles ?? []), ...(claims.realm_access?.roles ?? [])];
   let role: AuthRole = "member";
 
   if (rawRoles.includes("admin")) {

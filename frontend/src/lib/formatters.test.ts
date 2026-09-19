@@ -100,4 +100,3 @@ test("getContractStatusBadgeClasses returns styling for all contract statuses", 
   assert.ok(cancelled.bg.includes("rose"));
   assert.equal(cancelled.label, "Cancelled");
 });
-

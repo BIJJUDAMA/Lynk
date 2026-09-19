@@ -18,10 +18,7 @@ import {
 import { CreateJobRequest } from "@/types/api";
 import { createJob, ApiClientError } from "@/lib/api";
 import { useAuth } from "@/components/auth/AuthProvider";
-import {
-  COMMON_DEPARTMENTS,
-  POPULAR_SKILLS,
-} from "@/lib/formatters";
+import { COMMON_DEPARTMENTS, POPULAR_SKILLS } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 
 const OTHER_DEPARTMENT_VALUE = "__OTHER__";
@@ -53,9 +50,7 @@ export default function CreateJobPage() {
     const target = (skillToAdd ?? skillInput).trim();
     if (!target) return;
 
-    const exists = skills.some(
-      (s) => s.toLowerCase() === target.toLowerCase()
-    );
+    const exists = skills.some((s) => s.toLowerCase() === target.toLowerCase());
     if (!exists) {
       setSkills((prev) => [...prev, target]);
       if (formErrors.skills) {
@@ -184,7 +179,8 @@ export default function CreateJobPage() {
             Campus Sign In Required
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            To publish opportunities, hire peers, or review applications, please sign in with your campus account.
+            To publish opportunities, hire peers, or review applications, please sign in with your
+            campus account.
           </p>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <button
@@ -218,8 +214,10 @@ export default function CreateJobPage() {
             Institutional Email Verification Required
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            You are signed in as <span className="font-semibold text-foreground">{user?.email}</span>, but your university email has not been confirmed yet.
-            Please verify your institutional email to publish campus gigs.
+            You are signed in as{" "}
+            <span className="font-semibold text-foreground">{user?.email}</span>, but your
+            university email has not been confirmed yet. Please verify your institutional email to
+            publish campus gigs.
           </p>
           <div className="mt-6 flex justify-center gap-3">
             <Link
@@ -291,7 +289,8 @@ export default function CreateJobPage() {
           Publish a Campus Opportunity
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Create a freelance task, research assistantship, or campus project. Any verified campus member can post and hire.
+          Create a freelance task, research assistantship, or campus project. Any verified campus
+          member can post and hire.
         </p>
       </div>
 
@@ -354,9 +353,7 @@ export default function CreateJobPage() {
                     </span>
                   ))
                 ) : (
-                  <span className="text-xs text-muted-foreground italic">
-                    No skills specified
-                  </span>
+                  <span className="text-xs text-muted-foreground italic">No skills specified</span>
                 )}
               </div>
             </div>
@@ -404,9 +401,7 @@ export default function CreateJobPage() {
                 className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
               {formErrors.title && (
-                <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-                  {formErrors.title}
-                </p>
+                <p className="mt-1 text-xs text-red-600 dark:text-red-400">{formErrors.title}</p>
               )}
             </div>
 
@@ -458,9 +453,7 @@ export default function CreateJobPage() {
                 className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
               />
               {formErrors.deadline && (
-                <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-                  {formErrors.deadline}
-                </p>
+                <p className="mt-1 text-xs text-red-600 dark:text-red-400">{formErrors.deadline}</p>
               )}
             </div>
 
@@ -533,14 +526,14 @@ export default function CreateJobPage() {
               </div>
 
               {formErrors.skills && (
-                <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-                  {formErrors.skills}
-                </p>
+                <p className="mt-1 text-xs text-red-600 dark:text-red-400">{formErrors.skills}</p>
               )}
 
               {/* Suggestions */}
               <div className="mt-3 pt-3 border-t border-border/50">
-                <span className="text-[11px] font-medium text-muted-foreground">Suggested Skills:</span>
+                <span className="text-[11px] font-medium text-muted-foreground">
+                  Suggested Skills:
+                </span>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {POPULAR_SKILLS.slice(0, 8).map((preset) => (
                     <button

@@ -105,7 +105,11 @@ export function Navbar() {
                   className="flex items-center gap-2 rounded-lg p-1.5 transition hover:bg-muted/50"
                 >
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-foreground font-semibold text-xs border border-border">
-                    {user.name ? user.name.slice(0, 2).toUpperCase() : <UserIcon className="h-4 w-4" />}
+                    {user.name ? (
+                      user.name.slice(0, 2).toUpperCase()
+                    ) : (
+                      <UserIcon className="h-4 w-4" />
+                    )}
                   </div>
                   <div className="flex flex-col text-left">
                     <span className="text-xs font-medium text-foreground truncate max-w-[120px]">
@@ -228,7 +232,8 @@ export function Navbar() {
           <div className="mx-auto flex max-w-7xl items-center justify-center gap-2">
             <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
             <span>
-              <strong>Campus verification pending.</strong> Please verify your institutional .edu email address to apply for jobs, post gigs, and upload resumes.
+              <strong>Campus verification pending.</strong> Please verify your institutional .edu
+              email address to apply for jobs, post gigs, and upload resumes.
             </span>
           </div>
         </div>

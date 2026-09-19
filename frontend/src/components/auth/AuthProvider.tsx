@@ -1,19 +1,7 @@
 "use client";
 
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  useCallback,
-  useMemo,
-} from "react";
-import {
-  initSuperTokens,
-  Session,
-  EmailPassword,
-  EmailVerification,
-} from "@/lib/supertokens";
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
+import { initSuperTokens, Session, EmailPassword, EmailVerification } from "@/lib/supertokens";
 import { isEduEmail } from "@/lib/email-validation";
 import { AuthRole, AuthTokens, AuthUser } from "@/lib/auth";
 import { emailVerifiedFromAccessPayload } from "@/lib/auth-bootstrap";
@@ -131,14 +119,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const email: string = bUser?.email || payload?.email || "";
       const name: string =
-        (bProfile && (bProfile.first_name || bProfile.last_name))
+        bProfile && (bProfile.first_name || bProfile.last_name)
           ? `${bProfile.first_name || ""} ${bProfile.last_name || ""}`.trim()
           : payload?.name || (email ? email.split("@")[0] : "") || "Campus Member";
 
       const resolvedRole: AuthRole =
-        (bUser?.role as AuthRole) ||
-        (payload?.role as AuthRole) ||
-        "member";
+        (bUser?.role as AuthRole) || (payload?.role as AuthRole) || "member";
 
       const authUser: AuthUser = {
         id: userId,
@@ -247,8 +233,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (res.status === "FIELD_ERROR") {
           const message =
-            res.formFields.map((f) => f.error).join(", ") ||
-            "Validation error during sign in";
+            res.formFields.map((f) => f.error).join(", ") || "Validation error during sign in";
           throw new Error(message);
         }
 
@@ -306,8 +291,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (res.status === "FIELD_ERROR") {
           const message =
-            res.formFields.map((f) => f.error).join(", ") ||
-            "Validation error during registration";
+            res.formFields.map((f) => f.error).join(", ") || "Validation error during registration";
           throw new Error(message);
         }
 

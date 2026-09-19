@@ -1,9 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  createDebounced,
-  syncSearchDraftFromParent,
-} from "./job-filters.ts";
+import { createDebounced, syncSearchDraftFromParent } from "./job-filters.ts";
 
 test("createDebounced collapses rapid calls to the last invocation", async () => {
   const calls: string[] = [];

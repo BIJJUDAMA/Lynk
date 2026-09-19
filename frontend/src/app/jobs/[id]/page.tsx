@@ -31,10 +31,7 @@ import {
 } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
-import {
-  formatJobDate,
-  getStatusBadgeClasses,
-} from "@/components/jobs/JobCard";
+import { formatJobDate, getStatusBadgeClasses } from "@/components/jobs/JobCard";
 import { cn } from "@/lib/utils";
 
 export default function JobDetailPage() {
@@ -88,9 +85,7 @@ export default function JobDetailPage() {
 
   // Determine if current viewer is the creator of this job
   const isCreator = Boolean(
-    isAuthenticated &&
-    job &&
-    (job.created_by === user?.id || job.created_by === backendUser?.id)
+    isAuthenticated && job && (job.created_by === user?.id || job.created_by === backendUser?.id)
   );
 
   // Handle application submission
@@ -154,9 +149,7 @@ export default function JobDetailPage() {
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10 text-red-600 dark:text-red-400">
           <AlertCircle className="h-6 w-6" />
         </div>
-        <h1 className="mt-4 text-xl font-bold text-foreground">
-          Opportunity Not Found
-        </h1>
+        <h1 className="mt-4 text-xl font-bold text-foreground">Opportunity Not Found</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {jobError?.message || "The requested job posting does not exist or has been removed."}
         </p>
@@ -210,11 +203,10 @@ export default function JobDetailPage() {
               <Briefcase className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-foreground">
-                Your Job Posting
-              </p>
+              <p className="text-sm font-semibold text-foreground">Your Job Posting</p>
               <p className="text-xs text-muted-foreground">
-                You created this opportunity. You can review applicant proposals and manage contracts.
+                You created this opportunity. You can review applicant proposals and manage
+                contracts.
               </p>
             </div>
           </div>
@@ -321,11 +313,10 @@ export default function JobDetailPage() {
             {isCreator ? (
               /* Creator State */
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-foreground">
-                  Job Management
-                </h3>
+                <h3 className="text-sm font-semibold text-foreground">Job Management</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  As the creator of this posting, you can review proposals, inspect student resumes, and generate contracts.
+                  As the creator of this posting, you can review proposals, inspect student resumes,
+                  and generate contracts.
                 </p>
                 <Link
                   href={`/jobs/${job.id}/applicants`}
@@ -341,11 +332,10 @@ export default function JobDetailPage() {
                 <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                   <CheckCircle2 className="h-6 w-6" />
                 </div>
-                <h3 className="text-sm font-semibold text-foreground">
-                  Proposal Submitted
-                </h3>
+                <h3 className="text-sm font-semibold text-foreground">Proposal Submitted</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Your application for this opportunity has been received. You will be notified once the creator reviews your proposal.
+                  Your application for this opportunity has been received. You will be notified once
+                  the creator reviews your proposal.
                 </p>
                 <Link
                   href="/activity"
@@ -357,9 +347,7 @@ export default function JobDetailPage() {
             ) : !isAuthenticated ? (
               /* Unauthenticated State */
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-foreground">
-                  Ready to Apply?
-                </h3>
+                <h3 className="text-sm font-semibold text-foreground">Ready to Apply?</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Sign in with your campus account to submit a proposal and attach your resume.
                 </p>
@@ -376,12 +364,11 @@ export default function JobDetailPage() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
                   <ShieldAlert className="h-4 w-4" />
-                  <h3 className="text-sm font-semibold text-foreground">
-                    Verification Required
-                  </h3>
+                  <h3 className="text-sm font-semibold text-foreground">Verification Required</h3>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  You must verify your institutional .edu email address before applying to campus jobs.
+                  You must verify your institutional .edu email address before applying to campus
+                  jobs.
                 </p>
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200">
                   Check your inbox for a verification link or re-authenticate.
@@ -390,11 +377,10 @@ export default function JobDetailPage() {
             ) : (
               /* Proposal Form for Verified Campus Member */
               <form onSubmit={handleSubmitApplication} className="space-y-4">
-                <h3 className="text-sm font-semibold text-foreground">
-                  Submit Proposal
-                </h3>
+                <h3 className="text-sm font-semibold text-foreground">Submit Proposal</h3>
                 <p className="text-xs text-muted-foreground">
-                  Introduce yourself, describe your relevant coursework, and summarize how you would deliver the project.
+                  Introduce yourself, describe your relevant coursework, and summarize how you would
+                  deliver the project.
                 </p>
 
                 {submitError && (
