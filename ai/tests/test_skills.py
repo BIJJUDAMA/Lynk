@@ -1,22 +1,15 @@
 import json
 from unittest.mock import AsyncMock, MagicMock
-import pytest
-from httpx import ASGITransport, AsyncClient
 
-from ai.app.main import app
+import pytest
 from ai.app.config import get_settings
+from ai.app.main import app
 from ai.models.embeddings.provider import BaseEmbeddingProvider
 from ai.pipelines.skills.normalizer import (
-    SkillNormalizer,
     NormalizedSkillResult,
-    get_skill_normalizer,
+    SkillNormalizer,
 )
-from ai.app.api.skills import (
-    NormalizeSkillRequest,
-    NormalizeSkillResponse,
-    ExtractSkillsRequest,
-    ExtractSkillsResponse,
-)
+from httpx import ASGITransport, AsyncClient
 
 
 class MockSemanticEmbeddingProvider(BaseEmbeddingProvider):
@@ -51,6 +44,7 @@ class MockSemanticEmbeddingProvider(BaseEmbeddingProvider):
             vec = self._vectors[text]
             # normalize
             import math
+
             norm = math.sqrt(sum(x * x for x in vec))
             return [x / norm for x in vec]
         return [0.0, 0.0, 0.0, 0.0]
@@ -352,6 +346,3 @@ async def test_skills_telemetry_recording():
             assert params[11] == "success"  # status
     finally:
         app.state.db_pool = original_pool
-
-
-

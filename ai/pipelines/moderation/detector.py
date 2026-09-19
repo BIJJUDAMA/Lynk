@@ -11,14 +11,14 @@ Strictly adheres to transparent audit logging and persistent event tracking in m
 
 import logging
 import re
-from typing import Any, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
 
 from ai.app.middleware.run_tracker import track_ai_run
 from ai.models.embeddings.provider import (
     BaseEmbeddingProvider,
     get_embedding_provider,
 )
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger("lynk-ai.moderation")
 
@@ -53,7 +53,9 @@ class ModerationCheckInput(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    entity_type: str = Field(..., description="Entity type, e.g. 'job' or 'application'")
+    entity_type: str = Field(
+        ..., description="Entity type, e.g. 'job' or 'application'"
+    )
     entity_id: str = Field(..., description="Entity identifier")
     text: str = Field(..., description="Text content to evaluate")
     author_id: str = Field(..., description="Author campus member identifier")
@@ -71,11 +73,19 @@ class ModerationResult(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    risk_score: float = Field(..., ge=0.0, le=1.0, description="Aggregate risk score from 0.0 to 1.0")
+    risk_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Aggregate risk score from 0.0 to 1.0"
+    )
     decision: str = Field(..., description="'allow', 'review', or 'reject'")
-    signals: list[str] = Field(default_factory=list, description="List of triggered violation signals")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score in decision")
-    pipeline_version: str = Field(default="moderation-v1", description="Pipeline version string")
+    signals: list[str] = Field(
+        default_factory=list, description="List of triggered violation signals"
+    )
+    confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="Confidence score in decision"
+    )
+    pipeline_version: str = Field(
+        default="moderation-v1", description="Pipeline version string"
+    )
 
 
 class ModerationDetector:
@@ -83,8 +93,8 @@ class ModerationDetector:
 
     def __init__(
         self,
-        embedding_provider: Optional[BaseEmbeddingProvider] = None,
-        db_pool: Optional[Any] = None,
+        embedding_provider: BaseEmbeddingProvider | None = None,
+        db_pool: Any | None = None,
     ) -> None:
         self._provider = embedding_provider
         self.db_pool = db_pool
@@ -128,12 +138,16 @@ class ModerationDetector:
 
         # 3. Off-platform payment and suspicious contact pattern analysis
         text_lower = raw_text.lower()
-        has_payment = any(re.search(pat, text_lower) for pat in OFF_PLATFORM_PAYMENT_PATTERNS)
+        has_payment = any(
+            re.search(pat, text_lower) for pat in OFF_PLATFORM_PAYMENT_PATTERNS
+        )
         if has_payment:
             signals.append("off_platform_payment")
             base_risk += 0.50
 
-        has_contact = any(re.search(pat, text_lower) for pat in SUSPICIOUS_CONTACT_PATTERNS)
+        has_contact = any(
+            re.search(pat, text_lower) for pat in SUSPICIOUS_CONTACT_PATTERNS
+        )
         if has_contact:
             signals.append("suspicious_contact")
             base_risk += 0.45
@@ -168,7 +182,9 @@ class ModerationDetector:
             decision = "allow"
 
         # Confidence assessment
-        confidence = 0.95 if not signals else round(min(0.98, 0.85 + 0.04 * len(signals)), 2)
+        confidence = (
+            0.95 if not signals else round(min(0.98, 0.85 + 0.04 * len(signals)), 2)
+        )
 
         return ModerationResult(
             risk_score=risk_score,
@@ -233,11 +249,10 @@ class ModerationDetector:
             return result
 
 
+_detector_instance: ModerationDetector | None = None
 
-_detector_instance: Optional[ModerationDetector] = None
 
-
-def get_moderation_detector(db_pool: Optional[Any] = None) -> ModerationDetector:
+def get_moderation_detector(db_pool: Any | None = None) -> ModerationDetector:
     """Acquire or initialize ModerationDetector singleton."""
     global _detector_instance
     if _detector_instance is None:

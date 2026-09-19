@@ -2,12 +2,11 @@
 
 import httpx
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.llm.client import VLLMClient
 from ai.llm.schemas.job_generation import GeneratedJobDraft
+from httpx import ASGITransport, AsyncClient
 
 
 def test_generated_job_draft_schema():
@@ -112,7 +111,9 @@ async def test_temperature_backoff_on_malformed_json(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
 
     client = VLLMClient(base_url="http://mock-vllm:8000/v1")
-    draft = await client.generate_job_draft("Build a Go backend", department="Computer Science")
+    draft = await client.generate_job_draft(
+        "Build a Go backend", department="Computer Science"
+    )
 
     assert draft.title == "Backend Engineer"
     assert "Go" in draft.required_skills
@@ -122,6 +123,7 @@ async def test_temperature_backoff_on_malformed_json(monkeypatch):
 @pytest.mark.asyncio
 async def test_malformed_json_primitive_triggers_fallback(monkeypatch):
     """When LLM returns JSON primitive like '[1, 2]', client handles it safely without crashing."""
+
     async def mock_post(self, url, **kwargs):
         return httpx.Response(
             200,
@@ -132,7 +134,9 @@ async def test_malformed_json_primitive_triggers_fallback(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
 
     client = VLLMClient(base_url="http://mock-vllm:8000/v1")
-    draft = await client.generate_job_draft("Build a mobile app with Swift", department="Engineering")
+    draft = await client.generate_job_draft(
+        "Build a mobile app with Swift", department="Engineering"
+    )
 
     assert isinstance(draft, GeneratedJobDraft)
     assert len(draft.title) > 0
@@ -169,4 +173,3 @@ async def test_job_generation_validation_bounds():
             json={"idea": "Build a React portfolio", "department": "a" * 101},
         )
         assert resp_long_dept.status_code == 422
-

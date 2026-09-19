@@ -17,10 +17,10 @@ sample_count >= 3.
 
 import logging
 import re
-from typing import Any, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
 
 from ai.app.middleware.run_tracker import track_ai_run
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger("lynk-ai.reviews")
 
@@ -133,7 +133,9 @@ class ReviewItemInput(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    rating: int = Field(..., ge=1, le=5, description="Review rating between 1 and 5 inclusive")
+    rating: int = Field(
+        ..., ge=1, le=5, description="Review rating between 1 and 5 inclusive"
+    )
     comment: str = Field(..., description="Qualitative feedback text")
 
 
@@ -145,11 +147,16 @@ class ReviewAspectInsight(BaseModel):
     aspect: str = Field(..., description="Canonical aspect name")
     score: float = Field(..., ge=1.0, le=5.0, description="Aspect score on 1-5 scale")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score")
-    sample_count: int = Field(..., ge=1, description="Number of reviews evaluating this aspect")
-    is_recurring: bool = Field(
-        default=False, description="True only if sample_count >= 3 with recurring pattern"
+    sample_count: int = Field(
+        ..., ge=1, description="Number of reviews evaluating this aspect"
     )
-    strengths: list[str] = Field(default_factory=list, description="Extracted strength highlights")
+    is_recurring: bool = Field(
+        default=False,
+        description="True only if sample_count >= 3 with recurring pattern",
+    )
+    strengths: list[str] = Field(
+        default_factory=list, description="Extracted strength highlights"
+    )
     improvements: list[str] = Field(
         default_factory=list, description="Constructive improvement recommendations"
     )
@@ -158,7 +165,7 @@ class ReviewAspectInsight(BaseModel):
 class ReviewAnalyzer:
     """Aspect-based sentiment and reputation analyzer for peer reviews."""
 
-    def __init__(self, db_pool: Optional[Any] = None) -> None:
+    def __init__(self, db_pool: Any | None = None) -> None:
         self.db_pool = db_pool
         self.model_name = "lynk-review-analyzer"
         self.model_version = "1.0.0"
@@ -172,7 +179,9 @@ class ReviewAnalyzer:
             return []
 
         # Map aspect -> list of (rating, comment)
-        aspect_matches: dict[str, list[ReviewItemInput]] = {k: [] for k in ASPECT_PATTERNS}
+        aspect_matches: dict[str, list[ReviewItemInput]] = {
+            k: [] for k in ASPECT_PATTERNS
+        }
 
         for rev in reviews:
             comment_lower = rev.comment.lower()
@@ -198,9 +207,17 @@ class ReviewAnalyzer:
             improvements: list[str] = []
 
             if mean_score >= 4.0:
-                strengths.append(STRENGTH_DESCRIPTIONS.get(aspect, f"Strong {aspect.replace('_', ' ').title()}"))
+                strengths.append(
+                    STRENGTH_DESCRIPTIONS.get(
+                        aspect, f"Strong {aspect.replace('_', ' ').title()}"
+                    )
+                )
             elif mean_score <= 3.0:
-                improvements.append(IMPROVEMENT_DESCRIPTIONS.get(aspect, f"Improve {aspect.replace('_', ' ')}"))
+                improvements.append(
+                    IMPROVEMENT_DESCRIPTIONS.get(
+                        aspect, f"Improve {aspect.replace('_', ' ')}"
+                    )
+                )
 
             confidence = round(min(0.98, 0.75 + 0.07 * min(3, sample_count)), 2)
 
@@ -275,15 +292,19 @@ class ReviewAnalyzer:
                                 item.improvements,
                             )
                 except Exception as exc:
-                    logger.warning("Failed to persist review insights for user %s: %s", user_id, exc)
+                    logger.warning(
+                        "Failed to persist review insights for user %s: %s",
+                        user_id,
+                        exc,
+                    )
 
             return insights
 
 
-_analyzer_instance: Optional[ReviewAnalyzer] = None
+_analyzer_instance: ReviewAnalyzer | None = None
 
 
-def get_review_analyzer(db_pool: Optional[Any] = None) -> ReviewAnalyzer:
+def get_review_analyzer(db_pool: Any | None = None) -> ReviewAnalyzer:
     """Acquire or initialize ReviewAnalyzer singleton."""
     global _analyzer_instance
     if _analyzer_instance is None:

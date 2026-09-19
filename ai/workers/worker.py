@@ -1,21 +1,24 @@
 """Asynchronous AI worker polling ai_jobs using SKIP LOCKED with backoff and dead-letter queuing."""
 
 import asyncio
-from datetime import datetime
+import contextlib
 import json
 import logging
 import signal
 import sys
-from typing import Any, Callable, Coroutine, Optional
+from collections.abc import Callable, Coroutine
+from datetime import datetime
+from typing import Any
 
 import asyncpg
-from pydantic import BaseModel, Field
-
 from ai.app.config import get_settings
 from ai.workers.handlers.embedding_handler import EmbeddingJobHandler
 from ai.workers.handlers.resume_handler import ResumeJobHandler
+from pydantic import BaseModel, Field
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
 logger = logging.getLogger("ai.worker")
 
 
@@ -30,9 +33,9 @@ class AIJob(BaseModel):
     status: str = "pending"
     attempts: int = 0
     max_attempts: int = 3
-    error: Optional[str] = None
-    content_hash: Optional[str] = None
-    started_at: Optional[datetime] = None
+    error: str | None = None
+    content_hash: str | None = None
+    started_at: datetime | None = None
 
 
 class PostgresJobStore:
@@ -41,7 +44,7 @@ class PostgresJobStore:
     def __init__(self, pool: asyncpg.Pool) -> None:
         self.pool = pool
 
-    async def fetch_next_job(self) -> Optional[AIJob]:
+    async def fetch_next_job(self) -> AIJob | None:
         """Claim next pending job eligible by retry_at using SKIP LOCKED to prevent race conditions."""
         query = r"""
             UPDATE ai_jobs
@@ -85,10 +88,12 @@ class PostgresJobStore:
                 max_attempts=row["max_attempts"],
                 error=row["error"],
                 content_hash=row["content_hash"],
-                started_at=row["started_at"] if "started_at" in row else None,
+                started_at=row.get("started_at", None),
             )
 
-    async def complete_job(self, job_id: str, result: Optional[dict[str, Any]] = None) -> None:
+    async def complete_job(
+        self, job_id: str, result: dict[str, Any] | None = None
+    ) -> None:
         """Mark job as successfully completed with updated payload."""
         async with self.pool.acquire() as conn:
             await conn.execute(
@@ -133,7 +138,7 @@ class AIWorker:
     def __init__(
         self,
         job_store=None,
-        db_pool: Optional[asyncpg.Pool] = None,
+        db_pool: asyncpg.Pool | None = None,
         poll_interval: float = 2.0,
     ) -> None:
         if job_store is not None:
@@ -165,14 +170,28 @@ class AIWorker:
 
         handler = self.handlers.get(job.job_type)
         if handler is None:
-            logger.error("No handler registered for job_type: %s (job_id=%s)", job.job_type, job.id)
-            await self.job_store.fail_job(job.id, f"Unregistered handler for job_type: {job.job_type}")
+            logger.error(
+                "No handler registered for job_type: %s (job_id=%s)",
+                job.job_type,
+                job.id,
+            )
+            await self.job_store.fail_job(
+                job.id, f"Unregistered handler for job_type: {job.job_type}"
+            )
             return True
 
-        logger.info("Executing job: %s (type=%s, entity=%s:%s)", job.id, job.job_type, job.entity_type, job.entity_id)
+        logger.info(
+            "Executing job: %s (type=%s, entity=%s:%s)",
+            job.id,
+            job.job_type,
+            job.entity_type,
+            job.entity_id,
+        )
         try:
             result = await handler(job)
-            await self.job_store.complete_job(job.id, result if isinstance(result, dict) else None)
+            await self.job_store.complete_job(
+                job.id, result if isinstance(result, dict) else None
+            )
             logger.info("Job completed successfully: %s", job.id)
         except Exception as exc:
             logger.error("Job %s failed with exception: %s", job.id, exc, exc_info=True)
@@ -207,7 +226,9 @@ async def main() -> None:
     logger.info("Starting AI Worker daemon connecting to %s", settings.DATABASE_URL)
 
     try:
-        pool = await asyncpg.create_pool(dsn=settings.DATABASE_URL, min_size=1, max_size=5)
+        pool = await asyncpg.create_pool(
+            dsn=settings.DATABASE_URL, min_size=1, max_size=5
+        )
     except Exception as exc:
         logger.fatal("Failed to connect to PostgreSQL: %s", exc)
         sys.exit(1)
@@ -230,10 +251,8 @@ async def main() -> None:
         stop_event.set()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
+        with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, signal_handler)
-        except NotImplementedError:
-            pass  # Windows signal handlers
 
     worker_task = asyncio.create_task(worker.run())
     await stop_event.wait()

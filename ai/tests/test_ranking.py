@@ -1,16 +1,13 @@
 """Tests for Candidate Application Ranking Pipeline and Internal API."""
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.pipelines.ranking.ranker import (
-    CandidateRankInput,
-    CandidateRankResult,
     CandidateRanker,
-    get_candidate_ranker,
+    CandidateRankInput,
 )
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio
@@ -209,6 +206,7 @@ async def test_ranking_api_success():
 async def test_ranking_batch_embedding_vectorization():
     """Verify embed_batch is called for multiple candidates rather than iterative embed calls."""
     from unittest.mock import MagicMock
+
     from ai.models.embeddings.provider import MockEmbeddingProvider
 
     mock_provider = MockEmbeddingProvider()
@@ -239,4 +237,3 @@ async def test_ranking_batch_embedding_vectorization():
     # embed_batch should be invoked exactly once for the batch of 5 candidates
     mock_provider.embed_batch.assert_called_once()
     assert len(mock_provider.embed_batch.call_args[0][0]) == 5
-

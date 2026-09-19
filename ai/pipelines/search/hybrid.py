@@ -8,12 +8,13 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, Callable, Optional, Union
-from pydantic import BaseModel, Field
+from collections.abc import Callable
+from typing import Any
 
 from ai.app.middleware.run_tracker import AIRunRecord, track_ai_run
 from ai.models.embeddings.provider import BaseEmbeddingProvider, get_embedding_provider
 from ai.pipelines.skills.normalizer import SkillNormalizer, get_skill_normalizer
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lynk-ai.pipelines.search")
 
@@ -86,10 +87,10 @@ class HybridSearchPipeline:
 
     def __init__(
         self,
-        db_pool: Optional[Any] = None,
-        embedding_provider: Optional[BaseEmbeddingProvider] = None,
-        skill_normalizer: Optional[SkillNormalizer] = None,
-        sink: Optional[Union[list[AIRunRecord], Callable[[AIRunRecord], Any]]] = None,
+        db_pool: Any | None = None,
+        embedding_provider: BaseEmbeddingProvider | None = None,
+        skill_normalizer: SkillNormalizer | None = None,
+        sink: list[AIRunRecord] | Callable[[AIRunRecord], Any] | None = None,
         pipeline_version: str = "1.0.0",
     ) -> None:
         self.db_pool = db_pool
@@ -129,11 +130,17 @@ class HybridSearchPipeline:
             model_name=self.embedding_provider.model_name,
             model_version=self.embedding_provider.model_version,
             pipeline_version=self.pipeline_version,
-            input_data={"query": cleaned_query, "entity_type": entity_type, "limit": limit},
+            input_data={
+                "query": cleaned_query,
+                "entity_type": entity_type,
+                "limit": limit,
+            },
             db_pool=self.db_pool,
             sink=self.sink,
         ) as tracker:
-            extracted_skills = self.skill_normalizer.extract_skills_from_text(cleaned_query)
+            extracted_skills = self.skill_normalizer.extract_skills_from_text(
+                cleaned_query
+            )
             query_skill_names = [s.canonical_name for s in extracted_skills]
 
             query_vec = self.embedding_provider.embed(cleaned_query)
@@ -151,7 +158,8 @@ class HybridSearchPipeline:
                 cand_skills_set = {str(s).lower() for s in cand_skills}
 
                 matched = [
-                    s for s in query_skill_names
+                    s
+                    for s in query_skill_names
                     if s.lower() in cand_skills_set or s.lower() in full_text.lower()
                 ]
 
@@ -188,7 +196,9 @@ class HybridSearchPipeline:
             scored_items.sort(key=lambda x: x.score, reverse=True)
             top_results = scored_items[:limit]
 
-            tracker.set_output({"results_count": len(top_results), "entity_type": entity_type})
+            tracker.set_output(
+                {"results_count": len(top_results), "entity_type": entity_type}
+            )
             tracker.set_confidence(top_results[0].score if top_results else 0.0)
 
             return top_results
@@ -211,14 +221,22 @@ class HybridSearchPipeline:
             model_name=self.embedding_provider.model_name,
             model_version=self.embedding_provider.model_version,
             pipeline_version=self.pipeline_version,
-            input_data={"query": cleaned_query, "entity_type": entity_type, "limit": limit},
+            input_data={
+                "query": cleaned_query,
+                "entity_type": entity_type,
+                "limit": limit,
+            },
             db_pool=self.db_pool,
             sink=self.sink,
         ) as tracker:
-            extracted_skills = self.skill_normalizer.extract_skills_from_text(cleaned_query)
+            extracted_skills = self.skill_normalizer.extract_skills_from_text(
+                cleaned_query
+            )
             query_skill_names = [s.canonical_name for s in extracted_skills]
 
-            query_vec = await asyncio.to_thread(self.embedding_provider.embed, cleaned_query)
+            query_vec = await asyncio.to_thread(
+                self.embedding_provider.embed, cleaned_query
+            )
             query_vec_json = json.dumps(query_vec)
 
             results: list[SearchResultItem] = []
@@ -278,7 +296,11 @@ class HybridSearchPipeline:
                         """
                         async with self.db_pool.acquire() as conn:
                             rows = await conn.fetch(
-                                sql, query_vec_json, cleaned_query, query_skill_names, limit * 2
+                                sql,
+                                query_vec_json,
+                                cleaned_query,
+                                query_skill_names,
+                                limit * 2,
                             )
                             for row in rows:
                                 ent_id = str(row["entity_id"])
@@ -288,8 +310,10 @@ class HybridSearchPipeline:
                                 req_skills_set = {s.lower() for s in req_skills}
 
                                 matched = [
-                                    s for s in query_skill_names
-                                    if s.lower() in req_skills_set or s.lower() in (title + " " + desc).lower()
+                                    s
+                                    for s in query_skill_names
+                                    if s.lower() in req_skills_set
+                                    or s.lower() in (title + " " + desc).lower()
                                 ]
 
                                 v_sim = float(row["vector_sim"])
@@ -297,14 +321,19 @@ class HybridSearchPipeline:
                                 v_rank = int(row["vector_rank"])
                                 t_rank = int(row["text_rank"])
 
-                                rrf_score = (1.0 / (60 + v_rank)) + (1.0 / (60 + t_rank))
+                                rrf_score = (1.0 / (60 + v_rank)) + (
+                                    1.0 / (60 + t_rank)
+                                )
                                 hybrid_score = compute_hybrid_score(
                                     cosine_similarity=v_sim,
                                     keyword_score=min(1.0, t_score),
                                     matched_skills_count=len(matched),
                                     total_query_skills=len(query_skill_names),
                                 )
-                                combined_score = round(0.5 * hybrid_score + 0.5 * min(1.0, rrf_score * 30), 4)
+                                combined_score = round(
+                                    0.5 * hybrid_score + 0.5 * min(1.0, rrf_score * 30),
+                                    4,
+                                )
 
                                 snippet = desc[:140] if desc else title
                                 results.append(
@@ -370,7 +399,11 @@ class HybridSearchPipeline:
                         """
                         async with self.db_pool.acquire() as conn:
                             rows = await conn.fetch(
-                                sql, query_vec_json, cleaned_query, query_skill_names, limit * 2
+                                sql,
+                                query_vec_json,
+                                cleaned_query,
+                                query_skill_names,
+                                limit * 2,
                             )
                             for row in rows:
                                 ent_id = str(row["entity_id"])
@@ -381,8 +414,10 @@ class HybridSearchPipeline:
                                 p_skills_set = {s.lower() for s in p_skills}
 
                                 matched = [
-                                    s for s in query_skill_names
-                                    if s.lower() in p_skills_set or s.lower() in bio.lower()
+                                    s
+                                    for s in query_skill_names
+                                    if s.lower() in p_skills_set
+                                    or s.lower() in bio.lower()
                                 ]
 
                                 v_sim = float(row["vector_sim"])
@@ -390,16 +425,23 @@ class HybridSearchPipeline:
                                 v_rank = int(row["vector_rank"])
                                 t_rank = int(row["text_rank"])
 
-                                rrf_score = (1.0 / (60 + v_rank)) + (1.0 / (60 + t_rank))
+                                rrf_score = (1.0 / (60 + v_rank)) + (
+                                    1.0 / (60 + t_rank)
+                                )
                                 hybrid_score = compute_hybrid_score(
                                     cosine_similarity=v_sim,
                                     keyword_score=min(1.0, t_score),
                                     matched_skills_count=len(matched),
                                     total_query_skills=len(query_skill_names),
                                 )
-                                combined_score = round(0.5 * hybrid_score + 0.5 * min(1.0, rrf_score * 30), 4)
+                                combined_score = round(
+                                    0.5 * hybrid_score + 0.5 * min(1.0, rrf_score * 30),
+                                    4,
+                                )
 
-                                snippet = bio[:140] if bio else f"{fname} {lname}".strip()
+                                snippet = (
+                                    bio[:140] if bio else f"{fname} {lname}".strip()
+                                )
                                 results.append(
                                     SearchResultItem(
                                         entity_id=ent_id,
@@ -414,16 +456,18 @@ class HybridSearchPipeline:
             results.sort(key=lambda x: x.score, reverse=True)
             final_results = results[:limit]
 
-            tracker.set_output({"results_count": len(final_results), "entity_type": entity_type})
+            tracker.set_output(
+                {"results_count": len(final_results), "entity_type": entity_type}
+            )
             tracker.set_confidence(final_results[0].score if final_results else 0.0)
 
             return final_results
 
 
 def get_search_pipeline(
-    db_pool: Optional[Any] = None,
-    embedding_provider: Optional[BaseEmbeddingProvider] = None,
-    skill_normalizer: Optional[SkillNormalizer] = None,
+    db_pool: Any | None = None,
+    embedding_provider: BaseEmbeddingProvider | None = None,
+    skill_normalizer: SkillNormalizer | None = None,
 ) -> HybridSearchPipeline:
     """Create a new HybridSearchPipeline instance."""
     return HybridSearchPipeline(

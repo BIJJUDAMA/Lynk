@@ -7,7 +7,7 @@ import random
 import sys
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +142,7 @@ class SentenceTransformerEmbeddingProvider(BaseEmbeddingProvider):
         self._dimension = dimension
         self._fallback_to_mock = fallback_to_mock
         self._model: Any = None
-        self._mock_provider: Optional[MockEmbeddingProvider] = None
+        self._mock_provider: MockEmbeddingProvider | None = None
 
         self._initialize_model()
 
@@ -224,8 +224,9 @@ class SentenceTransformerEmbeddingProvider(BaseEmbeddingProvider):
         return [[float(x) for x in vec] for vec in raw.tolist()]
 
 
-
-_PROVIDER_CACHE: dict[tuple[str, tuple[tuple[str, Any], ...]], BaseEmbeddingProvider] = {}
+_PROVIDER_CACHE: dict[
+    tuple[str, tuple[tuple[str, Any], ...]], BaseEmbeddingProvider
+] = {}
 _CACHE_LOCK = threading.Lock()
 
 
@@ -291,10 +292,11 @@ def get_embedding_provider(
             return _PROVIDER_CACHE[cache_key]
 
         if canonical_type == "sentence-transformer":
-            instance: BaseEmbeddingProvider = SentenceTransformerEmbeddingProvider(**kwargs)
+            instance: BaseEmbeddingProvider = SentenceTransformerEmbeddingProvider(
+                **kwargs
+            )
         else:
             instance = MockEmbeddingProvider(**kwargs)
 
         _PROVIDER_CACHE[cache_key] = instance
         return instance
-

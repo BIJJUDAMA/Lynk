@@ -107,7 +107,11 @@ def mean_reciprocal_rank(
 
     rr_values: list[float] = []
     for item in rankings:
-        if isinstance(item, (tuple, list)) and len(item) == 2 and isinstance(item[1], (set, list, tuple, frozenset)):
+        if (
+            isinstance(item, (tuple, list))
+            and len(item) == 2
+            and isinstance(item[1], (set, list, tuple, frozenset))
+        ):
             actual, relevant = item
             rr_values.append(reciprocal_rank(actual, relevant))
         elif isinstance(item, (int, float)):
@@ -152,7 +156,7 @@ def dcg_at_k(
     for i, item in enumerate(top_k, start=1):
         rel = float(ground_truth_relevance.get(item, 0.0))
         if rel > 0.0:
-            dcg += (2.0 ** rel - 1.0) / math.log2(i + 1)
+            dcg += (2.0**rel - 1.0) / math.log2(i + 1)
     return dcg
 
 
@@ -188,14 +192,14 @@ def ndcg_at_k(
         return 0.0
 
     idcg = sum(
-        (2.0 ** rel - 1.0) / math.log2(i + 1)
+        (2.0**rel - 1.0) / math.log2(i + 1)
         for i, rel in enumerate(ideal_relevances, start=1)
     )
 
     if idcg <= 0.0:
         return 0.0
 
-    return min(1.0, max(0.0, actual_dcg / idcg))
+    return float(min(1.0, max(0.0, actual_dcg / idcg)))
 
 
 def f1_score(precision: float, recall: float) -> float:

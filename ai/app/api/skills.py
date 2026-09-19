@@ -1,40 +1,46 @@
 """Internal API routes for skill normalization and text extraction."""
 
-from typing import Optional
-from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
-
 from ai.app.middleware.run_tracker import track_ai_run
 from ai.pipelines.skills.normalizer import get_skill_normalizer
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/internal/v1/skills", tags=["skills"])
 
 
 class NormalizeSkillRequest(BaseModel):
     skill: str = Field(
-        ..., min_length=1, max_length=200, description="Unstructured skill string to normalize"
+        ...,
+        min_length=1,
+        max_length=200,
+        description="Unstructured skill string to normalize",
     )
 
 
 class NormalizeSkillResponse(BaseModel):
     original_skill: str = Field(..., description="Original input skill string")
     canonical_name: str = Field(..., description="Normalized canonical skill name")
-    confidence: float = Field(..., description="Match confidence score between 0.0 and 1.0")
+    confidence: float = Field(
+        ..., description="Match confidence score between 0.0 and 1.0"
+    )
     match_method: str = Field(
         ...,
         description="Normalization stage: exact_alias, fuzzy, embedding, or fallback",
     )
-    category: Optional[str] = Field(
+    category: str | None = Field(
         default=None, description="Domain category (e.g. Frontend, Data & AI)"
     )
-    skill_id: Optional[str] = Field(
+    skill_id: str | None = Field(
         default=None, description="Unique slug or identifier for canonical skill"
     )
 
 
 class ExtractSkillsRequest(BaseModel):
     text: str = Field(
-        ..., min_length=1, max_length=10000, description="Freeform text such as job description or student bio"
+        ...,
+        min_length=1,
+        max_length=10000,
+        description="Freeform text such as job description or student bio",
     )
 
 

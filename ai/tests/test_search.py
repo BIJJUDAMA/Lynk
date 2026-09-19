@@ -1,9 +1,8 @@
 """Tests for AI semantic & hybrid search pipeline and endpoints."""
 
 import math
-import pytest
-from httpx import ASGITransport, AsyncClient
 
+import pytest
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.app.middleware.run_tracker import AIRunRecord
@@ -15,6 +14,7 @@ from ai.pipelines.search.hybrid import (
     reciprocal_rank_fusion,
 )
 from ai.pipelines.skills.normalizer import SkillNormalizer
+from httpx import ASGITransport, AsyncClient
 
 
 class MockSearchEmbeddingProvider(BaseEmbeddingProvider):
@@ -23,7 +23,12 @@ class MockSearchEmbeddingProvider(BaseEmbeddingProvider):
     def __init__(self) -> None:
         self._dimension = 4
         self._vectors = {
-            "Students with PyTorch and computer vision experience": [1.0, 0.0, 0.0, 0.0],
+            "Students with PyTorch and computer vision experience": [
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+            ],
             "Frontend developer with React": [0.0, 1.0, 0.0, 0.0],
             "Computer vision researcher with PyTorch": [0.9, 0.1, 0.0, 0.0],
             "General web developer": [0.0, 0.2, 0.8, 0.0],
@@ -105,13 +110,38 @@ def test_compute_hybrid_score_monotonic_cosine():
     assert pos_score > neg_score
 
     # Test extreme boundaries: -1.0 -> 0.0, 0.0 -> 0.5, 1.0 -> 1.0
-    assert compute_hybrid_score(-1.0, 0.0, 0, 0, w_semantic=1.0, w_keyword=0.0, w_skills=0.0) == 0.0
-    assert compute_hybrid_score(0.0, 0.0, 0, 0, w_semantic=1.0, w_keyword=0.0, w_skills=0.0) == 0.5
-    assert compute_hybrid_score(1.0, 0.0, 0, 0, w_semantic=1.0, w_keyword=0.0, w_skills=0.0) == 1.0
+    assert (
+        compute_hybrid_score(
+            -1.0, 0.0, 0, 0, w_semantic=1.0, w_keyword=0.0, w_skills=0.0
+        )
+        == 0.0
+    )
+    assert (
+        compute_hybrid_score(
+            0.0, 0.0, 0, 0, w_semantic=1.0, w_keyword=0.0, w_skills=0.0
+        )
+        == 0.5
+    )
+    assert (
+        compute_hybrid_score(
+            1.0, 0.0, 0, 0, w_semantic=1.0, w_keyword=0.0, w_skills=0.0
+        )
+        == 1.0
+    )
 
     # Test clamping beyond [-1.0, 1.0]
-    assert compute_hybrid_score(-1.5, 0.0, 0, 0, w_semantic=1.0, w_keyword=0.0, w_skills=0.0) == 0.0
-    assert compute_hybrid_score(1.5, 0.0, 0, 0, w_semantic=1.0, w_keyword=0.0, w_skills=0.0) == 1.0
+    assert (
+        compute_hybrid_score(
+            -1.5, 0.0, 0, 0, w_semantic=1.0, w_keyword=0.0, w_skills=0.0
+        )
+        == 0.0
+    )
+    assert (
+        compute_hybrid_score(
+            1.5, 0.0, 0, 0, w_semantic=1.0, w_keyword=0.0, w_skills=0.0
+        )
+        == 1.0
+    )
 
 
 def test_reciprocal_rank_fusion():
@@ -242,6 +272,7 @@ async def test_search_api_empty_query():
 async def test_hybrid_search_sql_contains_outer_order_by():
     """Verify that both job and profile hybrid search SQL queries include an outer ORDER BY."""
     from unittest.mock import AsyncMock, MagicMock
+
     from ai.pipelines.search.hybrid import HybridSearchPipeline
 
     mock_conn = AsyncMock()
@@ -256,12 +287,16 @@ async def test_hybrid_search_sql_contains_outer_order_by():
     await pipeline.search(query="backend Go engineer", entity_type="job", limit=10)
     assert mock_conn.fetch.call_count >= 1
     job_sql = mock_conn.fetch.call_args_list[-1][0][0]
-    expected_clause = "ORDER BY (COALESCE(v.vector_sim, 0.0) + COALESCE(t.text_rank_score, 0.0)) DESC"
+    expected_clause = (
+        "ORDER BY (COALESCE(v.vector_sim, 0.0) + COALESCE(t.text_rank_score, 0.0)) DESC"
+    )
     assert expected_clause in job_sql
     assert job_sql.index(expected_clause) < job_sql.index("LIMIT $4;")
 
     # 2. Profile search
-    await pipeline.search(query="frontend React developer", entity_type="profile", limit=10)
+    await pipeline.search(
+        query="frontend React developer", entity_type="profile", limit=10
+    )
     profile_sql = mock_conn.fetch.call_args_list[-1][0][0]
     assert expected_clause in profile_sql
     assert profile_sql.index(expected_clause) < profile_sql.index("LIMIT $4;")
@@ -298,5 +333,3 @@ async def test_search_api_validation_bounds():
             json={"query": "React engineer", "entity_type": "job", "limit": 0},
         )
         assert resp_low_limit.status_code == 422
-
-

@@ -4,9 +4,9 @@ from ai.models.embeddings.provider import (
     BaseEmbeddingProvider,
     MockEmbeddingProvider,
     SentenceTransformerEmbeddingProvider,
+    clear_provider_cache,
     compute_content_hash,
     get_embedding_provider,
-    clear_provider_cache,
 )
 
 __all__ = [

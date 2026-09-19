@@ -1,12 +1,11 @@
 """Internal API routes for Hybrid Moderation and Spam Detection."""
 
-from fastapi import APIRouter, Request
-
 from ai.pipelines.moderation.detector import (
     ModerationCheckInput,
     ModerationResult,
     get_moderation_detector,
 )
+from fastapi import APIRouter, Request
 
 router = APIRouter(prefix="/internal/v1/moderation", tags=["moderation"])
 

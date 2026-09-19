@@ -1,0 +1,49 @@
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # Pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "E501",  # Line too long (handled by ruff format)
+    "B905",  # zip() without explicit strict=
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "pipelines", "models", "workers", "llm", "evaluation"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.11"
+explicit_package_bases = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_return_any = false
+warn_no_return = false
+disable_error_code = ["return", "return-value", "union-attr", "assignment"]
+exclude = [
+    "^ai/tests/",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "torch.*",
+    "sentence_transformers.*",
+    "sklearn.*",
+    "asyncpg.*",
+    "scipy.*",
+]
+ignore_missing_imports = true

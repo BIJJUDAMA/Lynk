@@ -1,9 +1,9 @@
-import pytest
-from httpx import ASGITransport, AsyncClient
 from unittest.mock import AsyncMock, MagicMock
 
-from ai.app.main import app, lifespan
+import pytest
 from ai.app.config import get_settings
+from ai.app.main import app, lifespan
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio
@@ -70,7 +70,10 @@ async def test_ready_endpoint_query_failure():
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/ready")
             assert response.status_code == 503
-            assert response.json() == {"status": "not_ready", "database": "disconnected"}
+            assert response.json() == {
+                "status": "not_ready",
+                "database": "disconnected",
+            }
     finally:
         app.state.db_pool = None
 
@@ -89,8 +92,7 @@ async def test_internal_ping_invalid_secret():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
-            "/internal/v1/ping",
-            headers={"X-Internal-AI-Secret": "wrong-secret-value"}
+            "/internal/v1/ping", headers={"X-Internal-AI-Secret": "wrong-secret-value"}
         )
         assert response.status_code == 401
         assert response.json() == {"detail": "Invalid or missing internal AI secret"}
@@ -103,7 +105,7 @@ async def test_internal_ping_valid_secret():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
             "/internal/v1/ping",
-            headers={"X-Internal-AI-Secret": settings.INTERNAL_AI_SECRET}
+            headers={"X-Internal-AI-Secret": settings.INTERNAL_AI_SECRET},
         )
         assert response.status_code == 200
         assert response.json() == {"status": "pong"}
@@ -128,18 +130,20 @@ async def test_internal_ping_timing_safe_secret_comparison():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         for secret_val, expected_status in cases:
             response = await client.get(
-                "/internal/v1/ping",
-                headers={"X-Internal-AI-Secret": secret_val}
+                "/internal/v1/ping", headers={"X-Internal-AI-Secret": secret_val}
             )
-            assert response.status_code == expected_status, f"Expected {expected_status} for {secret_val}"
+            assert response.status_code == expected_status, (
+                f"Expected {expected_status} for {secret_val}"
+            )
             if expected_status == 200:
                 assert response.json() == {"status": "pong"}
             else:
-                assert response.json() == {"detail": "Invalid or missing internal AI secret"}
+                assert response.json() == {
+                    "detail": "Invalid or missing internal AI secret"
+                }
 
 
 @pytest.mark.asyncio
 async def test_lifespan_degraded_startup():
     async with lifespan(app):
         assert hasattr(app.state, "db_pool")
-

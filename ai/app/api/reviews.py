@@ -1,13 +1,12 @@
 """Internal API routes for Review Insights and Aspect Extraction."""
 
-from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
-
 from ai.pipelines.reviews.analyzer import (
     ReviewAspectInsight,
     ReviewItemInput,
     get_review_analyzer,
 )
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/internal/v1/reviews", tags=["reviews"])
 

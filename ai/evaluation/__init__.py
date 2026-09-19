@@ -1,5 +1,6 @@
 """Lynk AI Offline Evaluation Suite and Benchmarks."""
 
+from ai.evaluation.harness import EvaluationHarness
 from ai.evaluation.metrics import (
     dcg_at_k,
     f1_score,
@@ -9,7 +10,6 @@ from ai.evaluation.metrics import (
     recall_at_k,
     reciprocal_rank,
 )
-from ai.evaluation.harness import EvaluationHarness
 
 __all__ = [
     "dcg_at_k",

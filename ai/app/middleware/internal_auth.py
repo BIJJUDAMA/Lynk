@@ -1,10 +1,9 @@
 import secrets
 
+from ai.app.config import get_settings
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-
-from ai.app.config import get_settings
 
 
 class InternalAuthMiddleware(BaseHTTPMiddleware):
@@ -15,7 +14,9 @@ class InternalAuthMiddleware(BaseHTTPMiddleware):
         if path.startswith("/internal"):
             settings = get_settings()
             secret = request.headers.get("X-Internal-AI-Secret")
-            if not secret or not secrets.compare_digest(secret, settings.INTERNAL_AI_SECRET):
+            if not secret or not secrets.compare_digest(
+                secret, settings.INTERNAL_AI_SECRET
+            ):
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid or missing internal AI secret"},

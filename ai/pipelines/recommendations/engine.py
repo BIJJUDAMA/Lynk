@@ -7,10 +7,10 @@ academic domain mapping, and heuristic profile completeness rules.
 
 import json
 import logging
-from typing import Any, Optional
-from pydantic import BaseModel, Field
+from typing import Any
 
 from ai.app.middleware.run_tracker import track_ai_run
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lynk-ai.pipelines.recommendations")
 
@@ -295,7 +295,7 @@ DEPARTMENT_SKILL_RECOMMENDATIONS: dict[str, list[dict[str, Any]]] = {
 class RecommendationEngine:
     """Engine for generating member recommendations."""
 
-    def __init__(self, db_pool: Optional[Any] = None) -> None:
+    def __init__(self, db_pool: Any | None = None) -> None:
         self.db_pool = db_pool
         self.model_name = "lynk-recommendation-engine"
         self.model_version = "1.0.0"
@@ -304,10 +304,10 @@ class RecommendationEngine:
     async def generate_recommendations(
         self,
         user_id: str,
-        current_skills: Optional[list[str]] = None,
-        department: Optional[str] = None,
-        bio: Optional[str] = None,
-        portfolio_links: Optional[list[str]] = None,
+        current_skills: list[str] | None = None,
+        department: str | None = None,
+        bio: str | None = None,
+        portfolio_links: list[str] | None = None,
         limit: int = 10,
     ) -> list[RecommendationItem]:
         """Generate personalized recommendations for a campus member profile."""
@@ -374,7 +374,13 @@ class RecommendationEngine:
             # Portfolio links check
             has_links = len(links) > 0 or any(
                 kw in bio_text.lower()
-                for kw in ("github.com", "http://", "https://", "portfolio", "gitlab.com")
+                for kw in (
+                    "github.com",
+                    "http://",
+                    "https://",
+                    "portfolio",
+                    "gitlab.com",
+                )
             )
             if not has_links:
                 item = RecommendationItem(
@@ -405,9 +411,10 @@ class RecommendationEngine:
                 if "required_all" in rule:
                     if all(req in lower_skills for req in rule["required_all"]):
                         matches_rule = True
-                elif "required_any" in rule:
-                    if any(req in lower_skills for req in rule["required_any"]):
-                        matches_rule = True
+                elif "required_any" in rule and any(
+                    req in lower_skills for req in rule["required_any"]
+                ):
+                    matches_rule = True
 
                 if matches_rule:
                     for rec in rule["recommendations"]:
@@ -438,7 +445,10 @@ class RecommendationEngine:
                         for rec in dept_recs:
                             title = rec["title"]
                             title_lower = title.lower()
-                            if title_lower in lower_skills or title_lower in seen_titles:
+                            if (
+                                title_lower in lower_skills
+                                or title_lower in seen_titles
+                            ):
                                 continue
 
                             results.append(
@@ -456,7 +466,10 @@ class RecommendationEngine:
                             seen_titles.add(title_lower)
 
             # 4. Opportunity Matching Recommendations
-            if any(s in lower_skills for s in ("python", "machine learning", "pytorch", "tensorflow")):
+            if any(
+                s in lower_skills
+                for s in ("python", "machine learning", "pytorch", "tensorflow")
+            ):
                 opp_title = "Explore AI & Machine Learning Gigs"
                 if opp_title.lower() not in seen_titles:
                     results.append(
@@ -470,7 +483,10 @@ class RecommendationEngine:
                     )
                     seen_titles.add(opp_title.lower())
 
-            if any(s in lower_skills for s in ("react", "typescript", "next.js", "frontend", "javascript")):
+            if any(
+                s in lower_skills
+                for s in ("react", "typescript", "next.js", "frontend", "javascript")
+            ):
                 opp_title = "Explore Full-Stack & Web Gigs"
                 if opp_title.lower() not in seen_titles:
                     results.append(
@@ -509,7 +525,10 @@ class RecommendationEngine:
                                 json.dumps(it.metadata or {}),
                             )
                 except Exception as exc:
-                    logger.warning("Failed to persist recommendations to ai_recommendations: %s", exc)
+                    logger.warning(
+                        "Failed to persist recommendations to ai_recommendations: %s",
+                        exc,
+                    )
 
             tracker.set_output({"recommendations_count": len(final_items)})
             tracker.set_confidence(final_items[0].confidence if final_items else 0.0)
@@ -517,6 +536,6 @@ class RecommendationEngine:
             return final_items
 
 
-def get_recommendation_engine(db_pool: Optional[Any] = None) -> RecommendationEngine:
+def get_recommendation_engine(db_pool: Any | None = None) -> RecommendationEngine:
     """Factory to create a RecommendationEngine instance."""
     return RecommendationEngine(db_pool=db_pool)

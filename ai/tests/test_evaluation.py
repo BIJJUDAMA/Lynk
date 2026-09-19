@@ -1,26 +1,25 @@
 """Comprehensive unit and integration tests for Lynk AI offline evaluation suite."""
 
-import pytest
 import math
-from pathlib import Path
 from typing import Any
 
+import pytest
+from ai.evaluation.harness import EvaluationHarness
 from ai.evaluation.metrics import (
+    dcg_at_k,
+    f1_score,
+    mean_reciprocal_rank,
+    ndcg_at_k,
     precision_at_k,
     recall_at_k,
     reciprocal_rank,
-    mean_reciprocal_rank,
-    dcg_at_k,
-    ndcg_at_k,
-    f1_score,
 )
-from ai.evaluation.harness import EvaluationHarness
-from ai.pipelines.skills.normalizer import SkillNormalizer, NormalizedSkillResult
-
+from ai.pipelines.skills.normalizer import SkillNormalizer
 
 # ============================================================================
 # Unit Tests: Metrics
 # ============================================================================
+
 
 def test_precision_at_k_basic():
     actual = ["doc1", "doc2", "doc3", "doc4"]
@@ -97,10 +96,10 @@ def test_reciprocal_rank():
 
 def test_mean_reciprocal_rank():
     rankings = [
-        (["a", "b", "c"], {"a"}),       # RR = 1.0
-        (["a", "b", "c"], {"b"}),       # RR = 0.5
-        (["a", "b", "c"], {"c"}),       # RR = 1/3
-        (["a", "b", "c"], {"z"}),       # RR = 0.0
+        (["a", "b", "c"], {"a"}),  # RR = 1.0
+        (["a", "b", "c"], {"b"}),  # RR = 0.5
+        (["a", "b", "c"], {"c"}),  # RR = 1/3
+        (["a", "b", "c"], {"z"}),  # RR = 0.0
     ]
     expected_mrr = (1.0 + 0.5 + (1.0 / 3.0) + 0.0) / 4.0
     assert mean_reciprocal_rank(rankings) == pytest.approx(expected_mrr)
@@ -158,6 +157,7 @@ def test_f1_score():
 # Integration Tests: Evaluation Harness
 # ============================================================================
 
+
 def test_harness_evaluate_skill_normalization():
     harness = EvaluationHarness()
     normalizer = SkillNormalizer()
@@ -186,19 +186,21 @@ def test_harness_evaluate_ranking_with_mock_ranker():
         async def rank_candidates(self, **kwargs: Any) -> list[Any]:
             # Returns candidates sorted by id
             candidates = kwargs.get("candidates", [])
+
             class MockResult:
                 def __init__(self, app_id: str, score: float):
                     self.application_id = app_id
                     self.score = score
+
             return [
-            MockResult(
-                getattr(c, "application_id", getattr(c, "id", None))
-                if not isinstance(c, dict)
-                else (c.get("id") or c.get("application_id")),
-                100.0 - i * 10,
-            )
-            for i, c in enumerate(candidates)
-        ]
+                MockResult(
+                    getattr(c, "application_id", getattr(c, "id", None))
+                    if not isinstance(c, dict)
+                    else (c.get("id") or c.get("application_id")),
+                    100.0 - i * 10,
+                )
+                for i, c in enumerate(candidates)
+            ]
 
     harness = EvaluationHarness()
     ranking_data = [
@@ -211,9 +213,24 @@ def test_harness_evaluate_ranking_with_mock_ranker():
                 "department": "Engineering",
             },
             "candidates": [
-                {"id": "cand-1", "relevance": 3.0, "skills": ["React", "Python"], "bio": "Senior dev"},
-                {"id": "cand-2", "relevance": 2.0, "skills": ["React"], "bio": "Frontend dev"},
-                {"id": "cand-3", "relevance": 0.0, "skills": ["Painting"], "bio": "Artist"},
+                {
+                    "id": "cand-1",
+                    "relevance": 3.0,
+                    "skills": ["React", "Python"],
+                    "bio": "Senior dev",
+                },
+                {
+                    "id": "cand-2",
+                    "relevance": 2.0,
+                    "skills": ["React"],
+                    "bio": "Frontend dev",
+                },
+                {
+                    "id": "cand-3",
+                    "relevance": 0.0,
+                    "skills": ["Painting"],
+                    "bio": "Artist",
+                },
             ],
         }
     ]

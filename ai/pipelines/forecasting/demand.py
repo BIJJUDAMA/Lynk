@@ -1,11 +1,9 @@
 """Skill demand analytics, moving average, and linear forecasting pipeline."""
 
 import logging
-from typing import Optional
-
-from pydantic import BaseModel, Field
 
 from ai.app.middleware.run_tracker import track_ai_run
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("ai.pipelines.forecasting")
 
@@ -89,7 +87,9 @@ class SkillDemandForecaster:
         job_component = min(50.0, total_jobs * 2.5)
         app_component = min(30.0, total_apps * 0.5)
         growth_component = min(20.0, max(0.0, growth_rate * 25.0))
-        demand_score = min(100.0, round(job_component + app_component + growth_component, 1))
+        demand_score = min(
+            100.0, round(job_component + app_component + growth_component, 1)
+        )
 
         return SkillDemandForecast(
             skill=data.skill,
@@ -107,9 +107,7 @@ class SkillDemandForecaster:
         total_apps = sum(p.application_count for p in postings)
         unique_posters = max((p.unique_posters for p in postings), default=0)
 
-        app_to_job_ratio = (
-            round(total_apps / total_jobs, 2) if total_jobs > 0 else 0.0
-        )
+        app_to_job_ratio = round(total_apps / total_jobs, 2) if total_jobs > 0 else 0.0
 
         forecast = self.forecast_skill_demand(data)
 
@@ -190,7 +188,8 @@ class SkillDemandForecaster:
                             )
                 except Exception as exc:
                     logger.warning(
-                        "Failed to persist skill demand snapshots to PostgreSQL: %s", exc
+                        "Failed to persist skill demand snapshots to PostgreSQL: %s",
+                        exc,
                     )
 
             return snapshots, forecasts

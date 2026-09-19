@@ -13,8 +13,7 @@ Traces every evaluation run in PostgreSQL ai_runs via track_ai_run.
 
 import asyncio
 import logging
-from typing import Any, Optional
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Any
 
 from ai.app.middleware.run_tracker import track_ai_run
 from ai.models.embeddings.provider import (
@@ -23,6 +22,7 @@ from ai.models.embeddings.provider import (
     get_embedding_provider,
 )
 from ai.pipelines.skills.normalizer import SkillNormalizer, get_skill_normalizer
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger("lynk-ai.ranking")
 
@@ -77,10 +77,16 @@ class CandidateRankInput(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     application_id: str = Field(..., description="Application unique identifier")
-    skills: Optional[list[str]] = Field(default_factory=list, description="Candidate declared skills")
-    bio: Optional[str] = Field(default=None, description="Candidate bio text")
-    department: Optional[str] = Field(default=None, description="Academic department or major")
-    cover_letter: Optional[str] = Field(default=None, description="Application cover letter")
+    skills: list[str] | None = Field(
+        default_factory=list, description="Candidate declared skills"
+    )
+    bio: str | None = Field(default=None, description="Candidate bio text")
+    department: str | None = Field(
+        default=None, description="Academic department or major"
+    )
+    cover_letter: str | None = Field(
+        default=None, description="Application cover letter"
+    )
 
     @field_validator("skills", mode="before")
     @classmethod
@@ -106,9 +112,9 @@ class CandidateRanker:
 
     def __init__(
         self,
-        embedding_provider: Optional[BaseEmbeddingProvider] = None,
-        skill_normalizer: Optional[SkillNormalizer] = None,
-        db_pool: Optional[Any] = None,
+        embedding_provider: BaseEmbeddingProvider | None = None,
+        skill_normalizer: SkillNormalizer | None = None,
+        db_pool: Any | None = None,
     ) -> None:
         self.embedding_provider = embedding_provider or get_embedding_provider()
         self.skill_normalizer = skill_normalizer or get_skill_normalizer()
@@ -118,7 +124,7 @@ class CandidateRanker:
         self.pipeline_version = "ranking-v1"
 
     def _compute_department_compatibility(
-        self, job_dept: Optional[str], cand_dept: Optional[str]
+        self, job_dept: str | None, cand_dept: str | None
     ) -> float:
         """Compute compatibility score between job department and candidate department."""
         j_dept = (job_dept or "").strip().lower()
@@ -268,7 +274,9 @@ class CandidateRanker:
                 normalized_req_skills.append(norm.canonical_name.lower())
 
             # Pre-compute candidate text embeddings in batch
-            cand_texts = [f"{c.bio or ''} {c.cover_letter or ''}".strip() for c in candidates]
+            cand_texts = [
+                f"{c.bio or ''} {c.cover_letter or ''}".strip() for c in candidates
+            ]
             non_empty_indices = [i for i, t in enumerate(cand_texts) if t]
             cand_vec_map: dict[int, list[float]] = {}
             if non_empty_indices and job_vec:
@@ -294,7 +302,10 @@ class CandidateRanker:
                 missing_skills: list[str] = []
 
                 for orig_req, norm_req in zip(required_skills, normalized_req_skills):
-                    if norm_req in cand_skill_norms or orig_req.strip().lower() in cand_skill_norms:
+                    if (
+                        norm_req in cand_skill_norms
+                        or orig_req.strip().lower() in cand_skill_norms
+                    ):
                         matched_skills.append(orig_req)
                     else:
                         missing_skills.append(orig_req)
@@ -320,9 +331,7 @@ class CandidateRanker:
 
                 # Composite score calculation (0 to 100 scale)
                 composite = (
-                    0.45 * skill_overlap
-                    + 0.35 * semantic_sim
-                    + 0.20 * dept_compat
+                    0.45 * skill_overlap + 0.35 * semantic_sim + 0.20 * dept_compat
                 )
                 final_score = round(max(0.0, min(100.0, composite * 100)), 1)
 
@@ -357,14 +366,19 @@ class CandidateRanker:
             # Rank descending by score, then confidence
             results.sort(key=lambda r: (r.score, r.confidence), reverse=True)
 
-            tracker.set_output({"ranked_count": len(results), "top_score": results[0].score if results else 0})
+            tracker.set_output(
+                {
+                    "ranked_count": len(results),
+                    "top_score": results[0].score if results else 0,
+                }
+            )
             return results
 
 
-_ranker_instance: Optional[CandidateRanker] = None
+_ranker_instance: CandidateRanker | None = None
 
 
-def get_candidate_ranker(db_pool: Optional[Any] = None) -> CandidateRanker:
+def get_candidate_ranker(db_pool: Any | None = None) -> CandidateRanker:
     """Acquire or initialize CandidateRanker singleton."""
     global _ranker_instance
     if _ranker_instance is None:

@@ -1,7 +1,7 @@
 """Asynchronous handler for parsing resumes and extracting tagged student skills."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from ai.pipelines.skills.normalizer import SkillNormalizer, get_skill_normalizer
 
@@ -13,7 +13,7 @@ class ResumeJobHandler:
 
     def __init__(
         self,
-        normalizer: Optional[SkillNormalizer] = None,
+        normalizer: SkillNormalizer | None = None,
         db_pool=None,
     ) -> None:
         self.normalizer = normalizer or get_skill_normalizer()
@@ -61,7 +61,9 @@ class ResumeJobHandler:
                             s["confidence"],
                         )
             except Exception as exc:
-                logger.warning("Failed to link extracted resume skills to profile_skills: %s", exc)
+                logger.warning(
+                    "Failed to link extracted resume skills to profile_skills: %s", exc
+                )
 
         return {
             "extracted_skills": tagged_skills,

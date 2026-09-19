@@ -5,7 +5,6 @@ import re
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from functools import lru_cache
-from typing import Optional
 
 from ai.models.embeddings.provider import BaseEmbeddingProvider, get_embedding_provider
 
@@ -30,8 +29,8 @@ class NormalizedSkillResult:
     canonical_name: str
     confidence: float
     match_method: str  # "exact_alias", "fuzzy", "embedding", "fallback"
-    category: Optional[str] = None
-    skill_id: Optional[str] = None
+    category: str | None = None
+    skill_id: str | None = None
 
 
 CANONICAL_TAXONOMY: list[CanonicalSkill] = [
@@ -235,8 +234,8 @@ class SkillNormalizer:
 
     def __init__(
         self,
-        taxonomy: Optional[list[CanonicalSkill]] = None,
-        embedding_provider: Optional[BaseEmbeddingProvider] = None,
+        taxonomy: list[CanonicalSkill] | None = None,
+        embedding_provider: BaseEmbeddingProvider | None = None,
         fuzzy_threshold: float = 0.9,
         embedding_threshold: float = 0.75,
     ) -> None:
@@ -244,7 +243,7 @@ class SkillNormalizer:
         self.fuzzy_threshold = fuzzy_threshold
         self.embedding_threshold = embedding_threshold
         self._provider = embedding_provider
-        self._canonical_embeddings: Optional[dict[str, list[float]]] = None
+        self._canonical_embeddings: dict[str, list[float]] | None = None
 
         # Build fast alias lookup table
         self._alias_map: dict[str, CanonicalSkill] = {}
@@ -298,7 +297,7 @@ class SkillNormalizer:
             )
 
         # Stage 2: Fuzzy token / sequence matching
-        best_fuzzy_skill: Optional[CanonicalSkill] = None
+        best_fuzzy_skill: CanonicalSkill | None = None
         best_fuzzy_ratio: float = 0.0
 
         for skill_entry in self.taxonomy:
@@ -312,17 +311,12 @@ class SkillNormalizer:
 
             # Also compare against aliases
             for alias in skill_entry.aliases:
-                alias_ratio = SequenceMatcher(
-                    None, raw_lower, alias.lower()
-                ).ratio()
+                alias_ratio = SequenceMatcher(None, raw_lower, alias.lower()).ratio()
                 if alias_ratio > best_fuzzy_ratio:
                     best_fuzzy_ratio = alias_ratio
                     best_fuzzy_skill = skill_entry
 
-        if (
-            best_fuzzy_skill is not None
-            and best_fuzzy_ratio >= self.fuzzy_threshold
-        ):
+        if best_fuzzy_skill is not None and best_fuzzy_ratio >= self.fuzzy_threshold:
             return NormalizedSkillResult(
                 original_skill=raw,
                 canonical_name=best_fuzzy_skill.canonical_name,
@@ -336,7 +330,7 @@ class SkillNormalizer:
         canonical_vecs = self._ensure_canonical_embeddings()
         query_vec = self.embedding_provider.embed(raw)
 
-        best_emb_skill: Optional[CanonicalSkill] = None
+        best_emb_skill: CanonicalSkill | None = None
         best_emb_score: float = -1.0
 
         for skill_entry in self.taxonomy:
@@ -347,10 +341,7 @@ class SkillNormalizer:
                     best_emb_score = dot
                     best_emb_skill = skill_entry
 
-        if (
-            best_emb_skill is not None
-            and best_emb_score >= self.embedding_threshold
-        ):
+        if best_emb_skill is not None and best_emb_score >= self.embedding_threshold:
             return NormalizedSkillResult(
                 original_skill=raw,
                 canonical_name=best_emb_skill.canonical_name,
@@ -384,9 +375,7 @@ class SkillNormalizer:
         for skill in self.taxonomy:
             # Short common English words like "Go" should be matched case-sensitively
             is_case_sensitive = len(skill.canonical_name) <= 2
-            candidate_phrases.append(
-                (skill.canonical_name, is_case_sensitive, skill)
-            )
+            candidate_phrases.append((skill.canonical_name, is_case_sensitive, skill))
             for alias in skill.aliases:
                 alias_sensitive = len(alias) <= 2 and alias.lower() in ("go", "c")
                 candidate_phrases.append((alias, alias_sensitive, skill))
@@ -398,7 +387,7 @@ class SkillNormalizer:
         extracted_results: list[NormalizedSkillResult] = []
         seen_canonical: set[str] = set()
 
-        for phrase, sensitive, skill in candidate_phrases:
+        for phrase, sensitive, _skill in candidate_phrases:
             pattern = rf"(?<![A-Za-z0-9]){re.escape(phrase)}(?![A-Za-z0-9])"
             flags = 0 if sensitive else re.IGNORECASE
 

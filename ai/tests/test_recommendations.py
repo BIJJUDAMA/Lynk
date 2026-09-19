@@ -1,15 +1,12 @@
 """Tests for Member Recommendations Engine and Internal API."""
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.pipelines.recommendations.engine import (
     RecommendationEngine,
-    RecommendationItem,
-    get_recommendation_engine,
 )
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio

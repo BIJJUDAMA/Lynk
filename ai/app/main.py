@@ -1,11 +1,8 @@
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import asyncpg
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-
 from ai.app.api.analytics import router as analytics_router
 from ai.app.api.jobs import router as jobs_router
 from ai.app.api.moderation import router as moderation_router
@@ -14,10 +11,11 @@ from ai.app.api.recommendations import router as recommendations_router
 from ai.app.api.reviews import router as reviews_router
 from ai.app.api.search import router as search_router
 from ai.app.api.skills import router as skills_router
-
 from ai.app.config import get_settings
 from ai.app.middleware.internal_auth import InternalAuthMiddleware
 from ai.app.middleware.tracing import TracingMiddleware
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("lynk-ai")
 
@@ -97,7 +95,3 @@ app.include_router(moderation_router)
 app.include_router(reviews_router)
 app.include_router(analytics_router)
 app.include_router(jobs_router)
-
-
-
-

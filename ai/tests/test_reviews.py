@@ -1,15 +1,13 @@
 """Unit and integration tests for review insights and aspect extraction."""
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.pipelines.reviews.analyzer import (
-    ReviewAspectInsight,
     ReviewAnalyzer,
     ReviewItemInput,
 )
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture
@@ -49,7 +47,9 @@ def test_aspect_extraction_technical_and_timeliness(analyzer: ReviewAnalyzer):
     assert len(tech_item.strengths) > 0 or len(time_item.strengths) > 0
 
 
-def test_recurring_aspect_when_sample_count_greater_or_equal_3(analyzer: ReviewAnalyzer):
+def test_recurring_aspect_when_sample_count_greater_or_equal_3(
+    analyzer: ReviewAnalyzer,
+):
     """3+ consistent reviews for a user set is_recurring: true."""
     reviews = [
         ReviewItemInput(

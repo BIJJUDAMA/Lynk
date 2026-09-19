@@ -1,8 +1,6 @@
 """Unit and integration tests for skill demand analytics and forecasting."""
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.pipelines.forecasting.demand import (
@@ -10,6 +8,7 @@ from ai.pipelines.forecasting.demand import (
     SkillHistoricalData,
     SkillPostingPoint,
 )
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture
@@ -22,10 +21,18 @@ def test_upward_trend_projects_positive_growth_rate(forecaster: SkillDemandForec
     data = SkillHistoricalData(
         skill="Python",
         postings=[
-            SkillPostingPoint(period="2026-W01", job_count=2, application_count=6, unique_posters=2),
-            SkillPostingPoint(period="2026-W02", job_count=4, application_count=12, unique_posters=3),
-            SkillPostingPoint(period="2026-W03", job_count=7, application_count=20, unique_posters=5),
-            SkillPostingPoint(period="2026-W04", job_count=11, application_count=35, unique_posters=8),
+            SkillPostingPoint(
+                period="2026-W01", job_count=2, application_count=6, unique_posters=2
+            ),
+            SkillPostingPoint(
+                period="2026-W02", job_count=4, application_count=12, unique_posters=3
+            ),
+            SkillPostingPoint(
+                period="2026-W03", job_count=7, application_count=20, unique_posters=5
+            ),
+            SkillPostingPoint(
+                period="2026-W04", job_count=11, application_count=35, unique_posters=8
+            ),
         ],
     )
 
@@ -37,13 +44,19 @@ def test_upward_trend_projects_positive_growth_rate(forecaster: SkillDemandForec
     assert forecast.projected_30d_demand > 11.0
 
 
-def test_aggregation_computes_unique_posters_and_ratio(forecaster: SkillDemandForecaster):
+def test_aggregation_computes_unique_posters_and_ratio(
+    forecaster: SkillDemandForecaster,
+):
     """Forecaster accurately computes unique posters and application-to-job ratio."""
     data = SkillHistoricalData(
         skill="React",
         postings=[
-            SkillPostingPoint(period="2026-M01", job_count=5, application_count=25, unique_posters=4),
-            SkillPostingPoint(period="2026-M02", job_count=5, application_count=30, unique_posters=5),
+            SkillPostingPoint(
+                period="2026-M01", job_count=5, application_count=25, unique_posters=4
+            ),
+            SkillPostingPoint(
+                period="2026-M02", job_count=5, application_count=30, unique_posters=5
+            ),
         ],
     )
 

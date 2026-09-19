@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from ai.models.embeddings.provider import (
     BaseEmbeddingProvider,
@@ -18,7 +18,7 @@ class EmbeddingJobHandler:
 
     def __init__(
         self,
-        embedding_provider: Optional[BaseEmbeddingProvider] = None,
+        embedding_provider: BaseEmbeddingProvider | None = None,
         db_pool=None,
     ) -> None:
         self.provider = embedding_provider or get_embedding_provider()

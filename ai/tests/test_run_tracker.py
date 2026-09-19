@@ -1,12 +1,12 @@
 import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
-import pytest
 
+import pytest
 from ai.app.middleware.run_tracker import (
     AIRunRecord,
-    track_ai_run,
     compute_run_input_hash,
+    track_ai_run,
 )
 
 
@@ -40,7 +40,10 @@ async def test_successful_run_captures_all_fields():
     assert record.prompt_version == "prompt-v2"
     assert record.pipeline_version == "skills-v1"
     assert len(record.input_hash) == 64  # valid SHA-256 hex digest
-    assert record.output_json == {"canonical_name": "Machine Learning", "confidence": 0.96}
+    assert record.output_json == {
+        "canonical_name": "Machine Learning",
+        "confidence": 0.96,
+    }
     assert record.confidence == 0.96
     assert record.latency_ms > 0
     assert record.status == "success"
@@ -248,4 +251,3 @@ async def test_decorator_syntax():
     assert record.feature == "decorated_feature"
     assert record.status == "success"
     assert record.output_json == {"processed": "HELLO WORLD"}
-

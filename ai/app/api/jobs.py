@@ -1,10 +1,9 @@
 """Internal API routes for Generative AI Job Draft Generation."""
 
-from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
-
 from ai.llm.client import get_vllm_client
 from ai.llm.schemas.job_generation import GeneratedJobDraft
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/internal/v1/jobs", tags=["jobs"])
 
@@ -13,7 +12,10 @@ class GenerateJobDraftRequest(BaseModel):
     """Request payload for generating a job posting draft from a rough idea."""
 
     idea: str = Field(
-        ..., min_length=3, max_length=1000, description="Rough campus project idea or requirement"
+        ...,
+        min_length=3,
+        max_length=1000,
+        description="Rough campus project idea or requirement",
     )
     department: str = Field(
         default="", max_length=100, description="Optional academic department"

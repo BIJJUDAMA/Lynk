@@ -10,10 +10,11 @@ import inspect
 import json
 import logging
 import time
-from typing import Any, Callable, Optional, Union
-from pydantic import BaseModel, Field
+from collections.abc import Callable
+from typing import Any
 
 from ai.models.embeddings import compute_content_hash
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lynk-ai.run_tracker")
 
@@ -26,14 +27,14 @@ class AIRunRecord(BaseModel):
     entity_id: str
     model_name: str
     model_version: str
-    prompt_version: Optional[str] = None
+    prompt_version: str | None = None
     pipeline_version: str
     input_hash: str
     output_json: dict = Field(default_factory=dict)
-    confidence: Optional[float] = None
+    confidence: float | None = None
     latency_ms: int = 0
     status: str = "success"
-    error: Optional[str] = None
+    error: str | None = None
 
 
 def compute_run_input_hash(input_data: Any) -> str:
@@ -67,9 +68,9 @@ class RunTrackerContext:
         model_version: str,
         pipeline_version: str,
         input_data: Any = "",
-        prompt_version: Optional[str] = None,
-        db_pool: Optional[Any] = None,
-        sink: Optional[Union[list[AIRunRecord], Callable[[AIRunRecord], Any]]] = None,
+        prompt_version: str | None = None,
+        db_pool: Any | None = None,
+        sink: list[AIRunRecord] | Callable[[AIRunRecord], Any] | None = None,
         background: bool = False,
     ) -> None:
         self.feature = feature
@@ -97,7 +98,7 @@ class RunTrackerContext:
             input_hash=input_hash,
         )
         self._start_time: float = 0.0
-        self.persist_task: Optional[asyncio.Task] = None
+        self.persist_task: asyncio.Task | None = None
 
     @property
     def last_run(self) -> AIRunRecord:
@@ -117,11 +118,11 @@ class RunTrackerContext:
         else:
             self.record.output_json = {"value": output}
 
-    def set_confidence(self, confidence: Optional[float]) -> None:
+    def set_confidence(self, confidence: float | None) -> None:
         """Set the confidence score between 0.0 and 1.0."""
         self.record.confidence = confidence
 
-    def set_error(self, error: Optional[str]) -> None:
+    def set_error(self, error: str | None) -> None:
         """Record an error message and set status to failed."""
         self.record.error = error
         if error is not None:
@@ -138,9 +139,9 @@ class RunTrackerContext:
 
     async def __aexit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[Any],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any | None,
     ) -> bool:
         elapsed_sec = time.perf_counter() - self._start_time
         self.record.latency_ms = max(0, int(elapsed_sec * 1000))
@@ -252,9 +253,9 @@ def tracked_ai_run(
     model_name: str,
     model_version: str,
     pipeline_version: str,
-    prompt_version: Optional[str] = None,
-    db_pool: Optional[Any] = None,
-    sink: Optional[Union[list[AIRunRecord], Callable[[AIRunRecord], Any]]] = None,
+    prompt_version: str | None = None,
+    db_pool: Any | None = None,
+    sink: list[AIRunRecord] | Callable[[AIRunRecord], Any] | None = None,
     background: bool = False,
 ) -> Callable[..., Any]:
     """Decorator to track async functions with AI run tracking."""

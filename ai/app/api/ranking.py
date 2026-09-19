@@ -1,14 +1,12 @@
 """Internal API routes for Candidate Application Ranking."""
 
-from typing import Optional
-from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
-
 from ai.pipelines.ranking.ranker import (
     CandidateRankInput,
     CandidateRankResult,
     get_candidate_ranker,
 )
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/internal/v1/ranking", tags=["ranking"])
 
@@ -18,7 +16,9 @@ class RankCandidatesRequest(BaseModel):
 
     job_id: str = Field(..., description="Unique job posting identifier")
     job_title: str = Field(..., description="Job posting title")
-    job_description: str = Field(default="", description="Job posting detailed description")
+    job_description: str = Field(
+        default="", description="Job posting detailed description"
+    )
     job_department: str = Field(default="", description="Academic department or field")
     required_skills: list[str] = Field(
         default_factory=list, description="List of required skills"

@@ -1,14 +1,12 @@
 import hashlib
 import math
-import pytest
 
+import pytest
 from ai.models.embeddings.provider import (
-    BaseEmbeddingProvider,
-    SentenceTransformerEmbeddingProvider,
     MockEmbeddingProvider,
+    clear_provider_cache,
     compute_content_hash,
     get_embedding_provider,
-    clear_provider_cache,
 )
 
 
@@ -153,5 +151,3 @@ def test_clear_provider_cache():
     clear_provider_cache()
     p2 = get_embedding_provider("mock")
     assert p1 is not p2
-
-

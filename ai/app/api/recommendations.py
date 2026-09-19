@@ -1,14 +1,11 @@
 """Internal API routes for Member Recommendations."""
 
-from typing import Optional
-from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
-
 from ai.pipelines.recommendations.engine import (
-    RecommendationEngine,
     RecommendationItem,
     get_recommendation_engine,
 )
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/internal/v1/recommendations", tags=["recommendations"])
 
@@ -20,14 +17,16 @@ class ProfileRecommendationsRequest(BaseModel):
     current_skills: list[str] = Field(
         default_factory=list, description="Currently declared skills"
     )
-    department: Optional[str] = Field(
+    department: str | None = Field(
         default=None, description="Member's academic department or major"
     )
-    bio: Optional[str] = Field(default=None, description="Member's profile bio text")
+    bio: str | None = Field(default=None, description="Member's profile bio text")
     portfolio_links: list[str] = Field(
         default_factory=list, description="External portfolio or repository URLs"
     )
-    limit: int = Field(default=10, ge=1, le=50, description="Max recommendations to return")
+    limit: int = Field(
+        default=10, ge=1, le=50, description="Max recommendations to return"
+    )
 
 
 class ProfileRecommendationsResponse(BaseModel):

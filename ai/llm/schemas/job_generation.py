@@ -6,12 +6,17 @@ from pydantic import BaseModel, Field
 class GeneratedJobDraft(BaseModel):
     """Structured job draft produced by LLM inference."""
 
-    title: str = Field(..., min_length=3, max_length=150, description="Concise role title")
+    title: str = Field(
+        ..., min_length=3, max_length=150, description="Concise role title"
+    )
     description: str = Field(
-        ..., min_length=10, description="Detailed job scope, deliverables, and requirements"
+        ...,
+        min_length=10,
+        description="Detailed job scope, deliverables, and requirements",
     )
     required_skills: list[str] = Field(
-        default_factory=list, description="Canonical or extracted skills needed for the role"
+        default_factory=list,
+        description="Canonical or extracted skills needed for the role",
     )
     department: str = Field(
         default="General", description="Academic or institutional department"

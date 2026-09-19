@@ -1,14 +1,11 @@
 """Internal API routes for AI semantic and hybrid search."""
 
-from typing import Optional
-from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
-
 from ai.pipelines.search.hybrid import (
-    HybridSearchPipeline,
     SearchResultItem,
     get_search_pipeline,
 )
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/internal/v1/search", tags=["search"])
 
@@ -18,7 +15,9 @@ class SearchRequest(BaseModel):
         ..., min_length=1, max_length=500, description="Natural language search query"
     )
     entity_type: str = Field(
-        default="job", max_length=50, description="Entity type to search: 'job' or 'profile'"
+        default="job",
+        max_length=50,
+        description="Entity type to search: 'job' or 'profile'",
     )
     limit: int = Field(default=20, ge=1, le=100, description="Max results to return")
 

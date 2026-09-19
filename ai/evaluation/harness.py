@@ -8,9 +8,9 @@ import asyncio
 import concurrent.futures
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ai.evaluation.metrics import (
     f1_score,
@@ -42,17 +42,17 @@ def _run_async_safely(coro: Any) -> Any:
 class EvaluationHarness:
     """Offline benchmark and evaluation harness for the Lynk AI subsystem."""
 
-    def __init__(self, dataset_path: Optional[str | Path] = None) -> None:
+    def __init__(self, dataset_path: str | Path | None = None) -> None:
         self.dataset_path = Path(dataset_path) if dataset_path else DEFAULT_DATASET_PATH
-        self._dataset: Optional[dict[str, Any]] = None
+        self._dataset: dict[str, Any] | None = None
 
-    def load_dataset(self, path: Optional[str | Path] = None) -> dict[str, Any]:
+    def load_dataset(self, path: str | Path | None = None) -> dict[str, Any]:
         """Load evaluation dataset from JSON file."""
         target_path = Path(path) if path else self.dataset_path
         if not target_path.exists():
             raise FileNotFoundError(f"Evaluation dataset not found at: {target_path}")
 
-        with open(target_path, "r", encoding="utf-8") as f:
+        with open(target_path, encoding="utf-8") as f:
             self._dataset = json.load(f)
         return self._dataset
 
@@ -66,7 +66,7 @@ class EvaluationHarness:
     def evaluate_skill_normalization(
         self,
         normalizer: Any = None,
-        skill_dataset: Optional[list[dict[str, Any]]] = None,
+        skill_dataset: list[dict[str, Any]] | None = None,
     ) -> dict[str, float]:
         """Evaluate skill normalization accuracy, precision, recall, and F1.
 
@@ -79,9 +79,14 @@ class EvaluationHarness:
         """
         if normalizer is None:
             from ai.pipelines.skills.normalizer import get_skill_normalizer
+
             normalizer = get_skill_normalizer()
 
-        dataset = skill_dataset if skill_dataset is not None else self.dataset.get("skills", [])
+        dataset = (
+            skill_dataset
+            if skill_dataset is not None
+            else self.dataset.get("skills", [])
+        )
         if not dataset:
             return {
                 "accuracy": 0.0,
@@ -136,7 +141,7 @@ class EvaluationHarness:
     def evaluate_ranking(
         self,
         ranker: Any = None,
-        ranking_dataset: Optional[list[dict[str, Any]]] = None,
+        ranking_dataset: list[dict[str, Any]] | None = None,
         k: int = 5,
     ) -> dict[str, float]:
         """Evaluate candidate ranking quality using NDCG@K, MRR, and Precision@K.
@@ -151,9 +156,14 @@ class EvaluationHarness:
         """
         if ranker is None:
             from ai.pipelines.ranking.ranker import get_candidate_ranker
+
             ranker = get_candidate_ranker()
 
-        scenarios = ranking_dataset if ranking_dataset is not None else self.dataset.get("ranking", [])
+        scenarios = (
+            ranking_dataset
+            if ranking_dataset is not None
+            else self.dataset.get("ranking", [])
+        )
         if not scenarios:
             return {
                 "ndcg_at_k": 0.0,
@@ -175,6 +185,7 @@ class EvaluationHarness:
 
             # Format candidates
             from ai.pipelines.ranking.ranker import CandidateRankInput
+
             cand_inputs = []
             for c in candidates_raw:
                 cid = c.get("id") or c.get("application_id", "")
@@ -257,7 +268,7 @@ class EvaluationHarness:
         self,
         normalizer: Any = None,
         ranker: Any = None,
-        dataset_path: Optional[str | Path] = None,
+        dataset_path: str | Path | None = None,
     ) -> dict[str, Any]:
         """Execute complete offline evaluation benchmark across all tasks.
 
@@ -275,10 +286,14 @@ class EvaluationHarness:
         skill_metrics = self.evaluate_skill_normalization(normalizer=normalizer)
         ranking_metrics = self.evaluate_ranking(ranker=ranker)
 
-        status = "PASS" if skill_metrics["accuracy"] >= 0.8 and ranking_metrics["ndcg_at_k"] >= 0.7 else "WARN"
+        status = (
+            "PASS"
+            if skill_metrics["accuracy"] >= 0.8 and ranking_metrics["ndcg_at_k"] >= 0.7
+            else "WARN"
+        )
 
         return {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "dataset_path": str(self.dataset_path),
             "skill_normalization": skill_metrics,
             "ranking": ranking_metrics,
@@ -293,6 +308,7 @@ class EvaluationHarness:
 
 if __name__ == "__main__":
     import json
+
     harness = EvaluationHarness()
     report = harness.run_full_evaluation()
     print(json.dumps(report, indent=2))

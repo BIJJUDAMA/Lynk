@@ -1,14 +1,14 @@
 """Unit and integration tests for Asynchronous AI Worker and Job Handlers."""
 
-from datetime import datetime, timedelta, timezone
-from typing import Any
 import uuid
-import pytest
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from ai.workers.worker import AIJob, AIWorker
+import pytest
+from ai.models.embeddings.provider import MockEmbeddingProvider
 from ai.workers.handlers.embedding_handler import EmbeddingJobHandler
 from ai.workers.handlers.resume_handler import ResumeJobHandler
-from ai.models.embeddings.provider import MockEmbeddingProvider
+from ai.workers.worker import AIJob, AIWorker
 
 
 class MockJobStore:
@@ -19,23 +19,28 @@ class MockJobStore:
         self.lease_timeout_seconds = lease_timeout_seconds
 
     async def fetch_next_job(self) -> AIJob | None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for job in self.jobs.values():
             if job.status == "pending":
                 job.status = "processing"
                 job.started_at = now
                 return job
-            if job.status == "processing" and getattr(job, "started_at", None) is not None:
+            if (
+                job.status == "processing"
+                and getattr(job, "started_at", None) is not None
+            ):
                 job_started = job.started_at
                 if job_started.tzinfo is None:
-                    job_started = job_started.replace(tzinfo=timezone.utc)
+                    job_started = job_started.replace(tzinfo=UTC)
                 if (now - job_started).total_seconds() > self.lease_timeout_seconds:
                     job.status = "processing"
                     job.started_at = now
                     return job
         return None
 
-    async def complete_job(self, job_id: str, result: dict[str, Any] | None = None) -> None:
+    async def complete_job(
+        self, job_id: str, result: dict[str, Any] | None = None
+    ) -> None:
         if job_id in self.jobs:
             self.jobs[job_id].status = "completed"
             if self.jobs[job_id].payload is None:
@@ -177,6 +182,7 @@ async def test_resume_handler_extracts_tagged_skills():
 async def test_postgres_job_store_fetch_parses_json_string_and_checks_backoff():
     """PostgresJobStore safely parses string payload and query enforces retry_at backoff."""
     from unittest.mock import AsyncMock, MagicMock
+
     from ai.workers.worker import PostgresJobStore
 
     mock_pool = MagicMock()
@@ -215,6 +221,7 @@ async def test_postgres_job_store_fetch_parses_json_string_and_checks_backoff():
 async def test_postgres_job_store_fail_job_applies_exponential_backoff():
     """PostgresJobStore.fail_job applies power(2, attempts + 1) interval for exponential backoff."""
     from unittest.mock import AsyncMock, MagicMock
+
     from ai.workers.worker import PostgresJobStore
 
     mock_pool = MagicMock()
@@ -241,7 +248,9 @@ async def test_embedding_handler_db_persistence_matches_unique_constraint():
     mock_conn = AsyncMock()
     mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
 
-    handler = EmbeddingJobHandler(embedding_provider=MockEmbeddingProvider(), db_pool=mock_pool)
+    handler = EmbeddingJobHandler(
+        embedding_provider=MockEmbeddingProvider(), db_pool=mock_pool
+    )
     job = AIJob(
         id=str(uuid.uuid4()),
         job_type="generate_embedding",
@@ -256,7 +265,10 @@ async def test_embedding_handler_db_persistence_matches_unique_constraint():
 
     assert mock_conn.execute.called
     query = mock_conn.execute.call_args[0][0]
-    assert "ON CONFLICT (entity_type, entity_id, embedding_type, model_name, model_version)" in query
+    assert (
+        "ON CONFLICT (entity_type, entity_id, embedding_type, model_name, model_version)"
+        in query
+    )
     assert "'semantic'" in query
 
 
@@ -284,14 +296,17 @@ async def test_resume_handler_db_persistence_matches_profile_skills_schema():
 
     assert mock_conn.execute.called
     query = mock_conn.execute.call_args[0][0]
-    assert "INSERT INTO profile_skills (user_id, skill_id, confidence, source, updated_at)" in query
+    assert (
+        "INSERT INTO profile_skills (user_id, skill_id, confidence, source, updated_at)"
+        in query
+    )
     assert "ON CONFLICT (user_id, skill_id) DO UPDATE" in query
 
 
 @pytest.mark.asyncio
 async def test_mock_job_store_reclaims_stale_processing_job_lease():
     """MockJobStore simulates lease expiration for processing tasks older than lease timeout."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     stale_job = AIJob(
         id=str(uuid.uuid4()),
@@ -323,7 +338,9 @@ async def test_mock_job_store_reclaims_stale_processing_job_lease():
         started_at=now - timedelta(minutes=30),
     )
 
-    store = MockJobStore([stale_job, active_job, completed_job], lease_timeout_seconds=600.0)
+    store = MockJobStore(
+        [stale_job, active_job, completed_job], lease_timeout_seconds=600.0
+    )
 
     # First fetch should reclaim the stale processing job
     reclaimed = await store.fetch_next_job()
@@ -331,7 +348,7 @@ async def test_mock_job_store_reclaims_stale_processing_job_lease():
     assert reclaimed.id == stale_job.id
     assert reclaimed.status == "processing"
     assert reclaimed.started_at is not None
-    assert (datetime.now(timezone.utc) - reclaimed.started_at).total_seconds() < 5.0
+    assert (datetime.now(UTC) - reclaimed.started_at).total_seconds() < 5.0
 
     # Second fetch should return None as the active job is within lease and stale job was re-leased
     second = await store.fetch_next_job()
@@ -341,7 +358,7 @@ async def test_mock_job_store_reclaims_stale_processing_job_lease():
 @pytest.mark.asyncio
 async def test_worker_crashed_reclamation_execution_flow():
     """AIWorker picks up an abandoned processing job after crash and successfully completes it."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stale_job = AIJob(
         id=str(uuid.uuid4()),
         job_type="resume_parse_task",
@@ -375,6 +392,7 @@ async def test_worker_crashed_reclamation_execution_flow():
 async def test_postgres_job_store_fetch_query_structure_and_guards():
     """PostgresJobStore.fetch_next_job SQL includes lease reclamation, regex guard, and SKIP LOCKED."""
     from unittest.mock import AsyncMock, MagicMock
+
     from ai.workers.worker import PostgresJobStore
 
     mock_pool = MagicMock()
@@ -408,6 +426,7 @@ async def test_postgres_job_store_fetch_query_structure_and_guards():
 async def test_postgres_job_store_complete_job_coalesce_payload():
     """PostgresJobStore.complete_job safely coalesces payload to avoid NULL payload overwrite."""
     from unittest.mock import AsyncMock, MagicMock
+
     from ai.workers.worker import PostgresJobStore
 
     mock_pool = MagicMock()
@@ -424,4 +443,3 @@ async def test_postgres_job_store_complete_job_coalesce_payload():
     # Validate coalesce payload
     assert "coalesce(payload, '{}'::jsonb) || $2::jsonb" in query
     assert "status = 'completed'" in query
-

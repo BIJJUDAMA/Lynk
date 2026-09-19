@@ -1,16 +1,14 @@
 """Unit and integration tests for hybrid moderation and spam detection."""
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.models.embeddings.provider import MockEmbeddingProvider
 from ai.pipelines.moderation.detector import (
     ModerationCheckInput,
     ModerationDetector,
-    ModerationResult,
 )
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture
@@ -46,13 +44,9 @@ def test_moderation_clean_unique_content(mock_detector: ModerationDetector):
 
 def test_moderation_near_duplicate_description(mock_detector: ModerationDetector):
     """Near duplicate description against recent submissions should flag duplicate_description and risk >= 0.80."""
-    original_text = (
-        "Looking for a frontend developer to create a landing page with Tailwind CSS and Next.js."
-    )
+    original_text = "Looking for a frontend developer to create a landing page with Tailwind CSS and Next.js."
     # Exact or near-identical text submitted recently
-    duplicate_text = (
-        "Looking for a frontend developer to create a landing page with Tailwind CSS and Next.js. "
-    )
+    duplicate_text = "Looking for a frontend developer to create a landing page with Tailwind CSS and Next.js. "
 
     result = mock_detector.check(
         ModerationCheckInput(
@@ -90,9 +84,7 @@ def test_moderation_short_content(mock_detector: ModerationDetector):
 
 def test_moderation_high_velocity(mock_detector: ModerationDetector):
     """Author posting >= 5 times in 1 hour should trigger high_velocity signal."""
-    text = (
-        "Campus project seeking a junior software developer for backend Python API development."
-    )
+    text = "Campus project seeking a junior software developer for backend Python API development."
     result = mock_detector.check(
         ModerationCheckInput(
             entity_type="job",
@@ -125,7 +117,9 @@ def test_moderation_off_platform_payment_patterns(mock_detector: ModerationDetec
         )
     )
 
-    assert any(s in ("off_platform_payment", "suspicious_contact") for s in result.signals)
+    assert any(
+        s in ("off_platform_payment", "suspicious_contact") for s in result.signals
+    )
     assert result.risk_score >= 0.50
     assert result.decision in ("review", "reject")
 

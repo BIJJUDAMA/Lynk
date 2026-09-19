@@ -3,16 +3,18 @@
 import json
 import logging
 import re
-from typing import Optional
 
 import httpx
-from pydantic import TypeAdapter, ValidationError
-
 from ai.app.config import get_settings
 from ai.app.middleware.run_tracker import track_ai_run
-from ai.llm.prompts.job_generation import PROMPT_VERSION, SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+from ai.llm.prompts.job_generation import (
+    PROMPT_VERSION,
+    SYSTEM_PROMPT,
+    USER_PROMPT_TEMPLATE,
+)
 from ai.llm.schemas.job_generation import GeneratedJobDraft
 from ai.pipelines.skills.normalizer import get_skill_normalizer
+from pydantic import TypeAdapter
 
 logger = logging.getLogger("ai.llm")
 
@@ -22,8 +24,8 @@ class VLLMClient:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        model_name: Optional[str] = None,
+        base_url: str | None = None,
+        model_name: str | None = None,
         timeout: float = 15.0,
         db_pool=None,
     ) -> None:
@@ -60,7 +62,9 @@ class VLLMClient:
             tracker.set_confidence(0.9)
             return draft
 
-    async def _call_llm_with_fallback(self, idea: str, department: str) -> GeneratedJobDraft:
+    async def _call_llm_with_fallback(
+        self, idea: str, department: str
+    ) -> GeneratedJobDraft:
         """Attempt vLLM completion with temperature backoff, or fallback on error."""
         endpoint = f"{self.base_url}/chat/completions"
         user_prompt = USER_PROMPT_TEMPLATE.format(idea=idea, department=department)
@@ -85,18 +89,26 @@ class VLLMClient:
                     if resp.status_code == 200:
                         data = resp.json()
                         choices = data.get("choices", [])
-                        if choices and "message" in choices[0] and "content" in choices[0]["message"]:
+                        if (
+                            choices
+                            and "message" in choices[0]
+                            and "content" in choices[0]["message"]
+                        ):
                             content = choices[0]["message"]["content"]
                             parsed = self._extract_json(content)
                             if parsed is not None:
-                                return TypeAdapter(GeneratedJobDraft).validate_python(parsed)
+                                return TypeAdapter(GeneratedJobDraft).validate_python(
+                                    parsed
+                                )
             except Exception as exc:
                 logger.debug("vLLM call attempt failed (temp=%.1f): %s", temp, exc)
 
-        logger.info("vLLM unavailable or invalid output, applying deterministic fallback generation")
+        logger.info(
+            "vLLM unavailable or invalid output, applying deterministic fallback generation"
+        )
         return self._heuristic_fallback(idea, department)
 
-    def _extract_json(self, content: str) -> Optional[dict]:
+    def _extract_json(self, content: str) -> dict | None:
         """Extract and parse JSON from LLM string output, guaranteeing a dictionary."""
         try:
             val = json.loads(content)
@@ -133,7 +145,11 @@ class VLLMClient:
             title = "React Dashboard Developer"
             if "React" not in skills:
                 skills.append("React")
-        elif "machine learning" in idea_lower or "pytorch" in idea_lower or "classifier" in idea_lower:
+        elif (
+            "machine learning" in idea_lower
+            or "pytorch" in idea_lower
+            or "classifier" in idea_lower
+        ):
             title = "Machine Learning Engineer"
             if "Python" not in skills:
                 skills.append("Python")
@@ -151,7 +167,11 @@ class VLLMClient:
         if not skills:
             skills = ["General Development", "Problem Solving"]
 
-        dept = department if department and department.lower() != "general" else "Computer Science"
+        dept = (
+            department
+            if department and department.lower() != "general"
+            else "Computer Science"
+        )
 
         description = (
             f"We are seeking a student contributor to help develop: {idea.strip()}. "
@@ -167,7 +187,7 @@ class VLLMClient:
         )
 
 
-_global_vllm_client: Optional[VLLMClient] = None
+_global_vllm_client: VLLMClient | None = None
 
 
 def get_vllm_client(db_pool=None) -> VLLMClient:
