@@ -68,10 +68,11 @@ func TestMigrationFilesExist(t *testing.T) {
 }
 
 func TestMigration000013_FilesExistAndSyntaxValid(t *testing.T) {
-	upPath := filepath.Join("..", "..", "migrations", "000013_ai_subsystem_constraints.up.sql")
-	downPath := filepath.Join("..", "..", "migrations", "000013_ai_subsystem_constraints.down.sql")
+	upPath := filepath.Clean(filepath.Join("..", "..", "migrations", "000013_ai_subsystem_constraints.up.sql"))
+	downPath := filepath.Clean(filepath.Join("..", "..", "migrations", "000013_ai_subsystem_constraints.down.sql"))
 
-	upBytes, err := os.ReadFile(upPath)
+	// #nosec G304 -- test file path is fixed and internal
+	upBytes, err := os.ReadFile(upPath) //nolint:gosec
 	if err != nil {
 		t.Fatalf("failed to read 000013 up migration: %v", err)
 	}
@@ -80,7 +81,8 @@ func TestMigration000013_FilesExistAndSyntaxValid(t *testing.T) {
 		t.Errorf("000013 up migration file is empty")
 	}
 
-	downBytes, err := os.ReadFile(downPath)
+	// #nosec G304 -- test file path is fixed and internal
+	downBytes, err := os.ReadFile(downPath) //nolint:gosec
 	if err != nil {
 		t.Fatalf("failed to read 000013 down migration: %v", err)
 	}

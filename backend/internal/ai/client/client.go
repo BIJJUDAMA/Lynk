@@ -106,7 +106,8 @@ func (c *Client) backoffDelay(attempt int) time.Duration {
 	if delay > c.retryWaitMax {
 		delay = c.retryWaitMax
 	}
-	jitter := time.Duration(rand.Int64N(int64(delay/4 + 1)))
+	// #nosec G404 -- backoff jitter does not require cryptographically secure random number
+	jitter := time.Duration(rand.Int64N(int64(delay/4 + 1))) //nolint:gosec
 	return delay + jitter
 }
 

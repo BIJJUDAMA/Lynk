@@ -69,7 +69,8 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool, migrationsDir string
 }
 
 func applyMigration(ctx context.Context, pool *pgxpool.Pool, migrationsDir, file string) error {
-	content, err := os.ReadFile(filepath.Join(migrationsDir, file))
+	// #nosec G304 -- migrations path is controlled by internal application configuration
+	content, err := os.ReadFile(filepath.Clean(filepath.Join(migrationsDir, file))) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("read migration file %s: %w", file, err)
 	}
