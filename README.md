@@ -1,22 +1,41 @@
-# Lynk: High-Trust Student Freelance and Campus Gig Marketplace
+<div align="center">
 
-Lynk is a university-centric freelance and campus gig platform designed to connect verified students, faculty, and campus organizations. Built around a Unified Campus Member architecture, Lynk eliminates rigid role silos: every verified member can publish opportunities, apply to existing gigs, upload resumes, and manage contracts and reviews.
+# Lynk
+
+**Campus gig and student freelance platform.**
+
+<p align="center">
+  <a href="https://github.com/BIJJUDAMA/Lynk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/BIJJUDAMA/Lynk/ci.yml?branch=main&label=CI&style=flat-square" alt="CI Status" /></a>
+  <a href="https://github.com/BIJJUDAMA/Lynk/actions/workflows/smoke-test.yml"><img src="https://img.shields.io/github/actions/workflow/status/BIJJUDAMA/Lynk/smoke-test.yml?branch=main&label=E2E%20Smoke%20Test&style=flat-square" alt="E2E Smoke Test" /></a>
+  <a href="https://github.com/BIJJUDAMA/Lynk/actions/workflows/docker-build.yml"><img src="https://img.shields.io/github/actions/workflow/status/BIJJUDAMA/Lynk/docker-build.yml?branch=main&label=Docker%20Build&style=flat-square" alt="Docker Build" /></a>
+  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/Next.js-14+-black?style=flat-square&logo=next.js&logoColor=white" alt="Next.js" />
+  <img src="https://img.shields.io/badge/PostgreSQL-16%20%7C%20pgvector-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/SuperTokens-Core%209.3-FF6B6B?style=flat-square" alt="SuperTokens" />
+  <img src="https://img.shields.io/badge/MinIO-S3-C72C48?style=flat-square&logo=minio&logoColor=white" alt="MinIO" />
+</p>
+
+</div>
 
 ---
 
-## Architectural Invariants
+Lynk is a campus work platform connecting verified university students with projects, deliverable agreements, and peer reviews. Built around a Unified Campus Member model, any verified student can publish opportunities and submit proposals under a single academic identity without role silos or commercial fees.
 
-- Unified Campus Member Model: Single user identity for all participants. Any member can act as both an opportunity organizer and a contributor without role switching or multiple accounts.
-- Strict Institutional (.edu) Verification Gate: Registration requires a valid institutional .edu email address. Sensitive marketplace operations (posting jobs, submitting applications, uploading resumes) require verified email status.
-- Authoritative Go Backend Boundary: The Go backend is the sole authority for authentication, authorization, business rules, transactional domain state machines, and public APIs.
-- Defense-in-Depth AI Subsystem: An internal FastAPI AI backend (`ai-api:8000`) on `lynk-net` handles ML/embedding/LLM pipelines, protected by `X-Internal-AI-Secret`. It is never exposed directly to public browsers.
-- Graceful Degradation: All AI capabilities (search, ranking, draft generation, recommendations, moderation, analytics) gracefully fall back to deterministic SQL/heuristic logic if the AI backend is unreachable.
-- Authoritative Non-Mutation: Generative AI endpoints return draft payloads and never mutate authoritative database rows directly.
-- Self-Hosted IAM (SuperTokens Core): Session tokens, credential authentication, and email verification are managed on-premise using SuperTokens Core backed by PostgreSQL.
-- Dense Semantic Vectors (pgvector): PostgreSQL 16 is equipped with `pgvector` storing 384-dimensional dense vectors (`all-MiniLM-L6-v2`) indexed with HNSW cosine distance.
-- Dedicated Object Storage (MinIO S3): Student resumes are stored exclusively in an S3-compatible MinIO bucket ("resumes"), keeping application database records lightweight.
-- Layered Backend Architecture: The Go backend strictly follows Handler -> Service -> Repository separation using standard library primitives and lightweight routing.
-- Containerization Boundary: The Go API, FastAPI AI Backend, AI Worker, SuperTokens Core, PostgreSQL, and MinIO run in Docker Compose. The Next.js frontend runs directly on the host machine for rapid development and instant Hot Module Replacement.
+---
+
+## Core Invariants
+
+- Unified Campus Member Model: Single identity across the platform. Any member can publish opportunities and submit proposals under one account.
+- Institutional (.edu) Verification Gate: Registration requires a university .edu email. Sensitive operations (posting, applying, uploading resumes) require email verification.
+- Authoritative Go Backend Boundary: Go REST API (:8080) is the sole authority for authentication, authorization, business rules, transactional state machines, and public APIs.
+- Defense-in-Depth AI Subsystem: Containerized FastAPI AI service (ai-api:8000) on an internal network executes ML, vector search, and ranking pipelines, secured with X-Internal-AI-Secret.
+- Graceful Degradation: All AI operations (search, ranking, draft generation, recommendations, moderation, analytics) automatically fall back to deterministic SQL logic if the AI service is unreachable.
+- Authoritative Non-Mutation: AI endpoints return advisory draft payloads and never mutate authoritative database tables directly.
+- Self-Hosted IAM (SuperTokens Core): Session management, credential handling, and email verification run on-premise in Docker on port 3567.
+- Dense Semantic Vectors (pgvector): PostgreSQL 16 stores 384-dimensional dense vectors (all-MiniLM-L6-v2) indexed with HNSW cosine distance.
+- Dedicated Object Storage (MinIO S3): Student resumes are stored exclusively in MinIO S3 (resumes bucket); database stores only object keys and file metadata.
+- Containerization Boundary: Go API, AI API, AI Worker, SuperTokens Core, PostgreSQL, and MinIO run in Docker Compose. The Next.js frontend runs on the host for rapid HMR.
 
 ---
 
@@ -74,10 +93,10 @@ Lynk is a university-centric freelance and campus gig platform designed to conne
 | Layer | Component | Description |
 | :--- | :--- | :--- |
 | Frontend | Next.js 14+ (App Router) | TypeScript, Tailwind CSS, supertokens-web-js (host-executed) |
-| Authoritative Backend | Go 1.25 | Chi router, pgx/v5, SuperTokens SDK, MinIO Go SDK (Dockerised) |
+| Authoritative Backend | Go 1.22+ | Chi router, pgx/v5, SuperTokens SDK, MinIO Go SDK (Dockerised) |
 | AI Backend | Python 3.11 + FastAPI | PyTorch, sentence-transformers, scikit-learn, vLLM client (Dockerised) |
 | Background Worker | Python 3.11 (ai-worker) | Concurrency-safe queue worker (PostgreSQL SKIP LOCKED + backoff) |
-| Database | PostgreSQL 16 + pgvector | Relational & 384-dim vector storage with HNSW indexing |
+| Database | PostgreSQL 16 + pgvector | Relational schema + 384-dim vector storage with HNSW indexing |
 | IAM & Auth | SuperTokens Core 9.3 | Self-hosted session management, EmailPassword, EmailVerification |
 | Object Storage | MinIO | S3-compatible object storage dedicated to student resumes |
 | Orchestration | Docker Compose | Multi-container environment (API, AI API, AI Worker, DB, IAM, MinIO) |
@@ -96,12 +115,12 @@ Lynk/
 |   +-- app/                    # FastAPI entrypoint, config, health probes, routers
 |   |   +-- api/                # Internal routes (search, ranking, skills, jobs, analytics)
 |   |   +-- middleware/         # X-Internal-AI-Secret, correlation tracing, run_tracker
-|   +-- models/embeddings/      # Centralized EmbeddingProvider & content hashing
+|   +-- models/embeddings/      # Singleton EmbeddingProvider & content hashing
 |   +-- pipelines/              # ML pipelines (search, ranking, moderation, reviews, forecasting)
 |   +-- llm/                    # vLLM client abstraction, prompts, schemas
 |   +-- workers/                # SKIP LOCKED queue daemon & background handlers
 |   +-- evaluation/             # Offline IR metrics (NDCG, MRR, F1) & benchmark harness
-|   +-- tests/                  # 100 pytest test cases across all AI subsystems
+|   +-- tests/                  # 115 pytest test cases across all AI subsystems
 +-- backend/                    # Authoritative Go REST API
 |   +-- Dockerfile              # Multi-stage production container build
 |   +-- cmd/api/main.go         # Dependency injection, router setup, server entrypoint
@@ -116,7 +135,7 @@ Lynk/
 |   |   +-- storage/            # MinIO S3 client wrapper
 |   |   +-- database/           # Connection pooling (pgxpool) and raw SQL migrator
 |   |   +-- middleware/         # SuperTokens session auth, CORS, logging, recovery
-|   +-- migrations/             # Incremental SQL migration files (000001 - 000012)
+|   +-- migrations/             # Incremental SQL migration files (000001 - 000013)
 +-- frontend/                   # Next.js App Router frontend (runs on host)
 |   +-- src/
 |   |   +-- app/                # App Router pages ((auth), jobs, profile, activity)
@@ -139,8 +158,6 @@ Lynk/
 - Node.js (v18+) and npm
 
 ### 1. Environment Configuration
-
-Copy the example environment configuration:
 
 ```bash
 cp .env.example .env
@@ -184,7 +201,7 @@ Open http://localhost:3000 in your browser.
 
 ## API Endpoints Overview
 
-All public REST API endpoints are prefixed with `/api/v1`.
+All public REST API endpoints are served by the authoritative Go API on port 8080 and prefixed with `/api/v1`.
 
 | Domain | Method | Path | Auth Required | Description |
 | :--- | :--- | :--- | :---: | :--- |
@@ -217,7 +234,7 @@ All public REST API endpoints are prefixed with `/api/v1`.
 
 ---
 
-## Running Tests and Verification
+## Verification & Testing
 
 ### Backend Verification
 
@@ -225,13 +242,13 @@ Run the complete Go test suite with race detector and code vet:
 
 ```bash
 cd backend
-go test -v -race ./...
+go test -count=1 ./...
 go vet ./...
 ```
 
 ### Python AI Subsystem Verification
 
-Run all 100 unit, pipeline, worker, and evaluation tests:
+Run all 115 unit, pipeline, worker, and evaluation tests:
 
 ```bash
 python -m pytest ai/tests/ -v
@@ -242,7 +259,7 @@ python -m pytest ai/tests/ -v
 Execute offline IR metrics (NDCG@K, MRR, Precision@K, F1):
 
 ```bash
-python -c "from ai.evaluation.harness import EvaluationHarness; h = EvaluationHarness(); print(h.run_full_evaluation())"
+python -m ai.evaluation.harness
 ```
 
 ### Frontend Verification
@@ -273,15 +290,15 @@ bash scripts/smoke-test.sh
 
 ---
 
-## Security and Operational Invariants
+## Security & Operational Invariants
 
 1. Strict .edu Validation: Registrations with non-.edu email domains are rejected immediately with HTTP 400.
 2. Email Verification Gate: Posting opportunities, applying to jobs, uploading resumes, and generating AI drafts require confirmed institutional email ownership. Unverified attempts return HTTP 403 (EMAIL_NOT_VERIFIED).
 3. Authoritative Go Boundary: The Go backend is the sole authority for authentication, authorization, domain validation, and transactional state. FastAPI is strictly an internal compute engine.
 4. Defense-in-Depth AI Secret: The FastAPI AI backend requires `X-Internal-AI-Secret` on all internal routes. It is never exposed directly to public web traffic.
 5. Authoritative Non-Mutation: Generative AI endpoints return draft payloads and never mutate authoritative database rows directly.
-6. Graceful Degradation Everywhere: If the AI backend or GPU crashes or times out, all Go endpoints seamlessly fall back to deterministic SQL logic with HTTP 200.
-7. Contract State Machine: Contracts strictly follow Draft -> Active -> Completed or Cancelled transitions. Reviews can only be submitted for completed contracts.
-8. Resumes in MinIO: Resumes are never stored on local disk or inside PostgreSQL. All resume transfers stream directly through MinIO with short-lived presigned URLs for client downloads.
-9. Concurrency & Fairness: Candidate ranking excludes protected demographic attributes (gender, race, age, graduation year, ethnicity) for algorithmic fairness.
-
+6. Graceful Degradation Everywhere: If the AI backend or GPU is unreachable, all Go endpoints seamlessly fall back to deterministic SQL logic with HTTP 200.
+7. Circuit Breaker Protection: The Go AI orchestrator trips after 5 consecutive failures for 30s, fast-bypassing to heuristics without blocking requests.
+8. Contract State Machine: Contracts strictly follow Draft -> Active -> Completed or Cancelled transitions. Reviews can only be submitted for completed contracts.
+9. Resumes in MinIO: Resumes are never stored on local disk or inside PostgreSQL. All resume transfers stream directly through MinIO with short-lived presigned URLs for client downloads.
+10. Concurrency & Fairness: Candidate ranking excludes protected demographic attributes (gender, race, age, graduation year, ethnicity) for algorithmic fairness.

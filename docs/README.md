@@ -1,17 +1,25 @@
-# Lynk Documentation Suite & Architecture Hub
+<div align="center">
 
-> **Authoritative Technical Documentation Hub**  
-> **Platform:** Lynk - High-Trust Campus Opportunity Discovery & Student Networking Platform  
-> **Repository:** Monorepo (`frontend/`, `backend/`, `docs/`, `docker-compose.yml`)  
-> **Status:** MVP Implementation Baseline (Production-Ready Architecture)  
-> **Identity & Access Management (IAM):** Self-Hosted SuperTokens Core 9.3 (`:3567`)  
-> **Object Storage:** MinIO S3 (`:9000` API / `:9001` Web Console) - Dedicated exclusively to resumes
+# Lynk Technical Documentation Hub
+
+**Architecture, specifications, and runbooks for the Lynk campus work platform.**
+
+<p align="center">
+  <a href="https://github.com/BIJJUDAMA/Lynk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/BIJJUDAMA/Lynk/ci.yml?branch=main&label=CI&style=flat-square" alt="CI Status" /></a>
+  <a href="https://github.com/BIJJUDAMA/Lynk/actions/workflows/smoke-test.yml"><img src="https://img.shields.io/github/actions/workflow/status/BIJJUDAMA/Lynk/smoke-test.yml?branch=main&label=E2E%20Smoke%20Test&style=flat-square" alt="E2E Smoke Test" /></a>
+  <a href="https://github.com/BIJJUDAMA/Lynk/actions/workflows/docker-build.yml"><img src="https://img.shields.io/github/actions/workflow/status/BIJJUDAMA/Lynk/docker-build.yml?branch=main&label=Docker%20Build&style=flat-square" alt="Docker Build" /></a>
+  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/PostgreSQL-16%20%7C%20pgvector-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+</p>
+
+</div>
 
 ---
 
 ## 1. Executive Summary & Core Thesis
 
-**Lynk** is an institutional campus opportunity discovery and student networking platform engineered to connect verified university students, student founders, faculty, campus laboratories, and student organizations. Operating as a pure discovery-first network with zero payment handling (similar to a specialized LinkedIn or Facebook directory for university campuses), Lynk facilitates peer collaboration, deliverable agreements, and verified reputation building.
+**Lynk** is an institutional campus work platform connecting verified university students with projects, deliverable agreements, and peer reviews. Operating as a discovery-first network without payment handling, Lynk facilitates peer collaboration, deliverable agreements, and verified reputation building.
 
 Traditional platforms fail campus ecosystems because they:
 1. Impose financial payment processing overhead and commercial transaction friction on academic and peer collaborations.
@@ -54,7 +62,7 @@ Lynk completely replaces the fragmented dual-account paradigm with the **Unified
 | **AI Backend (Internal)** | Python 3.11, FastAPI, PyTorch, sentence-transformers, scikit-learn | **Dockerised (`ai-api`) at `http://ai-api:8000`**. Protected via `X-Internal-AI-Secret`. |
 | **AI Worker Daemon** | Python 3.11 (`ai-worker`) | Background worker consuming `ai_jobs` using PostgreSQL `FOR UPDATE SKIP LOCKED`. |
 | **Database** | PostgreSQL 16 (`pgvector/pgvector:pg16` on port `5432`) | Two logical databases: `lynk_db` (relational schema + `vector(384)`) and `supertokens_db`. |
-| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000012`) | Forward and rollback migrations. Migration 000012 installs `pgvector` and 12 AI tables. |
+| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000013`) | Forward and rollback migrations. Migration 000013 installs domain check constraints. |
 | **Identity & Access (IAM)** | Self-hosted SuperTokens Core 9.3 (`lynk-supertokens` on port `3567`) | Recipes: `EmailPassword`, `Session`, `EmailVerification`. Direct HTTP integration with Go API. |
 | **Object Storage** | MinIO S3 (`lynk-minio` on port `9000` API, `9001` Web Console) | Dedicated exclusively to the `resumes` bucket. Stores PDF/DOCX resumes with pre-signed retrieval URLs. |
 | **Local Network** | Docker Compose bridge network (`lynk-net`) | Internal container DNS: `postgres:5432`, `supertokens:3567`, `minio:9000`, `api:8080`, `ai-api:8000`. |
@@ -133,7 +141,7 @@ The documentation suite is structured into dedicated modular domains under [`arc
 | :--- | :--- | :--- | :--- |
 | **Platform Features & Capabilities Specification** | [`features.md`](features.md) | Exhaustive breakdown of all platform features, capabilities, Unified Campus Member model, zero-payment peer discovery, role access control matrix, and user journey workflows. | Product Managers, All Engineers, Stakeholders |
 | **System Architecture & Monorepo Topology** | [`architecture/system-architecture.md`](architecture/system-architecture.md) | High-level system topology, container boundaries, layered Go architecture, dynamic socket timeouts, evolutionary roadmap (Phases 1-4). | All Engineers, Architects, Technical Leads |
-| **Database Schema, Relational Constraints & ERD** | [`architecture/database-schema-erd.md`](architecture/database-schema-erd.md) | Mermaid ERD, table-by-table column specs, foreign keys (`ON DELETE RESTRICT`), indexes, state machines, lock ordering discipline, migration registry (000001-000011). | Backend Engineers, Database Admins, System Architects |
+| **Database Schema, Relational Constraints & ERD** | [`architecture/database-schema-erd.md`](architecture/database-schema-erd.md) | Mermaid ERD, table-by-table column specs, foreign keys (`ON DELETE RESTRICT`), indexes, state machines, lock ordering discipline, migration registry (000001-000013). | Backend Engineers, Database Admins, System Architects |
 | **Complete REST API Specifications** | [`architecture/api-specifications.md`](architecture/api-specifications.md) | Exhaustive documentation of all 24 HTTP endpoints across 6 domains: Auth, Profile, Jobs, Applications, Contracts, Reviews. Status codes, request/response JSON schemas, and error shapes. | Frontend Engineers, Backend Engineers, Integrators |
 | **OpenAPI 3.1.0 Contract** | [`architecture/openapi.yaml`](architecture/openapi.yaml) | Machine-readable OpenAPI 3.1.0 specification defining components, schemas, parameters, security schemes (`sessionCookie`, `bearerAuth`), and response envelopes. | API Tooling, Frontend Codegen, QA Engineers |
 | **Security, Threat Model & IAM Architecture** | [`architecture/security-and-iam.md`](architecture/security-and-iam.md) | Self-hosted SuperTokens Core configuration, institutional `.edu` email gate, CORS/CSRF defenses, 1MB body limit DoS prevention, dynamic socket timeouts (F-05), password hashing, and threat mitigation. | Security Auditors, DevOps, Backend Engineers |
@@ -334,11 +342,11 @@ curl -i http://localhost:8000/ready
 cd backend
 go test -v -race ./...
 
-# Python AI subsystem test suite (100 unit, pipeline, worker, and evaluation tests)
+# Python AI subsystem test suite (115 unit, pipeline, worker, and evaluation tests)
 python -m pytest ai/tests/ -v
 
 # Offline IR evaluation suite (NDCG@K, MRR, Precision@K, F1)
-python -c "from ai.evaluation.harness import EvaluationHarness; h = EvaluationHarness(); print(h.run_full_evaluation())"
+python -m ai.evaluation.harness
 
 # Frontend typecheck, linting & test suite
 cd frontend
