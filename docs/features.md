@@ -8,7 +8,7 @@
 
 ## 1. Executive Platform Overview
 
-**Lynk** is an institutional campus opportunity discovery and student networking platform engineered to connect verified university students, student founders, faculty, campus laboratories, and student organizations. Operating as a pure discovery-first network with zero payment handling (similar to a specialized LinkedIn or Facebook directory for university campuses), Lynk facilitates peer collaboration, deliverable agreements, and verified reputation building.
+**Lynk** is an institutional campus work platform connecting verified university students with projects, deliverable agreements, and peer reviews. Operating as a discovery-first network without payment handling, Lynk facilitates peer collaboration, deliverable agreements, and verified reputation building.
 
 ### The Problem Lynk Solves
 1. **Commercial Marketplace Friction:** Traditional freelance platforms impose financial processing, escrow fees, and commercial transactional overhead on students seeking academic, research, or peer-to-peer projects.
