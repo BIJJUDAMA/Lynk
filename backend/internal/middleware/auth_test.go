@@ -468,9 +468,9 @@ func initSuperTokensForMiddlewareTest(
 
 func newMockSessionContainer(userID string, payload map[string]interface{}) sessmodels.SessionContainer {
 	return &sessmodels.TypeSessionContainer{
-		GetUserID: func() string { return userID },
-		GetUserIDWithContext: func(userContext supertokens.UserContext) string { return userID },
-		GetTenantId: func() string { return "public" },
+		GetUserID:              func() string { return userID },
+		GetUserIDWithContext:   func(userContext supertokens.UserContext) string { return userID },
+		GetTenantId:            func() string { return "public" },
 		GetTenantIdWithContext: func(userContext supertokens.UserContext) string { return "public" },
 		GetAccessTokenPayload: func() map[string]interface{} {
 			return payload
@@ -780,9 +780,9 @@ func TestSessionMiddleware_StaleUnverifiedToken_SynchronizesWhenFreshlyVerified(
 	var mergedUpdate map[string]interface{}
 
 	container := &sessmodels.TypeSessionContainer{
-		GetUserID: func() string { return "user_stale_verified" },
-		GetUserIDWithContext: func(userContext supertokens.UserContext) string { return "user_stale_verified" },
-		GetTenantId: func() string { return "public" },
+		GetUserID:              func() string { return "user_stale_verified" },
+		GetUserIDWithContext:   func(userContext supertokens.UserContext) string { return "user_stale_verified" },
+		GetTenantId:            func() string { return "public" },
 		GetTenantIdWithContext: func(userContext supertokens.UserContext) string { return "public" },
 		GetAccessTokenPayload: func() map[string]interface{} {
 			return payload
@@ -873,9 +873,9 @@ func TestSessionMiddleware_StaleUnverifiedToken_RemainsUnverifiedWhenNotFreshlyV
 	mergeCalled := false
 
 	container := &sessmodels.TypeSessionContainer{
-		GetUserID: func() string { return "user_stale_unverified" },
-		GetUserIDWithContext: func(userContext supertokens.UserContext) string { return "user_stale_unverified" },
-		GetTenantId: func() string { return "public" },
+		GetUserID:              func() string { return "user_stale_unverified" },
+		GetUserIDWithContext:   func(userContext supertokens.UserContext) string { return "user_stale_unverified" },
+		GetTenantId:            func() string { return "public" },
 		GetTenantIdWithContext: func(userContext supertokens.UserContext) string { return "public" },
 		GetAccessTokenPayload: func() map[string]interface{} {
 			return payload
@@ -946,5 +946,3 @@ func TestSessionMiddleware_StaleUnverifiedToken_RemainsUnverifiedWhenNotFreshlyV
 		t.Fatal("expected MergeIntoAccessTokenPayload NOT to be called when user is still unverified")
 	}
 }
-
-

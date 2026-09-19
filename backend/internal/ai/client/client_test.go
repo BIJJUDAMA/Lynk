@@ -226,9 +226,9 @@ func TestClient_ContextTimeout(t *testing.T) {
 	defer server.Close()
 
 	c := client.NewClient(client.Config{
-		BaseURL:        server.URL,
-		RetryWaitMin:   1 * time.Millisecond,
-		RetryWaitMax:   5 * time.Millisecond,
+		BaseURL:      server.URL,
+		RetryWaitMin: 1 * time.Millisecond,
+		RetryWaitMax: 5 * time.Millisecond,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
@@ -384,4 +384,3 @@ func TestClient_ResponseBodyBounded(t *testing.T) {
 		t.Fatalf("expected response body read to be capped at %d bytes (10MB), got %d bytes", expectedMaxBytes, len(bodyRead))
 	}
 }
-

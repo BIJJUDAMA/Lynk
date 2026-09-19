@@ -11,8 +11,8 @@ type contextKey string
 const userContextKey = contextKey("lynk_user_claims")
 
 var (
-	ErrUnauthorized       = errors.New("unauthorized: missing or invalid session")
-	ErrEmailNotVerified   = errors.New("email not verified: campus verification pending")
+	ErrUnauthorized     = errors.New("unauthorized: missing or invalid session")
+	ErrEmailNotVerified = errors.New("email not verified: campus verification pending")
 )
 
 // CampusVerificationPendingMsg is the canonical user-facing copy for EMAIL_NOT_VERIFIED responses.

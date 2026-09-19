@@ -298,4 +298,3 @@ func TestSessionInit_InjectsEmailVerifiedAndRolesIntoAccessTokenPayload(t *testi
 		t.Fatal("expected at least one role in access token payload")
 	}
 }
-

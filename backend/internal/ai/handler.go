@@ -24,7 +24,6 @@ import (
 	"github.com/lynk/backend/internal/user"
 )
 
-
 // ApplicationRepository defines the subset of application repository operations needed by AIHandler.
 type ApplicationRepository interface {
 	ListApplicationsByJob(ctx context.Context, jobID uuid.UUID, limit, offset int) ([]*application.ApplicationWithDetails, error)
@@ -93,7 +92,6 @@ func (h *AIHandler) WithReviewRepo(reviewRepo ReviewRepository) *AIHandler {
 	h.reviewRepo = reviewRepo
 	return h
 }
-
 
 // RegisterRoutes mounts public and protected search endpoints onto the provided chi router.
 func (h *AIHandler) RegisterRoutes(r chi.Router, authMiddleware func(http.Handler) http.Handler) {
@@ -840,7 +838,6 @@ func (h *AIHandler) GetUserAIInsights(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-
 	// 2. Fetch completed reviews
 	var reviews []*review.Review
 	if h.reviewRepo != nil {
@@ -901,14 +898,13 @@ func (h *AIHandler) GetUserAIInsights(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteSuccess(w, http.StatusOK, *aiResp)
 }
 
-
 // fallbackReviewInsights computes heuristic collaboration aspect ratings from review comments and scores.
 func fallbackReviewInsights(userID string, reviews []*review.Review) *models.AnalyzeReviewsResponse {
 	aspectKeywords := map[string][]string{
 		"technical_ability": {"code", "programming", "technical", "architecture", "bug", "implementation", "feature"},
-		"timeliness":         {"time", "turnaround", "speed", "fast", "deadline", "quick", "early", "schedule"},
-		"communication":      {"communication", "responsive", "clear", "communicative", "update", "explained"},
-		"reliability":        {"reliable", "trustworthy", "dependable", "consistent", "responsible"},
+		"timeliness":        {"time", "turnaround", "speed", "fast", "deadline", "quick", "early", "schedule"},
+		"communication":     {"communication", "responsive", "clear", "communicative", "update", "explained"},
+		"reliability":       {"reliable", "trustworthy", "dependable", "consistent", "responsible"},
 	}
 
 	sampleCount := len(reviews)
@@ -1179,7 +1175,3 @@ func (h *AIHandler) fallbackJobDraft(req models.GenerateJobDraftRequest) *models
 		PipelineVersion: "generation-v1",
 	}
 }
-
-
-
-

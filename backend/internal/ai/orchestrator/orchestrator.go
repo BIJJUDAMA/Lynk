@@ -466,6 +466,3 @@ func (o *Orchestrator) GenerateJobDraft(ctx context.Context, req models.Generate
 
 	return resp, nil
 }
-
-
-

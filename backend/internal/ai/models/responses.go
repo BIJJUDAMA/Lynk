@@ -148,7 +148,3 @@ type SkillDemandAnalyticsResponse struct {
 	ModelVersion    string                `json:"model_version,omitempty"`
 	PipelineVersion string                `json:"pipeline_version,omitempty"`
 }
-
-
-
-

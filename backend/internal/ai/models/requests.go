@@ -94,6 +94,3 @@ type SkillDemandAnalyticsRequest struct {
 	Period     string                `json:"period"`
 	SkillsData []SkillHistoricalData `json:"skills_data"`
 }
-
-
-

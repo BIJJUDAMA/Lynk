@@ -308,4 +308,3 @@ func TestRecommendations_RouterMount(t *testing.T) {
 		t.Fatalf("expected 200 OK, got %d", rec.Code)
 	}
 }
-

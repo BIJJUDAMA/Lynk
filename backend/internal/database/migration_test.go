@@ -653,6 +653,3 @@ func TestMigration000013_DownSQL_Structure(t *testing.T) {
 		}
 	}
 }
-
-
-

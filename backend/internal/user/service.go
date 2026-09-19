@@ -510,5 +510,3 @@ func (s *Service) GetResumeDownloadURL(ctx context.Context, claims *auth.UserCla
 	}
 	return result.DownloadURL, nil
 }
-
-

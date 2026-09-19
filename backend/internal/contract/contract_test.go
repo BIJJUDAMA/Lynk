@@ -476,7 +476,7 @@ func TestContract_StateTransitions(t *testing.T) {
 		now := time.Now().UTC()
 		repo.contracts[cID] = &ContractWithDetails{
 			Contract: Contract{
-				ID:                cID,
+				ID:            cID,
 				JobID:         jobID,
 				ApplicationID: uuid.New(),
 				ClientID:      clientID,
@@ -883,14 +883,14 @@ func TestContract_CancelContractReopensJob(t *testing.T) {
 		now := time.Now().UTC()
 		repo.contracts[contractID] = &ContractWithDetails{
 			Contract: Contract{
-				ID:                contractID,
-				JobID:             jobID,
-				ApplicationID:     uuid.New(),
+				ID:            contractID,
+				JobID:         jobID,
+				ApplicationID: uuid.New(),
 				ClientID:      clientID,
 				FreelancerID:  freelancerID,
 				Status:        StatusDraft,
-				CreatedAt:         now,
-				UpdatedAt:         now,
+				CreatedAt:     now,
+				UpdatedAt:     now,
 			},
 			Job: &JobSummary{ID: jobID, CreatedBy: clientID, Status: "in_progress"},
 		}

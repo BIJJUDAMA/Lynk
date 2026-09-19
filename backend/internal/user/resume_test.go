@@ -1100,6 +1100,3 @@ func TestService_UploadResume_DBFailure_CompensatingDeleteOutsideLock(t *testing
 		t.Error("compensating S3 delete was executed while holding database advisory lock")
 	}
 }
-
-
-

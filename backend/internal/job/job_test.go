@@ -731,7 +731,3 @@ func TestService_JobDescriptionAndSkillBounds(t *testing.T) {
 		}
 	}
 }
-
-
-
-

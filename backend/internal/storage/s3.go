@@ -163,4 +163,3 @@ func (s *S3Client) EnsureBucket(ctx context.Context) error {
 	}
 	return nil
 }
-

@@ -231,4 +231,3 @@ func TestJobGeneration_NeverMutatesDatabase(t *testing.T) {
 		t.Fatalf("expected 0 jobs in repository, found %d", len(jobRepo.jobs))
 	}
 }
-

@@ -30,4 +30,3 @@ func TestCalendarDayUTC(t *testing.T) {
 		t.Fatalf("expected %v, got %v", expected, cal)
 	}
 }
-

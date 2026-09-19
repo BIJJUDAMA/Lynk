@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lynk/backend/internal/auth"
-	"github.com/lynk/backend/internal/httpx"
 	"github.com/lynk/backend/internal/httputil"
+	"github.com/lynk/backend/internal/httpx"
 	"github.com/lynk/backend/internal/middleware"
 	"github.com/lynk/backend/internal/storage"
 )

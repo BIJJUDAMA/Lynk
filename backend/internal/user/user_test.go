@@ -602,4 +602,3 @@ func TestRepository_GetProfileByID_SARGableQueryBranching(t *testing.T) {
 func ptr[T any](v T) *T {
 	return &v
 }
-

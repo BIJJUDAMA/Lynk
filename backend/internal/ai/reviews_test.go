@@ -110,7 +110,6 @@ func TestGetUserAIInsights_Success(t *testing.T) {
 		Department: "Computer Science",
 	}
 
-
 	reviewRepo := newMockReviewRepo()
 	reviewRepo.userReviews["usr-student-1"] = &review.UserReviewSummary{
 		UserID:        "usr-student-1",
@@ -196,7 +195,6 @@ func TestGetUserAIInsights_FallbackWhenAIError(t *testing.T) {
 	userRepo.profiles["usr-student-2"] = &user.Profile{
 		UserID: "usr-student-2",
 	}
-
 
 	reviewRepo := newMockReviewRepo()
 	reviewRepo.userReviews["usr-student-2"] = &review.UserReviewSummary{

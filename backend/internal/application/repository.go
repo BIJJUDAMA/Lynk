@@ -102,15 +102,15 @@ func (r *Repository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*App
 		WHERE a.id = $1;
 	`
 	var (
-		details              ApplicationWithDetails
-		job                  JobSummary
-		applicant            ApplicantSummary
-		contractID           *uuid.UUID
-		contractStatus       *string
-		contractStartedAt    *time.Time
-		contractCompletedAt  *time.Time
-		contractCreatedAt    *time.Time
-		contractUpdatedAt    *time.Time
+		details             ApplicationWithDetails
+		job                 JobSummary
+		applicant           ApplicantSummary
+		contractID          *uuid.UUID
+		contractStatus      *string
+		contractStartedAt   *time.Time
+		contractCompletedAt *time.Time
+		contractCreatedAt   *time.Time
+		contractUpdatedAt   *time.Time
 	)
 
 	err := r.db.QueryRow(ctx, query, id).Scan(
@@ -185,15 +185,15 @@ func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID,
 	applications := make([]*ApplicationWithDetails, 0)
 	for rows.Next() {
 		var (
-			details              ApplicationWithDetails
-			job                  JobSummary
-			applicant            ApplicantSummary
-			contractID           *uuid.UUID
-			contractStatus       *string
-			contractStartedAt    *time.Time
-			contractCompletedAt  *time.Time
-			contractCreatedAt    *time.Time
-			contractUpdatedAt    *time.Time
+			details             ApplicationWithDetails
+			job                 JobSummary
+			applicant           ApplicantSummary
+			contractID          *uuid.UUID
+			contractStatus      *string
+			contractStartedAt   *time.Time
+			contractCompletedAt *time.Time
+			contractCreatedAt   *time.Time
+			contractUpdatedAt   *time.Time
 		)
 
 		err := rows.Scan(
@@ -272,15 +272,15 @@ func (r *Repository) ListApplicationsByApplicant(ctx context.Context, applicantI
 	applications := make([]*ApplicationWithDetails, 0)
 	for rows.Next() {
 		var (
-			details              ApplicationWithDetails
-			job                  JobSummary
-			applicant            ApplicantSummary
-			contractID           *uuid.UUID
-			contractStatus       *string
-			contractStartedAt    *time.Time
-			contractCompletedAt  *time.Time
-			contractCreatedAt    *time.Time
-			contractUpdatedAt    *time.Time
+			details             ApplicationWithDetails
+			job                 JobSummary
+			applicant           ApplicantSummary
+			contractID          *uuid.UUID
+			contractStatus      *string
+			contractStartedAt   *time.Time
+			contractCompletedAt *time.Time
+			contractCreatedAt   *time.Time
+			contractUpdatedAt   *time.Time
 		)
 
 		err := rows.Scan(

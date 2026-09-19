@@ -34,7 +34,7 @@ func (stubStore) GetPresignedDownloadURL(context.Context, string, time.Duration)
 func (stubStore) DeleteResume(context.Context, string) error { return nil }
 
 var _ storage.Client = stubStore{}
- 
+
 type readOnlyStoreStub struct {
 	checkErr error
 }
@@ -85,7 +85,6 @@ func TestStorageReady(t *testing.T) {
 	})
 }
 
-
 // mockValidator implements middleware.TokenValidator for routing tests.
 type mockValidator struct {
 	validToken string
@@ -106,8 +105,8 @@ func (m *mockJobRepo) CreateJob(ctx context.Context, j *job.Job) error { return 
 func (m *mockJobRepo) GetJobByID(ctx context.Context, id uuid.UUID) (*job.Job, error) {
 	return &job.Job{ID: id, Title: "Test Job", Status: job.StatusOpen}, nil
 }
-func (m *mockJobRepo) UpdateJob(ctx context.Context, j *job.Job) error        { return nil }
-func (m *mockJobRepo) DeleteJob(ctx context.Context, id uuid.UUID) error     { return nil }
+func (m *mockJobRepo) UpdateJob(ctx context.Context, j *job.Job) error   { return nil }
+func (m *mockJobRepo) DeleteJob(ctx context.Context, id uuid.UUID) error { return nil }
 func (m *mockJobRepo) ListJobs(ctx context.Context, filter job.JobFilter) ([]*job.Job, error) {
 	return []*job.Job{{ID: uuid.New(), Title: "Software Engineer"}}, nil
 }

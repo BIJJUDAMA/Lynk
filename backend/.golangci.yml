@@ -1,0 +1,25 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+    - misspell
+    - unconvert
+
+linters-settings:
+  gosec:
+    excludes:
+      - G104
+      - G115
+
+issues:
+  exclude-dirs:
+    - migrations
