@@ -1,22 +1,22 @@
 "use client";
 
-import { useState, useEffect, Suspense, useMemo, useCallback } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useState, useEffect, Suspense, useMemo, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Briefcase, Sparkles, AlertCircle, RotateCcw, ShieldCheck, PlusCircle } from "lucide-react";
+import { Briefcase, AlertCircle, RotateCcw, ShieldCheck, PlusCircle } from "lucide-react";
 import { Job, JobStatus } from "@/types/api";
 import { listJobs } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { JobCard } from "@/components/jobs/JobCard";
-import { animateStaggerList } from "@/lib/animations";
-import { useRef } from "react";
 import { JobFilterBar, JobFilterValues } from "@/components/jobs/JobFilterBar";
+import { formatJobBudget } from "@/lib/formatters";
+import { animateStaggerList } from "@/lib/animations";
+import { Badge } from "@/components/ui/badge";
 
 function JobSearchContent() {
   const searchParams = useSearchParams();
-  const router = useRouter();
-  const { isAuthenticated, role, isVerified } = useAuth();
+  const { isAuthenticated } = useAuth();
   const gridRef = useRef<HTMLDivElement | null>(null);
 
   // Read initial filter values from URL query string if provided
@@ -29,6 +29,7 @@ function JobSearchContent() {
     department: initialDept,
     skill: initialSkill,
     status: "open",
+    budgetSort: "",
   });
 
   // Query jobs from API with the current filters
@@ -49,9 +50,9 @@ function JobSearchContent() {
           },
           client
         ),
-      [filters]
+      [filters.search, filters.department, filters.skill, filters.status]
     ),
-    [filters]
+    [filters.search, filters.department, filters.skill, filters.status]
   );
 
   useEffect(() => {
@@ -70,27 +71,41 @@ function JobSearchContent() {
       department: "",
       skill: "",
       status: "open",
+      budgetSort: "",
     });
   };
 
-  const jobList = jobs ?? [];
+  // Sort jobs by budget rate if requested
+  const jobList = useMemo(() => {
+    let list = jobs ?? [];
+    if (filters.budgetSort) {
+      list = [...list].sort((a, b) => {
+        const getRate = (j: Job) => {
+          const bStr = formatJobBudget(j);
+          const match = bStr.match(/\$(\d+)/);
+          return match ? parseInt(match[1], 10) : 0;
+        };
+        const rateA = getRate(a);
+        const rateB = getRate(b);
+        return filters.budgetSort === "high" ? rateB - rateA : rateA - rateB;
+      });
+    }
+    return list;
+  }, [jobs, filters.budgetSort]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Header Section */}
+      {/* Editorial Header */}
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50/70 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">
-            <Sparkles className="h-3.5 w-3.5" />
-            <span>Verified Campus Opportunities</span>
-          </div>
-
-          <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-            Explore Campus Jobs & Gigs
+          <Badge variant="outline" className="font-mono text-xs mb-3">
+            Campus Marketplace
+          </Badge>
+          <h1 className="font-serif text-4xl sm:text-5xl font-normal tracking-tight text-foreground">
+            Campus Opportunities
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-400">
-            Find freelance projects, campus jobs, and research opportunities posted by verified
-            university employers and departments.
+          <p className="mt-2 max-w-2xl text-sm sm:text-base text-muted-foreground">
+            Browse peer freelance projects, campus research gigs, and contract deliverables.
           </p>
         </div>
 
@@ -98,34 +113,35 @@ function JobSearchContent() {
         {isAuthenticated && (
           <Link
             href="/jobs/create"
-            className="inline-flex items-center gap-2 self-start rounded-[10px] bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500"
+            className="inline-flex items-center gap-2 self-start rounded-lg bg-foreground px-4 py-2.5 text-xs font-mono font-medium text-background transition hover:bg-foreground/90"
           >
             <PlusCircle className="h-4 w-4" />
-            Post a New Job
+            Post a Gig
           </Link>
         )}
       </div>
 
       {/* Institutional Verification Notice */}
-      <div className="mt-6 flex items-center justify-between rounded-[10px] border border-emerald-100 bg-emerald-50/50 p-3.5 text-xs text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-200">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+      <div className="mt-6 flex items-center justify-between rounded-xl border border-border bg-card p-4 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2.5">
+          <ShieldCheck className="h-4 w-4 shrink-0 text-foreground" />
           <span>
-            <strong>High-Trust Guarantee:</strong> All job applications are strictly reserved for
-            verified university students with institutional (.edu) credentials.
+            <strong className="text-foreground font-medium">High-Trust Campus Verification:</strong>{" "}
+            All gig applications and contracts are reserved for verified university members with
+            institutional (.edu) credentials.
           </span>
         </div>
         {!isAuthenticated && (
           <Link
             href="/login"
-            className="hidden shrink-0 font-semibold underline hover:text-emerald-600 sm:inline"
+            className="hidden shrink-0 font-mono text-xs underline hover:text-foreground sm:inline"
           >
             Sign in to apply &rarr;
           </Link>
         )}
       </div>
 
-      {/* Filter Bar */}
+      {/* Filter Toolbar */}
       <div className="mt-6">
         <JobFilterBar
           filters={filters}
@@ -140,32 +156,32 @@ function JobSearchContent() {
       <div className="mt-8">
         {/* Loading Skeletons */}
         {isLoading && (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
             {Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="flex flex-col justify-between rounded-[10px] border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80"
+                className="flex flex-col justify-between rounded-xl border border-border bg-card p-6 shadow-none"
               >
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <div className="h-5 w-20 animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
-                    <div className="h-5 w-24 animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
+                    <div className="h-5 w-20 animate-pulse rounded-full bg-muted" />
+                    <div className="h-5 w-24 animate-pulse rounded-full bg-muted" />
                   </div>
-                  <div className="mt-4 h-6 w-3/4 animate-pulse rounded-[10px] bg-slate-200 dark:bg-slate-800" />
-                  <div className="mt-2 h-4 w-1/2 animate-pulse rounded-[10px] bg-slate-200 dark:bg-slate-800" />
+                  <div className="mt-4 h-6 w-3/4 animate-pulse rounded-md bg-muted" />
+                  <div className="mt-2 h-4 w-1/3 animate-pulse rounded-md bg-muted" />
                   <div className="mt-4 space-y-2">
-                    <div className="h-4 w-full animate-pulse rounded-[10px] bg-slate-100 dark:bg-slate-800/60" />
-                    <div className="h-4 w-4/5 animate-pulse rounded-[10px] bg-slate-100 dark:bg-slate-800/60" />
+                    <div className="h-4 w-full animate-pulse rounded-md bg-muted/60" />
+                    <div className="h-4 w-4/5 animate-pulse rounded-md bg-muted/60" />
                   </div>
                   <div className="mt-4 flex gap-1.5">
-                    <div className="h-5 w-14 animate-pulse rounded-[10px] bg-slate-200 dark:bg-slate-800" />
-                    <div className="h-5 w-16 animate-pulse rounded-[10px] bg-slate-200 dark:bg-slate-800" />
-                    <div className="h-5 w-12 animate-pulse rounded-[10px] bg-slate-200 dark:bg-slate-800" />
+                    <div className="h-5 w-14 animate-pulse rounded-md bg-muted" />
+                    <div className="h-5 w-16 animate-pulse rounded-md bg-muted" />
+                    <div className="h-5 w-12 animate-pulse rounded-md bg-muted" />
                   </div>
                 </div>
-                <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4 dark:border-slate-800/80">
-                  <div className="h-4 w-28 animate-pulse rounded-[10px] bg-slate-200 dark:bg-slate-800" />
-                  <div className="h-4 w-20 animate-pulse rounded-[10px] bg-slate-200 dark:bg-slate-800" />
+                <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
+                  <div className="h-4 w-24 animate-pulse rounded-md bg-muted" />
+                  <div className="h-4 w-20 animate-pulse rounded-md bg-muted" />
                 </div>
               </div>
             ))}
@@ -174,21 +190,21 @@ function JobSearchContent() {
 
         {/* Error State */}
         {!isLoading && error && (
-          <div className="rounded-[10px] border border-rose-200 bg-rose-50/60 p-8 text-center dark:border-rose-900/50 dark:bg-rose-950/30">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[10px] bg-rose-100 text-rose-600 dark:bg-rose-900/50 dark:text-rose-400">
+          <div className="rounded-xl border border-destructive/20 bg-card p-8 text-center mt-8">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-pastel-red text-pastel-redText">
               <AlertCircle className="h-6 w-6" />
             </div>
-            <h2 className="mt-4 text-lg font-bold text-slate-900 dark:text-white">
-              Unable to load campus jobs
+            <h2 className="mt-4 font-serif text-xl font-medium text-foreground">
+              Unable to load campus opportunities
             </h2>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+            <p className="mt-2 text-sm text-muted-foreground">
               {error.message || "A network or server error occurred while retrieving job listings."}
             </p>
             <div className="mt-6 flex justify-center gap-3">
               <button
                 type="button"
                 onClick={() => refetch()}
-                className="inline-flex items-center gap-2 rounded-[10px] bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-500"
+                className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-xs font-mono font-medium text-background transition hover:bg-foreground/90"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 Retry Search
@@ -199,33 +215,39 @@ function JobSearchContent() {
 
         {/* Empty State */}
         {!isLoading && !error && jobList.length === 0 && (
-          <div className="rounded-[10px] border border-dashed border-slate-300 bg-white p-12 text-center dark:border-slate-800 dark:bg-slate-900/60">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[10px] bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+          <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center mt-8">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-muted text-muted-foreground">
               <Briefcase className="h-6 w-6" />
             </div>
-            <h2 className="mt-4 text-base font-bold text-slate-900 dark:text-white">
-              No campus gigs match your filters
+            <h2 className="mt-4 font-serif text-xl font-medium text-foreground">
+              No campus gigs found
             </h2>
-            <p className="mx-auto mt-2 max-w-sm text-xs text-slate-500 dark:text-slate-400">
-              Try adjusting your search criteria, clearing specific skill tags, or resetting all
-              filters.
+            <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+              No active campus gigs matching this filter. Clear filters or post a new project.
             </p>
-            <div className="mt-6">
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={handleResetFilters}
-                className="inline-flex items-center gap-2 rounded-[10px] border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2 text-xs font-mono font-medium text-foreground transition hover:border-foreground/40"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Reset All Filters
+                Clear Filters
               </button>
+              <Link
+                href="/jobs/create"
+                className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-xs font-mono font-medium text-background transition hover:bg-foreground/90"
+              >
+                <PlusCircle className="h-4 w-4" />
+                Post a Gig
+              </Link>
             </div>
           </div>
         )}
 
         {/* Job Cards Grid */}
         {!isLoading && !error && jobList.length > 0 && (
-          <div ref={gridRef} className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div ref={gridRef} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
             {jobList.map((job) => (
               <JobCard key={job.id} job={job} />
             ))}
@@ -240,8 +262,8 @@ export default function JobsPage() {
   return (
     <Suspense
       fallback={
-        <div className="mx-auto max-w-7xl px-4 py-12 text-center text-sm text-slate-500">
-          Loading jobs...
+        <div className="mx-auto max-w-7xl px-4 py-12 text-center font-mono text-xs text-muted-foreground">
+          Loading campus opportunities...
         </div>
       }
     >

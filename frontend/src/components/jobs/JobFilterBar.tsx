@@ -2,15 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createDebounced, syncSearchDraftFromParent } from "@/lib/job-filters";
-import { Search, SlidersHorizontal, X, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
+import { Search, X, RotateCcw, ChevronDown } from "lucide-react";
 import { JobStatus } from "@/types/api";
 import { cn } from "@/lib/utils";
+import { COMMON_DEPARTMENTS, POPULAR_SKILLS } from "@/lib/formatters";
+
+export { COMMON_DEPARTMENTS, POPULAR_SKILLS };
+
+export type BudgetSort = "" | "high" | "low";
 
 export interface JobFilterValues {
   search: string;
   department: string;
   skill: string;
   status: "" | JobStatus;
+  budgetSort?: BudgetSort;
 }
 
 export interface JobFilterBarProps {
@@ -21,30 +27,6 @@ export interface JobFilterBarProps {
   isLoading?: boolean;
 }
 
-export const COMMON_DEPARTMENTS = [
-  "Computer Science & Engineering",
-  "Data Science & AI",
-  "Design & Creative Arts",
-  "Business & Marketing",
-  "Biology & Life Sciences",
-  "Mathematics & Statistics",
-  "Writing & Communications",
-  "Economics & Finance",
-  "Psychology & Social Sciences",
-];
-
-export const POPULAR_SKILLS = [
-  "React",
-  "Python",
-  "TypeScript",
-  "Figma",
-  "Data Analysis",
-  "SQL",
-  "Content Writing",
-  "Machine Learning",
-  "UI/UX",
-];
-
 export function JobFilterBar({
   filters,
   onFilterChange,
@@ -52,7 +34,6 @@ export function JobFilterBar({
   totalCount,
   isLoading,
 }: JobFilterBarProps) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [searchDraft, setSearchDraft] = useState(filters.search);
   const onFilterChangeRef = useRef(onFilterChange);
   onFilterChangeRef.current = onFilterChange;
@@ -79,20 +60,13 @@ export function JobFilterBar({
     return () => run.cancel();
   }, []);
 
-  // Check if any filter is active
   const hasActiveFilters = Boolean(
     filters.search ||
     filters.department ||
     filters.skill ||
+    filters.budgetSort ||
     (filters.status && filters.status !== "open")
   );
-
-  const activeCount = [
-    Boolean(filters.search),
-    Boolean(filters.department),
-    Boolean(filters.skill),
-    Boolean(filters.status && filters.status !== "open"),
-  ].filter(Boolean).length;
 
   const updateField = <K extends keyof JobFilterValues>(key: K, value: JobFilterValues[K]) => {
     onFilterChange({
@@ -114,14 +88,12 @@ export function JobFilterBar({
   };
 
   return (
-    <div className="rounded-[10px] border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/90 sm:p-6">
-      {/* Search Input & Quick Controls */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+    <div className="rounded-xl border border-border bg-card p-4 sm:p-5 shadow-none">
+      {/* Top Row: Search, Department Dropdown, Budget Sort, and Reset */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
         {/* Search Field */}
         <div className="relative flex-1">
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-            <Search className="h-4 w-4 text-slate-400" />
-          </div>
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             type="text"
             value={searchDraft}
@@ -130,161 +102,150 @@ export function JobFilterBar({
               setSearchDraft(v);
               searchDebounced.current?.(v);
             }}
-            placeholder="Search gigs by title, keywords, or role..."
-            className="w-full rounded-[10px] border border-slate-200 bg-slate-50/50 py-2.5 pl-10 pr-10 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white dark:focus:bg-slate-900"
+            placeholder="Search by title, skill, or keyword..."
+            className="w-full rounded-lg border border-border bg-background py-2.5 pl-9 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-foreground/40 focus:outline-none transition-colors"
           />
           {searchDraft && (
             <button
               type="button"
               onClick={clearSearch}
-              className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              aria-label="Clear search input"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
             >
               <X className="h-4 w-4" />
             </button>
           )}
         </div>
 
-        {/* Department Quick Dropdown */}
-        <div className="w-full md:w-64">
-          <div className="relative">
-            <select
-              value={filters.department}
-              onChange={(e) => updateField("department", e.target.value)}
-              className="w-full appearance-none rounded-[10px] border border-slate-200 bg-slate-50/50 py-2.5 pl-3.5 pr-8 text-sm text-slate-900 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white dark:focus:bg-slate-900"
-            >
-              <option value="">All Academic Departments</option>
-              {COMMON_DEPARTMENTS.map((dept) => (
-                <option key={dept} value={dept}>
-                  {dept}
-                </option>
-              ))}
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
-              <ChevronDown className="h-4 w-4 text-slate-400" />
-            </div>
+        {/* Academic Department Selector */}
+        <div className="relative w-full md:w-64">
+          <select
+            value={filters.department}
+            onChange={(e) => updateField("department", e.target.value)}
+            className="w-full appearance-none rounded-lg border border-border bg-background py-2.5 pl-3.5 pr-8 text-sm font-mono text-foreground focus:border-foreground/40 focus:outline-none transition-colors"
+          >
+            <option value="">All Academic Departments</option>
+            {COMMON_DEPARTMENTS.map((dept) => (
+              <option key={dept} value={dept}>
+                {dept}
+              </option>
+            ))}
+          </select>
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
           </div>
         </div>
 
-        {/* Advanced Filters Toggle & Reset Button */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-[10px] border px-3.5 py-2.5 text-xs font-semibold transition",
-              showAdvanced || activeCount > 0
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-            )}
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            <span>Filters</span>
-            {activeCount > 0 && (
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">
-                {activeCount}
-              </span>
-            )}
-            {showAdvanced ? (
-              <ChevronUp className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronDown className="h-3.5 w-3.5" />
-            )}
-          </button>
+        {/* Budget Sort & Reset Controls */}
+        <div className="flex items-center gap-2 self-start md:self-auto">
+          {/* Budget Sort Controls */}
+          <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+            <button
+              type="button"
+              onClick={() => updateField("budgetSort", filters.budgetSort === "high" ? "" : "high")}
+              className={cn(
+                "rounded-md px-2.5 py-1.5 text-xs font-mono transition-colors",
+                filters.budgetSort === "high"
+                  ? "bg-background text-foreground font-medium shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              High to Low
+            </button>
+            <button
+              type="button"
+              onClick={() => updateField("budgetSort", filters.budgetSort === "low" ? "" : "low")}
+              className={cn(
+                "rounded-md px-2.5 py-1.5 text-xs font-mono transition-colors",
+                filters.budgetSort === "low"
+                  ? "bg-background text-foreground font-medium shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Low to High
+            </button>
+          </div>
 
+          {/* Reset Filters Button */}
           {hasActiveFilters && (
             <button
               type="button"
               onClick={handleReset}
               title="Reset all filters"
-              className="inline-flex items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:text-white"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-mono text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Reset</span>
+              <span>Reset</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Advanced Filter Drawer */}
-      {showAdvanced && (
-        <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800/80">
-          <div className="max-w-md">
-            {/* Skill Filter Input */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Required Skill
-              </label>
-              <input
-                type="text"
-                value={filters.skill}
-                onChange={(e) => updateField("skill", e.target.value)}
-                placeholder="e.g. React, Python, Figma"
-                className="mt-1.5 w-full rounded-[10px] border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800/60 dark:text-white"
-              />
-            </div>
-          </div>
-
-          {/* Quick Skill Tags Pills */}
-          <div className="mt-4 flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-slate-500 dark:text-slate-400">Popular skills:</span>
-            {POPULAR_SKILLS.map((skill) => {
-              const isSelected = filters.skill.toLowerCase() === skill.toLowerCase();
-              return (
-                <button
-                  key={skill}
-                  type="button"
-                  onClick={() => updateField("skill", isSelected ? "" : skill)}
-                  className={cn(
-                    "rounded-[10px] border px-2 py-0.5 text-[11px] font-medium transition",
-                    isSelected
-                      ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-500 dark:bg-emerald-950/60 dark:text-emerald-300"
-                      : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-400"
-                  )}
-                >
-                  {skill}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* Quick Skills Pill Strip */}
+      <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-3">
+        <span className="text-xs font-mono text-muted-foreground">Popular:</span>
+        {POPULAR_SKILLS.map((skill) => {
+          const isSelected = filters.skill.toLowerCase() === skill.toLowerCase();
+          return (
+            <button
+              key={skill}
+              type="button"
+              onClick={() => updateField("skill", isSelected ? "" : skill)}
+              className={cn(
+                "rounded-md border px-2 py-0.5 text-[11px] font-mono transition-colors",
+                isSelected
+                  ? "border-foreground bg-foreground text-background font-medium"
+                  : "border-border bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+              )}
+            >
+              {skill}
+            </button>
+          );
+        })}
+      </div>
 
       {/* Active Filter Chips & Results Count */}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-800/80 dark:text-slate-400">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs font-mono text-muted-foreground">
         <div>
           {isLoading ? (
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 animate-ping rounded-full bg-emerald-500" />
-              Searching available gigs...
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground" />
+              Searching campus opportunities...
             </span>
           ) : typeof totalCount === "number" ? (
             <span>
-              Showing <strong className="text-slate-900 dark:text-white">{totalCount}</strong>{" "}
-              {totalCount === 1 ? "gig" : "gigs"}
+              Showing <strong className="text-foreground font-semibold">{totalCount}</strong>{" "}
+              {totalCount === 1 ? "opportunity" : "opportunities"}
             </span>
           ) : (
-            <span>Showing verified opportunities</span>
+            <span>Showing verified campus gigs</span>
           )}
         </div>
 
         {hasActiveFilters && (
           <div className="flex flex-wrap items-center gap-1.5">
             {filters.search && (
-              <span className="inline-flex items-center gap-1 rounded-[10px] bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                Keyword: &ldquo;{filters.search}&rdquo;
-                <button type="button" onClick={clearSearch} className="hover:text-slate-900">
+              <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-mono text-foreground">
+                Search: &quot;{filters.search}&quot;
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  aria-label="Remove search filter"
+                  className="hover:text-muted-foreground"
+                >
                   <X className="h-3 w-3" />
                 </button>
               </span>
             )}
 
             {filters.department && (
-              <span className="inline-flex items-center gap-1 rounded-[10px] bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+              <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-mono text-foreground">
                 Dept: {filters.department}
                 <button
                   type="button"
                   onClick={() => updateField("department", "")}
-                  className="hover:text-slate-900"
+                  aria-label="Remove department filter"
+                  className="hover:text-muted-foreground"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -292,12 +253,27 @@ export function JobFilterBar({
             )}
 
             {filters.skill && (
-              <span className="inline-flex items-center gap-1 rounded-[10px] bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+              <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-mono text-foreground">
                 Skill: {filters.skill}
                 <button
                   type="button"
                   onClick={() => updateField("skill", "")}
-                  className="hover:text-slate-900"
+                  aria-label="Remove skill filter"
+                  className="hover:text-muted-foreground"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+
+            {filters.budgetSort && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-mono text-foreground">
+                Sort: {filters.budgetSort === "high" ? "High to Low" : "Low to High"}
+                <button
+                  type="button"
+                  onClick={() => updateField("budgetSort", "")}
+                  aria-label="Remove budget sort"
+                  className="hover:text-muted-foreground"
                 >
                   <X className="h-3 w-3" />
                 </button>
