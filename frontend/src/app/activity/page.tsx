@@ -1,37 +1,33 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   Briefcase,
   FileText,
   FileCheck,
-  PlusCircle,
   Users,
   Search,
   Lock,
   Loader2,
-  ChevronRight,
+  ArrowRight,
+  Plus,
+  RotateCcw,
 } from "lucide-react";
-import {
-  Job,
-  ApplicationWithDetails,
-  ContractWithDetails,
-  ApplicationStatus,
-  JobStatus,
-  ContractStatus,
-} from "@/types/api";
-import { getMyApplications, getMyJobs, listContracts, ApiClientError } from "@/lib/api";
+import { Job, ApplicationWithDetails, ContractWithDetails } from "@/types/api";
+import { getMyApplications, getMyJobs, listContracts } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   formatJobDate,
+  formatJobBudget,
   getStatusBadgeClasses,
   getApplicationStatusBadgeClasses,
   getContractStatusBadgeClasses,
 } from "@/lib/formatters";
-import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 type ActivityTab = "applications" | "postings" | "contracts";
 
@@ -39,14 +35,7 @@ function ActivityContent() {
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") as ActivityTab) || "applications";
 
-  const {
-    user,
-    backendUser,
-    isAuthenticated,
-    isVerified,
-    isLoading: authLoading,
-    login,
-  } = useAuth();
+  const { user, backendUser, isAuthenticated, isLoading: authLoading, login } = useAuth();
 
   const [activeTab, setActiveTab] = useState<ActivityTab>(
     ["applications", "postings", "contracts"].includes(initialTab) ? initialTab : "applications"
@@ -96,12 +85,6 @@ function ActivityContent() {
   const jobsList = useMemo(() => myJobs ?? [], [myJobs]);
   const contractsList = useMemo(() => contracts ?? [], [contracts]);
 
-  // Counts
-  const activeContractsCount = useMemo(
-    () => contractsList.filter((c) => c.status === "active").length,
-    [contractsList]
-  );
-
   // Filtered Applications
   const filteredApplications = useMemo(() => {
     if (!searchQuery.trim()) return appsList;
@@ -138,7 +121,7 @@ function ActivityContent() {
   if (authLoading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -147,24 +130,21 @@ function ActivityContent() {
   if (!isAuthenticated || !user) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <div className="rounded-xl border border-border bg-card p-8 shadow-sm">
+        <div className="rounded-xl border border-border bg-card p-8 shadow-none space-y-4">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
             <Lock className="h-6 w-6" />
           </div>
-          <h1 className="mt-4 text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="font-serif text-2xl font-normal tracking-tight text-foreground">
             Campus Sign In Required
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Sign in to access your unified workspace: applications submitted, opportunities posted,
-            and active contracts.
+          <p className="text-xs text-muted-foreground max-w-md mx-auto">
+            Sign in to access your activity hub: submitted proposals, active contracts, and posted
+            gigs.
           </p>
-          <div className="mt-6 flex justify-center">
-            <button
-              onClick={() => login({ redirectPath: "/activity" })}
-              className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
-            >
+          <div className="pt-2">
+            <Button onClick={() => login({ redirectPath: "/activity" })} className="text-xs">
               Sign In with Campus Account
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -172,173 +152,120 @@ function ActivityContent() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Top Header */}
+    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8 space-y-8">
+      {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-            Campus Activity Workspace
+          <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-foreground">
+            Activity
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Track submitted proposals, manage your job postings, and review active contracts.
+          <p className="mt-1 text-xs text-muted-foreground">
+            Your pending proposals, active contracts, and completed deliverables.
           </p>
         </div>
 
-        <Link
-          href="/jobs/create"
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 self-start sm:self-auto"
-        >
-          <PlusCircle className="h-4 w-4" />
-          <span>Post an Opportunity</span>
-        </Link>
+        <Button asChild className="text-xs self-start sm:self-auto">
+          <Link href="/jobs/create">
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            <span>Post a Project</span>
+          </Link>
+        </Button>
       </div>
 
-      {/* Metrics Overview Bento */}
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div
-          onClick={() => setActiveTab("applications")}
-          className={cn(
-            "cursor-pointer rounded-xl border p-5 transition",
-            activeTab === "applications"
-              ? "border-primary bg-primary/5 shadow-sm"
-              : "border-border bg-card hover:border-border/80"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">
-              Applications Submitted
-            </span>
-            <FileText className="h-4 w-4 text-primary" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-foreground">{appsList.length}</div>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            Gigs you applied to with your resume
-          </p>
-        </div>
-
-        <div
-          onClick={() => setActiveTab("postings")}
-          className={cn(
-            "cursor-pointer rounded-xl border p-5 transition",
-            activeTab === "postings"
-              ? "border-primary bg-primary/5 shadow-sm"
-              : "border-border bg-card hover:border-border/80"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">My Postings</span>
-            <Briefcase className="h-4 w-4 text-primary" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-foreground">{jobsList.length}</div>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            Opportunities you posted on campus
-          </p>
-        </div>
-
-        <div
-          onClick={() => setActiveTab("contracts")}
-          className={cn(
-            "cursor-pointer rounded-xl border p-5 transition",
-            activeTab === "contracts"
-              ? "border-primary bg-primary/5 shadow-sm"
-              : "border-border bg-card hover:border-border/80"
-          )}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Active Contracts</span>
-            <FileCheck className="h-4 w-4 text-primary" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-foreground">{contractsList.length}</div>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {activeContractsCount} active contracts
-          </p>
-        </div>
-      </div>
-
-      {/* Tabs & Search Bar */}
-      <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex rounded-lg border border-border bg-muted/40 p-1 self-start">
+      {/* Tab Strip & Search Bar */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-border pb-1">
+        {/* Horizontal Underline Tabs */}
+        <div className="flex items-end gap-1 -mb-1">
           <button
             type="button"
             onClick={() => setActiveTab("applications")}
-            className={cn(
-              "rounded-md px-3.5 py-1.5 text-xs font-medium transition",
+            className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === "applications"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
+                ? "border-foreground text-foreground font-semibold"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
           >
-            Applications ({appsList.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("postings")}
-            className={cn(
-              "rounded-md px-3.5 py-1.5 text-xs font-medium transition",
-              activeTab === "postings"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            My Postings ({jobsList.length})
+            Applications
+            <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">
+              ({appsList.length})
+            </span>
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("contracts")}
-            className={cn(
-              "rounded-md px-3.5 py-1.5 text-xs font-medium transition",
+            className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === "contracts"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
+                ? "border-foreground text-foreground font-semibold"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
           >
-            Contracts ({contractsList.length})
+            Contracts
+            <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">
+              ({contractsList.length})
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("postings")}
+            className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
+              activeTab === "postings"
+                ? "border-foreground text-foreground font-semibold"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            My Postings
+            <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">
+              ({jobsList.length})
+            </span>
           </button>
         </div>
 
         {/* Search */}
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+        <div className="relative w-full sm:w-64 pb-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Filter list..."
-            className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none"
+            className="w-full rounded-md border border-border bg-card py-1.5 pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-foreground/50 focus:outline-none transition"
           />
         </div>
       </div>
 
       {/* Tab 1: Applications */}
       {activeTab === "applications" && (
-        <div className="mt-6 space-y-4">
+        <div className="space-y-4">
           {isAppsLoading ? (
             <div className="flex min-h-[30vh] items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : appsError ? (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-center text-xs text-red-700 dark:text-red-300">
+            <div className="rounded-xl border border-pastel-redText/20 bg-pastel-red p-6 text-center text-xs text-pastel-redText space-y-2">
               <p>Failed to load applications: {appsError.message}</p>
-              <button onClick={() => refetchApps()} className="mt-2 font-semibold underline">
+              <Button variant="outline" size="sm" onClick={() => refetchApps()} className="text-xs">
+                <RotateCcw className="h-3 w-3 mr-1.5" />
                 Retry
-              </button>
+              </Button>
             </div>
           ) : filteredApplications.length === 0 ? (
-            <div className="rounded-xl border border-border bg-card p-12 text-center shadow-sm">
+            <div className="rounded-xl border border-border bg-card p-12 text-center shadow-none space-y-3">
               <FileText className="mx-auto h-8 w-8 text-muted-foreground" />
-              <h3 className="mt-3 text-sm font-semibold text-foreground">
-                No applications submitted
-              </h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Browse open campus jobs, research gigs, and student projects to apply.
-              </p>
-              <div className="mt-4">
-                <Link
-                  href="/jobs"
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
-                >
-                  Browse Campus Jobs
-                </Link>
+              <div>
+                <h3 className="font-serif text-xl font-medium text-foreground">
+                  No proposals submitted
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                  You have not submitted any proposals yet. Browse open gigs to get started.
+                </p>
+              </div>
+              <div className="pt-2">
+                <Button asChild className="text-xs">
+                  <Link href="/jobs">
+                    <span>Browse Campus Jobs</span>
+                    <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
+                  </Link>
+                </Button>
               </div>
             </div>
           ) : (
@@ -347,66 +274,62 @@ function ActivityContent() {
               return (
                 <div
                   key={app.id}
-                  className="rounded-xl border border-border bg-card p-5 shadow-sm transition hover:border-border/80"
+                  className="rounded-xl border border-border bg-card p-6 shadow-none transition hover:border-foreground/30 flex flex-col md:flex-row justify-between gap-5"
                 >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium",
-                            statusStyles.bg,
-                            statusStyles.text
-                          )}
-                        >
-                          <span className={cn("h-1.5 w-1.5 rounded-full", statusStyles.dot)} />
-                          {statusStyles.label}
-                        </span>
-                        {app.job?.department && (
-                          <span className="text-xs text-muted-foreground">
-                            • {app.job.department}
-                          </span>
-                        )}
-                      </div>
-
-                      <Link
-                        href={`/jobs/${app.job_id}`}
-                        className="mt-2 block text-base font-semibold text-foreground hover:text-primary transition"
+                  <div className="space-y-2 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${statusStyles.bg} ${statusStyles.text}`}
                       >
-                        {app.job?.title || "Untitled Opportunity"}
-                      </Link>
-
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Applied on {formatJobDate(app.created_at)}
-                      </p>
+                        <span className={`h-1.5 w-1.5 rounded-full ${statusStyles.dot}`} />
+                        {statusStyles.label}
+                      </span>
+                      {app.job?.department && (
+                        <Badge variant="secondary" className="font-mono text-xs">
+                          {app.job.department}
+                        </Badge>
+                      )}
+                      {app.job && (
+                        <span className="font-mono text-xs font-semibold text-foreground ml-auto sm:ml-2">
+                          {formatJobBudget(app.job)}
+                        </span>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-2 self-start sm:self-auto">
-                      {app.status === "accepted" && (
-                        <Link
-                          href="/contracts"
-                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-500"
-                        >
-                          <FileCheck className="h-3.5 w-3.5" />
+                    <Link href={`/jobs/${app.job_id}`}>
+                      <h2 className="font-serif text-xl font-medium text-foreground hover:underline underline-offset-2 transition-colors">
+                        {app.job?.title || "Untitled Opportunity"}
+                      </h2>
+                    </Link>
+
+                    <p className="font-mono text-xs text-muted-foreground">
+                      Applied on {formatJobDate(app.created_at)}
+                    </p>
+
+                    {/* Proposal Snippet */}
+                    {app.cover_letter && (
+                      <p className="border-l-2 border-border pl-3 text-xs text-foreground/80 line-clamp-2 leading-relaxed pt-1">
+                        {app.cover_letter}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5 shrink-0 pt-2 md:pt-0">
+                    {app.status === "accepted" && (
+                      <Button asChild size="sm" className="text-xs">
+                        <Link href="/contracts">
+                          <FileCheck className="h-3.5 w-3.5 mr-1.5" />
                           <span>View Contract</span>
                         </Link>
-                      )}
-                      <Link
-                        href={`/jobs/${app.job_id}`}
-                        className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
-                      >
-                        <span>View Opportunity</span>
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </div>
-                  </div>
+                      </Button>
+                    )}
 
-                  {/* Proposal Snippet */}
-                  <div className="mt-3 rounded-lg border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground">
-                    <p className="font-medium text-foreground text-[11px]">
-                      Proposal Cover Letter:
-                    </p>
-                    <p className="mt-1 line-clamp-2">{app.cover_letter}</p>
+                    <Button asChild variant="outline" size="sm" className="text-xs">
+                      <Link href={`/jobs/${app.job_id}`}>
+                        <span>View Gig</span>
+                        <ArrowRight className="h-3 w-3 ml-1.5" />
+                      </Link>
+                    </Button>
                   </div>
                 </div>
               );
@@ -415,123 +338,37 @@ function ActivityContent() {
         </div>
       )}
 
-      {/* Tab 2: My Postings */}
-      {activeTab === "postings" && (
-        <div className="mt-6 space-y-4">
-          {isJobsLoading ? (
-            <div className="flex min-h-[30vh] items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : jobsError ? (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-center text-xs text-red-700 dark:text-red-300">
-              <p>Failed to load postings: {jobsError.message}</p>
-              <button onClick={() => refetchJobs()} className="mt-2 font-semibold underline">
-                Retry
-              </button>
-            </div>
-          ) : filteredJobs.length === 0 ? (
-            <div className="rounded-xl border border-border bg-card p-12 text-center shadow-sm">
-              <Briefcase className="mx-auto h-8 w-8 text-muted-foreground" />
-              <h3 className="mt-3 text-sm font-semibold text-foreground">
-                No opportunities posted yet
-              </h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                As a verified campus member, you can publish gigs, research tasks, and projects.
-              </p>
-              <div className="mt-4">
-                <Link
-                  href="/jobs/create"
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
-                >
-                  <PlusCircle className="h-3.5 w-3.5" />
-                  <span>Post Your First Job</span>
-                </Link>
-              </div>
-            </div>
-          ) : (
-            filteredJobs.map((job) => {
-              const statusStyles = getStatusBadgeClasses(job.status);
-              return (
-                <div
-                  key={job.id}
-                  className="rounded-xl border border-border bg-card p-5 shadow-sm transition hover:border-border/80"
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium",
-                            statusStyles.bg,
-                            statusStyles.text
-                          )}
-                        >
-                          <span className={cn("h-1.5 w-1.5 rounded-full", statusStyles.dot)} />
-                          {job.status.replace("_", " ")}
-                        </span>
-                        <span className="text-xs text-muted-foreground">• {job.department}</span>
-                      </div>
-
-                      <Link
-                        href={`/jobs/${job.id}`}
-                        className="mt-2 block text-base font-semibold text-foreground hover:text-primary transition"
-                      >
-                        {job.title}
-                      </Link>
-
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Posted {formatJobDate(job.created_at)} • Deadline:{" "}
-                        {formatJobDate(job.deadline)}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2 self-start sm:self-auto">
-                      <Link
-                        href={`/jobs/${job.id}/applicants`}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
-                      >
-                        <Users className="h-3.5 w-3.5" />
-                        <span>Review Applicants</span>
-                      </Link>
-                      <Link
-                        href={`/jobs/${job.id}`}
-                        className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
-                      >
-                        <span>View</span>
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-
-      {/* Tab 3: Contracts */}
+      {/* Tab 2: Contracts */}
       {activeTab === "contracts" && (
-        <div className="mt-6 space-y-4">
+        <div className="space-y-4">
           {isContractsLoading ? (
             <div className="flex min-h-[30vh] items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : contractsError ? (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-center text-xs text-red-700 dark:text-red-300">
+            <div className="rounded-xl border border-pastel-redText/20 bg-pastel-red p-6 text-center text-xs text-pastel-redText space-y-2">
               <p>Failed to load contracts: {contractsError.message}</p>
-              <button onClick={() => refetchContracts()} className="mt-2 font-semibold underline">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetchContracts()}
+                className="text-xs"
+              >
+                <RotateCcw className="h-3 w-3 mr-1.5" />
                 Retry
-              </button>
+              </Button>
             </div>
           ) : filteredContracts.length === 0 ? (
-            <div className="rounded-xl border border-border bg-card p-12 text-center shadow-sm">
+            <div className="rounded-xl border border-border bg-card p-12 text-center shadow-none space-y-3">
               <FileCheck className="mx-auto h-8 w-8 text-muted-foreground" />
-              <h3 className="mt-3 text-sm font-semibold text-foreground">
-                No contracts initiated yet
-              </h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Contracts are automatically generated when a job application proposal is accepted.
-              </p>
+              <div>
+                <h3 className="font-serif text-xl font-medium text-foreground">
+                  No active contracts
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                  No active contracts. Accepted applications generate contracts automatically.
+                </p>
+              </div>
             </div>
           ) : (
             filteredContracts.map((contract) => {
@@ -542,45 +379,141 @@ function ActivityContent() {
               return (
                 <div
                   key={contract.id}
-                  className="rounded-xl border border-border bg-card p-5 shadow-sm transition hover:border-border/80"
+                  className="rounded-xl border border-border bg-card p-6 shadow-none transition hover:border-foreground/30 flex flex-col md:flex-row justify-between gap-5"
                 >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium",
-                            statusStyles.bg,
-                            statusStyles.text
-                          )}
-                        >
-                          <span className={cn("h-1.5 w-1.5 rounded-full", statusStyles.dot)} />
-                          {statusStyles.label}
-                        </span>
-
-                        <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          {isClient ? "You are Client" : "You are Freelancer"}
-                        </span>
-                      </div>
-
-                      <h3 className="mt-2 text-base font-semibold text-foreground">
-                        {contract.job?.title || "Contract Agreement"}
-                      </h3>
-
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Initiated {formatJobDate(contract.created_at)}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2 self-start sm:self-auto">
-                      <Link
-                        href={`/contracts/${contract.id}`}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
+                  <div className="space-y-2 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        #{contract.id.slice(0, 8)}
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider ${statusStyles.bg} ${statusStyles.text}`}
                       >
-                        <FileCheck className="h-3.5 w-3.5" />
-                        <span>Manage Contract</span>
-                      </Link>
+                        <span className={`h-1.5 w-1.5 rounded-full ${statusStyles.dot}`} />
+                        {statusStyles.label}
+                      </span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {isClient ? "Client Role" : "Freelancer Role"}
+                      </span>
+                      {contract.job && (
+                        <span className="font-mono text-xs font-semibold text-foreground ml-auto sm:ml-2">
+                          {formatJobBudget(contract.job)}
+                        </span>
+                      )}
                     </div>
+
+                    <Link href={`/contracts/${contract.id}`}>
+                      <h2 className="font-serif text-xl font-medium text-foreground hover:underline underline-offset-2 transition-colors">
+                        {contract.job?.title || "Contract Agreement"}
+                      </h2>
+                    </Link>
+
+                    <p className="font-mono text-xs text-muted-foreground">
+                      Initiated {formatJobDate(contract.created_at)}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 shrink-0 pt-2 md:pt-0">
+                    <Button asChild size="sm" className="text-xs">
+                      <Link href={`/contracts/${contract.id}`}>
+                        <span>Manage Contract</span>
+                        <ArrowRight className="h-3 w-3 ml-1.5" />
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* Tab 3: My Postings */}
+      {activeTab === "postings" && (
+        <div className="space-y-4">
+          {isJobsLoading ? (
+            <div className="flex min-h-[30vh] items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : jobsError ? (
+            <div className="rounded-xl border border-pastel-redText/20 bg-pastel-red p-6 text-center text-xs text-pastel-redText space-y-2">
+              <p>Failed to load postings: {jobsError.message}</p>
+              <Button variant="outline" size="sm" onClick={() => refetchJobs()} className="text-xs">
+                <RotateCcw className="h-3 w-3 mr-1.5" />
+                Retry
+              </Button>
+            </div>
+          ) : filteredJobs.length === 0 ? (
+            <div className="rounded-xl border border-border bg-card p-12 text-center shadow-none space-y-3">
+              <Briefcase className="mx-auto h-8 w-8 text-muted-foreground" />
+              <div>
+                <h3 className="font-serif text-xl font-medium text-foreground">
+                  No opportunities posted
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                  As a verified campus member, you can publish gigs, research tasks, and projects.
+                </p>
+              </div>
+              <div className="pt-2">
+                <Button asChild className="text-xs">
+                  <Link href="/jobs/create">
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />
+                    <span>Post Your First Gig</span>
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            filteredJobs.map((job) => {
+              const statusStyles = getStatusBadgeClasses(job.status);
+              return (
+                <div
+                  key={job.id}
+                  className="rounded-xl border border-border bg-card p-6 shadow-none transition hover:border-foreground/30 flex flex-col md:flex-row justify-between gap-5"
+                >
+                  <div className="space-y-2 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider ${statusStyles.bg} ${statusStyles.text}`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${statusStyles.dot}`} />
+                        {job.status.replace("_", " ")}
+                      </span>
+                      {job.department && (
+                        <Badge variant="secondary" className="font-mono text-xs">
+                          {job.department}
+                        </Badge>
+                      )}
+                      <span className="font-mono text-xs font-semibold text-foreground ml-auto sm:ml-2">
+                        {formatJobBudget(job)}
+                      </span>
+                    </div>
+
+                    <Link href={`/jobs/${job.id}`}>
+                      <h2 className="font-serif text-xl font-medium text-foreground hover:underline underline-offset-2 transition-colors">
+                        {job.title}
+                      </h2>
+                    </Link>
+
+                    <p className="font-mono text-xs text-muted-foreground">
+                      Posted {formatJobDate(job.created_at)} - Deadline:{" "}
+                      {formatJobDate(job.deadline)}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5 shrink-0 pt-2 md:pt-0">
+                    <Button asChild size="sm" className="text-xs">
+                      <Link href={`/jobs/${job.id}/applicants`}>
+                        <Users className="h-3.5 w-3.5 mr-1.5" />
+                        <span>Review Applicants</span>
+                      </Link>
+                    </Button>
+                    <Button asChild variant="outline" size="sm" className="text-xs">
+                      <Link href={`/jobs/${job.id}`}>
+                        <span>View Listing</span>
+                        <ArrowRight className="h-3 w-3 ml-1.5" />
+                      </Link>
+                    </Button>
                   </div>
                 </div>
               );
@@ -594,14 +527,14 @@ function ActivityContent() {
 
 export default function ActivityPage() {
   return (
-    <React.Suspense
+    <Suspense
       fallback={
         <div className="flex min-h-[60vh] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       }
     >
       <ActivityContent />
-    </React.Suspense>
+    </Suspense>
   );
 }
