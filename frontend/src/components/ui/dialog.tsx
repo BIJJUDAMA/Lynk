@@ -18,7 +18,7 @@ const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) => {
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm transition-opacity"
+        className="fixed inset-0 bg-black/30 backdrop-blur-sm transition-opacity"
         onClick={() => onOpenChange?.(false)}
       />
       {/* Container */}
@@ -50,7 +50,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
           else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
         }}
         className={cn(
-          "relative w-full rounded-[10px] border border-border bg-card p-6 shadow-xl text-card-foreground",
+          "relative w-full rounded-xl border border-border bg-card p-6 shadow-none text-foreground",
           className
         )}
         {...props}
@@ -58,7 +58,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
         {onClose && (
           <button
             onClick={onClose}
-            className="absolute right-4 top-4 rounded-[10px] p-1.5 text-muted-foreground opacity-70 transition-opacity hover:opacity-100 hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring"
+            className="absolute right-4 top-4 rounded-md p-1.5 text-muted-foreground opacity-70 transition-opacity hover:opacity-100 hover:bg-muted focus:outline-none focus:ring-1 focus:ring-foreground"
           >
             <X className="h-4 w-4" />
             <span className="sr-only">Close</span>
@@ -88,7 +88,10 @@ const DialogTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HT
   ({ className, ...props }, ref) => (
     <h2
       ref={ref}
-      className={cn("text-lg font-semibold leading-none tracking-tight text-foreground", className)}
+      className={cn(
+        "font-serif text-xl font-medium leading-none tracking-tight text-foreground",
+        className
+      )}
       {...props}
     />
   )
