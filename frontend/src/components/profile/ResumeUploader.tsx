@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import {
   FileText,
-  UploadCloud,
+  Upload,
   Download,
   ShieldAlert,
   CheckCircle2,
@@ -13,11 +14,19 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { uploadResume, getMyResumeUrl, ApiClientError } from "@/lib/api";
+import {
+  uploadResume,
+  presignResume,
+  confirmResume,
+  getMyResumeUrl,
+  ApiClientError,
+} from "@/lib/api";
 import { formatFileSize, formatJobDate } from "@/lib/formatters";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { ResumeUploadResponse } from "@/types/api";
 
-const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
 export interface ResumeUploaderProps {
   resumeKey?: string | null;
@@ -75,7 +84,7 @@ export function ResumeUploader({
 
   const validateFile = (file: File): string | null => {
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      return "File size exceeds 5MB limit. Please upload a smaller PDF or DOCX file.";
+      return "File size exceeds 10MB limit. Please upload a smaller PDF or DOCX file.";
     }
     if (file.size <= 0) {
       return "The selected file is empty. Please select a valid document.";
@@ -115,16 +124,63 @@ export function ResumeUploader({
 
     setIsUploading(true);
     try {
-      const response = await uploadResume(file);
+      let uploadedKey = "";
+      let uploadedFilename = file.name;
+      let uploadedSize = file.size;
+
+      // Attempt Direct-to-MinIO presigned PUT upload
+      try {
+        const presignRes = await presignResume({
+          filename: file.name,
+          content_type: file.type || "application/pdf",
+          size: file.size,
+        });
+
+        const uploadRes = await fetch(presignRes.upload_url, {
+          method: "PUT",
+          body: file,
+          headers: {
+            "Content-Type": file.type || "application/pdf",
+          },
+        });
+
+        if (!uploadRes.ok) {
+          throw new Error(`Direct storage upload failed with status ${uploadRes.status}`);
+        }
+
+        const profile = await confirmResume({
+          key: presignRes.key,
+          filename: file.name,
+          size: file.size,
+        });
+
+        uploadedKey = presignRes.key;
+        if (profile.resume_filename) uploadedFilename = profile.resume_filename;
+        if (profile.resume_byte_size) uploadedSize = profile.resume_byte_size;
+      } catch {
+        // Fallback to legacy multipart streaming upload if direct upload fails
+        const legacyRes = await uploadResume(file);
+        uploadedKey = legacyRes.resume_key;
+        uploadedFilename = legacyRes.filename;
+        uploadedSize = legacyRes.byte_size;
+      }
+
+      const uploadResult: ResumeUploadResponse = {
+        resume_key: uploadedKey,
+        filename: uploadedFilename,
+        byte_size: uploadedSize,
+        message: "Resume securely stored in campus vault.",
+      };
+
       setCurrentResume({
-        key: response.resume_key,
-        filename: response.filename,
-        byteSize: response.byte_size,
+        key: uploadedKey,
+        filename: uploadedFilename,
+        byteSize: uploadedSize,
         updatedAt: new Date().toISOString(),
       });
       setShowUploaderOverride(false);
-      setSuccessMessage(response.message || "Resume uploaded successfully!");
-      onUploadSuccess?.(response);
+      setSuccessMessage("Resume uploaded and secured in campus vault.");
+      onUploadSuccess?.(uploadResult);
     } catch (err: unknown) {
       if (err instanceof ApiClientError) {
         if (err.isEmailNotVerified) {
@@ -132,12 +188,14 @@ export function ResumeUploader({
             "Institutional .edu email verification required before uploading a resume."
           );
         } else if (err.code === "FILE_TOO_LARGE") {
-          setErrorMessage("Resume file exceeds the 5MB size limit.");
+          setErrorMessage("Resume file exceeds the 10MB size limit.");
         } else if (err.code === "INVALID_FILE_TYPE") {
           setErrorMessage("Resume must be a valid PDF or DOCX file.");
         } else {
           setErrorMessage(err.message || "Failed to upload resume.");
         }
+      } else if (err instanceof Error) {
+        setErrorMessage(err.message || "Failed to upload resume.");
       } else {
         setErrorMessage("An unexpected error occurred while uploading your resume.");
       }
@@ -204,31 +262,38 @@ export function ResumeUploader({
     <div className="space-y-4">
       {/* Institutional Email Warning Banner */}
       {!isVerified && (
-        <div className="flex items-start gap-3 rounded-[10px] border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
-          <ShieldAlert className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-          <div className="text-sm">
-            <h4 className="font-semibold">Institutional .edu Verification Required</h4>
-            <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5 leading-relaxed">
-              Resume uploads are gated for verified university students. Please verify your
-              institutional email address via your university login to enable resume storage and job
-              applications.
-            </p>
+        <div className="rounded-xl border border-pastel-yellowText/20 bg-pastel-yellow p-4 text-xs text-pastel-yellowText space-y-2">
+          <div className="flex items-center gap-2 font-semibold">
+            <ShieldAlert className="h-4 w-4 shrink-0" />
+            <span>Institutional .edu Verification Required</span>
+          </div>
+          <p className="leading-relaxed">
+            Resume uploads are restricted to verified university students. Please verify your
+            institutional email to unlock resume storage and proposal submission.
+          </p>
+          <div>
+            <Link
+              href="/verify-email"
+              className="inline-flex items-center gap-1 font-medium underline underline-offset-4 hover:opacity-80"
+            >
+              Verify Email Address
+            </Link>
           </div>
         </div>
       )}
 
       {/* Success Notification */}
       {successMessage && (
-        <div className="flex items-center gap-2.5 rounded-[10px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+        <div className="flex items-center gap-2.5 rounded-lg border border-pastel-greenText/20 bg-pastel-green px-4 py-3 text-xs text-pastel-greenText">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>{successMessage}</span>
         </div>
       )}
 
       {/* Error Alert */}
       {errorMessage && (
-        <div className="flex items-center gap-2.5 rounded-[10px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300">
-          <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
+        <div className="flex items-center gap-2.5 rounded-lg border border-pastel-redText/20 bg-pastel-red px-4 py-3 text-xs text-pastel-redText">
+          <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{errorMessage}</span>
         </div>
       )}
@@ -245,65 +310,67 @@ export function ResumeUploader({
 
       {/* State 1: Resume is currently uploaded and not in override upload mode */}
       {hasResume && !showUploaderOverride ? (
-        <div className="rounded-[10px] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-start gap-3.5">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[10px] bg-emerald-50 dark:bg-emerald-950/50 text-primary dark:bg-emerald-950/60 dark:text-emerald-500">
-                <FileText className="h-6 w-6" />
-              </div>
-              <div className="min-w-0">
-                <h4 className="font-semibold text-slate-900 dark:text-white truncate max-w-sm">
-                  {currentResume.filename || "Student_Resume.pdf"}
-                </h4>
-                <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  <span>{formatFileSize(currentResume.byteSize)}</span>
-                  <span>•</span>
-                  <span>Uploaded {formatJobDate(currentResume.updatedAt)}</span>
-                  <span>•</span>
-                  <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                    Uploaded & Active
-                  </span>
-                </div>
-              </div>
+        <div className="rounded-xl border border-border bg-card p-5 shadow-none space-y-4">
+          <div className="flex items-start gap-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+              <FileText className="h-5 w-5" />
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleDownloadResume}
-                disabled={isDownloading}
-                className="inline-flex items-center gap-1.5 rounded-[10px] border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-primary disabled:opacity-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                title="Fetches 15-minute presigned download link"
-              >
-                {isDownloading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin text-primary dark:text-emerald-500" />
-                    <span>Preparing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-                    <span>Download / View</span>
-                    <ExternalLink className="h-3 w-3 opacity-60" />
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowUploaderOverride(true)}
-                disabled={!isVerified}
-                className="inline-flex items-center gap-1.5 rounded-[10px] bg-slate-100 px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-200 disabled:opacity-40 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                <span>Replace Resume</span>
-              </button>
+            <div className="min-w-0 flex-1">
+              <h4 className="font-serif text-base font-medium text-foreground truncate">
+                {currentResume.filename || "Student_Resume.pdf"}
+              </h4>
+              <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-muted-foreground font-mono">
+                <span>{formatFileSize(currentResume.byteSize)}</span>
+                <span>-</span>
+                <span>Uploaded {formatJobDate(currentResume.updatedAt)}</span>
+              </div>
+              <div className="mt-2">
+                <Badge variant="default" className="text-[10px]">
+                  Vault Active
+                </Badge>
+              </div>
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500">
-            <span>Secure 15-minute presigned S3 URLs generate on-demand.</span>
-            <span>Max 5MB • PDF or DOCX</span>
+          <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadResume}
+              disabled={isDownloading}
+              className="text-xs"
+            >
+              {isDownloading ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                  <span>Preparing...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="h-3.5 w-3.5 mr-1.5" />
+                  <span>Download / View</span>
+                  <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
+                </>
+              )}
+            </Button>
+
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowUploaderOverride(true)}
+              disabled={!isVerified}
+              className="text-xs"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              <span>Replace Resume</span>
+            </Button>
+          </div>
+
+          <div className="pt-2 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground font-mono">
+            <span>Secure presigned S3 URLs generate on-demand.</span>
+            <span>Max 10MB - PDF/DOCX</span>
           </div>
         </div>
       ) : (
@@ -317,42 +384,39 @@ export function ResumeUploader({
               fileInputRef.current?.click();
             }
           }}
-          className={`relative flex flex-col items-center justify-center rounded-[10px] border-2 border-dashed p-8 text-center transition-all ${
+          className={`relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 text-center transition-all shadow-none ${
             !isVerified
-              ? "cursor-not-allowed border-border bg-secondary/50 opacity-70"
+              ? "cursor-not-allowed border-border bg-muted/40 opacity-70"
               : isDragging
-                ? "cursor-copy border-primary bg-accent/40 scale-[1.01]"
-                : "cursor-pointer border-border bg-card hover:border-primary hover:bg-accent/20"
+                ? "cursor-copy border-foreground/60 bg-muted/30"
+                : "cursor-pointer border-border bg-card hover:border-foreground/30"
           }`}
         >
-          <div
-            className={`flex h-14 w-14 items-center justify-center rounded-[10px] shadow-sm transition ${
-              isDragging ? "bg-primary text-primary-foreground scale-110" : "bg-accent text-primary"
-            }`}
-          >
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted text-foreground">
             {isUploading ? (
-              <Loader2 className="h-7 w-7 animate-spin" />
+              <Loader2 className="h-6 w-6 animate-spin" />
             ) : (
-              <UploadCloud className="h-7 w-7" />
+              <Upload className="h-6 w-6" />
             )}
           </div>
 
           <div className="mt-4 space-y-1">
-            <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+            <h4 className="font-serif text-base font-medium text-foreground">
               {isUploading
-                ? "Uploading resume..."
+                ? "Uploading to private vault..."
                 : isDragging
-                  ? "Drop your resume file here"
-                  : "Drag & drop your resume, or browse files"}
+                  ? "Drop resume file here"
+                  : "Upload your resume document"}
             </h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              PDF or DOCX documents up to 5MB
+            <p className="text-xs text-muted-foreground font-mono">
+              PDF or Word (.docx) up to 10MB
             </p>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-            <button
+            <Button
               type="button"
+              size="sm"
               disabled={!isVerified || isUploading}
               onClick={(e) => {
                 e.stopPropagation();
@@ -360,38 +424,40 @@ export function ResumeUploader({
                   fileInputRef.current?.click();
                 }
               }}
-              className="inline-flex items-center gap-1.5 rounded-[10px] bg-primary text-primary-foreground px-4 py-2 text-xs font-semibold text-white shadow-sm shadow-sm transition hover:bg-primary disabled:opacity-50"
+              className="text-xs"
             >
               {isUploading ? (
                 <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
                   <span>Uploading...</span>
                 </>
               ) : (
                 <>
-                  <UploadCloud className="h-3.5 w-3.5" />
+                  <Upload className="h-3.5 w-3.5 mr-1.5" />
                   <span>Choose File</span>
                 </>
               )}
-            </button>
+            </Button>
 
             {hasResume && showUploaderOverride && (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowUploaderOverride(false);
                   setErrorMessage(null);
                 }}
-                className="rounded-[10px] border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                className="text-xs"
               >
                 Keep Current Resume
-              </button>
+              </Button>
             )}
           </div>
 
           {!isVerified && (
-            <p className="mt-3 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+            <p className="mt-3 font-mono text-[11px] text-pastel-yellowText">
               Uploader locked until university email is verified.
             </p>
           )}
