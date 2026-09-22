@@ -55,3 +55,33 @@ func WriteError(w http.ResponseWriter, r *http.Request, status int, code, messag
 		},
 	})
 }
+
+// WriteBadRequest writes a 400 Bad Request response with the given code and message.
+func WriteBadRequest(w http.ResponseWriter, r *http.Request, code, message string) {
+	WriteError(w, r, http.StatusBadRequest, code, message, nil)
+}
+
+// WriteUnauthorized writes a 401 Unauthorized response with the given code and message.
+func WriteUnauthorized(w http.ResponseWriter, r *http.Request, code, message string) {
+	WriteError(w, r, http.StatusUnauthorized, code, message, nil)
+}
+
+// WriteForbidden writes a 403 Forbidden response with the given code and message.
+func WriteForbidden(w http.ResponseWriter, r *http.Request, code, message string) {
+	WriteError(w, r, http.StatusForbidden, code, message, nil)
+}
+
+// WriteNotFound writes a 404 Not Found response with the given code and message.
+func WriteNotFound(w http.ResponseWriter, r *http.Request, code, message string) {
+	WriteError(w, r, http.StatusNotFound, code, message, nil)
+}
+
+// WriteConflict writes a 409 Conflict response with the given code and message.
+func WriteConflict(w http.ResponseWriter, r *http.Request, code, message string) {
+	WriteError(w, r, http.StatusConflict, code, message, nil)
+}
+
+// WriteInternalServerError writes a 500 Internal Server Error response masking the raw error from the client while logging it.
+func WriteInternalServerError(w http.ResponseWriter, r *http.Request, internalErr error) {
+	WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred. Please try again later.", internalErr)
+}
