@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -27,6 +28,7 @@ type Config struct {
 type Client interface {
 	UploadResume(ctx context.Context, key string, contentType string, body io.Reader) error
 	GetPresignedDownloadURL(ctx context.Context, key string, expiry time.Duration) (string, error)
+	GetPresignedUploadURL(ctx context.Context, key string, contentType string, contentLength int64, expiry time.Duration) (string, error)
 	DeleteResume(ctx context.Context, key string) error
 }
 
@@ -118,6 +120,33 @@ func (s *S3Client) GetPresignedDownloadURL(ctx context.Context, key string, expi
 	if err != nil {
 		return "", fmt.Errorf("presign get object: %w", err)
 	}
+	return req.URL, nil
+}
+
+func (s *S3Client) GetPresignedUploadURL(ctx context.Context, key string, contentType string, contentLength int64, expiry time.Duration) (string, error) {
+	if strings.TrimSpace(key) == "" {
+		return "", errors.New("key cannot be empty")
+	}
+	if contentType != "application/pdf" && contentType != "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
+		return "", fmt.Errorf("unsupported content type: %q (must be PDF or DOCX)", contentType)
+	}
+	if contentLength <= 0 || contentLength > 10<<20 {
+		return "", fmt.Errorf("invalid content length: %d (must be between 1 byte and 10MB)", contentLength)
+	}
+	if s.presignClient == nil {
+		return "", errors.New("presign client is not configured")
+	}
+
+	req, err := s.presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(s.bucket),
+		Key:           aws.String(key),
+		ContentType:   aws.String(contentType),
+		ContentLength: aws.Int64(contentLength),
+	}, s3.WithPresignExpires(expiry))
+	if err != nil {
+		return "", fmt.Errorf("failed to generate presigned upload url: %w", err)
+	}
+
 	return req.URL, nil
 }
 

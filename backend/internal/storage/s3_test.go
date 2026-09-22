@@ -291,3 +291,91 @@ func TestS3Client_CheckBucketMethodExists(t *testing.T) {
 		t.Fatalf("expected error on uninitialized client, got nil")
 	}
 }
+
+func TestS3Client_GetPresignedUploadURL_Validation(t *testing.T) {
+	client := &S3Client{
+		bucket: "resumes",
+	}
+
+	// Test empty key rejection
+	_, err := client.GetPresignedUploadURL(context.Background(), "", "application/pdf", 1024, 15*time.Minute)
+	if err == nil {
+		t.Errorf("expected error for empty key")
+	}
+
+	// Test invalid content-type rejection
+	_, err = client.GetPresignedUploadURL(context.Background(), "test-key", "application/x-executable", 1024, 15*time.Minute)
+	if err == nil {
+		t.Errorf("expected error for non-document content type")
+	}
+
+	// Test excessive content-length (> 10MB)
+	_, err = client.GetPresignedUploadURL(context.Background(), "test-key", "application/pdf", 15<<20, 15*time.Minute)
+	if err == nil {
+		t.Errorf("expected error for file size exceeding 10MB limit")
+	}
+
+	// Test non-positive content-length (0)
+	_, err = client.GetPresignedUploadURL(context.Background(), "test-key", "application/pdf", 0, 15*time.Minute)
+	if err == nil {
+		t.Errorf("expected error for zero content length")
+	}
+
+	// Test negative content-length
+	_, err = client.GetPresignedUploadURL(context.Background(), "test-key", "application/pdf", -50, 15*time.Minute)
+	if err == nil {
+		t.Errorf("expected error for negative content length")
+	}
+
+	// Test unconfigured presignClient
+	_, err = client.GetPresignedUploadURL(context.Background(), "test-key", "application/pdf", 1024, 15*time.Minute)
+	if err == nil {
+		t.Errorf("expected error when presign client is not configured")
+	}
+}
+
+func TestS3Client_GetPresignedUploadURL_Success(t *testing.T) {
+	cfg := Config{
+		Endpoint:  "http://localhost:9000",
+		AccessKey: "minio_admin",
+		SecretKey: "minio_password",
+		Bucket:    "resumes",
+		UseSSL:    false,
+	}
+
+	client, err := NewS3Client(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	key := "resumes/user-123/resume.pdf"
+	expiry := 15 * time.Minute
+
+	uploadURL, err := client.GetPresignedUploadURL(context.Background(), key, "application/pdf", 1024, expiry)
+	if err != nil {
+		t.Fatalf("failed to generate presigned upload url: %v", err)
+	}
+
+	if uploadURL == "" {
+		t.Fatal("expected presigned upload url to be non-empty")
+	}
+
+	parsedURL, err := url.Parse(uploadURL)
+	if err != nil {
+		t.Fatalf("failed to parse presigned url: %v", err)
+	}
+
+	if parsedURL.Host != "localhost:9000" {
+		t.Errorf("expected host localhost:9000, got: %s", parsedURL.Host)
+	}
+
+	expectedPath := "/resumes/" + key
+	if parsedURL.Path != expectedPath {
+		t.Errorf("expected path %s, got: %s", expectedPath, parsedURL.Path)
+	}
+
+	queryParams := parsedURL.Query()
+	if queryParams.Get("X-Amz-Signature") == "" {
+		t.Errorf("expected X-Amz-Signature query param in presigned url")
+	}
+}
