@@ -1,4 +1,4 @@
-import type { ApiResponse, SyncUserRequest, User, UserRole } from "../types/api";
+import type { ApiResponse, SyncUserRequest, User } from "../types/api";
 
 // ==========================================
 // Configuration & Constants
@@ -65,7 +65,7 @@ export interface AuthUser {
 
 /**
  * Decodes the payload of a SuperTokens access token without verifying the signature.
- * Verification is performed by SuperTokens Core / Go session middleware — not JWKS/Keycloak.
+ * Verification is performed by SuperTokens Core / Go session middleware - not JWKS/Keycloak.
  */
 export function decodeJwtClaims(token: string): JwtClaims | null {
   try {

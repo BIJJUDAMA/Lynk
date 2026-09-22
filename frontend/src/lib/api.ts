@@ -476,9 +476,47 @@ export async function getStudentProfileById(
   return getProfileById(studentId, client);
 }
 
+export interface PresignResumeRequest {
+  filename: string;
+  content_type: string;
+  size: number;
+}
+
+export interface PresignResumeResponse {
+  upload_url: string;
+  key: string;
+  expires_in_seconds: number;
+}
+
+export interface ConfirmResumeRequest {
+  key: string;
+  filename?: string;
+  size?: number;
+}
+
+/**
+ * Requests a presigned direct PUT URL to MinIO object storage.
+ */
+export async function presignResume(
+  req: PresignResumeRequest,
+  client: ApiClient = apiClient
+): Promise<PresignResumeResponse> {
+  return client.post<PresignResumeResponse>("/profile/resume/presign", req);
+}
+
+/**
+ * Confirms a completed direct-to-MinIO resume upload.
+ */
+export async function confirmResume(
+  req: ConfirmResumeRequest,
+  client: ApiClient = apiClient
+): Promise<Profile> {
+  return client.post<Profile>("/profile/resume/confirm", req);
+}
+
 /**
  * Uploads resume PDF/DOCX to MinIO object storage.
- * Enforces verified .edu email and max 5MB size limit.
+ * Enforces verified .edu email and max size limit.
  */
 export async function uploadResume(
   file: File,
