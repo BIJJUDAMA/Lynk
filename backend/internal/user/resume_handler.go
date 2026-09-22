@@ -1,8 +1,11 @@
 package user
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -185,4 +188,119 @@ func (h *Handler) handleResumeDownloadError(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	httputil.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve resume download URL", err)
+}
+
+type PresignResumeRequest struct {
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	Size        int64  `json:"size"`
+}
+
+type PresignResumeResponse struct {
+	UploadURL string `json:"upload_url"`
+	Key       string `json:"key"`
+	ExpiresIn int    `json:"expires_in_seconds"`
+}
+
+type ConfirmResumeRequest struct {
+	Key      string `json:"key"`
+	Filename string `json:"filename"`
+	Size     int64  `json:"size"`
+}
+
+// PresignResume handles POST /api/v1/profile/resume/presign
+func (h *Handler) PresignResume(w http.ResponseWriter, r *http.Request) {
+	claims, err := auth.GetUserContext(r.Context())
+	if err != nil || claims == nil || claims.UserID == "" {
+		httputil.WriteUnauthorized(w, r, "UNAUTHORIZED", "Missing credentials")
+		return
+	}
+	if err := auth.CheckEmailVerified(claims); err != nil {
+		httputil.WriteForbidden(w, r, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg)
+		return
+	}
+
+	if h.s3Client == nil {
+		httputil.WriteInternalServerError(w, r, errors.New("storage client not configured"))
+		return
+	}
+
+	var req PresignResumeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.WriteBadRequest(w, r, "BAD_REQUEST", "Invalid JSON body")
+		return
+	}
+
+	if strings.TrimSpace(req.Filename) == "" {
+		httputil.WriteBadRequest(w, r, "INVALID_FILENAME", "Filename is required")
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(req.Filename))
+	if ext != ".pdf" && ext != ".docx" {
+		httputil.WriteBadRequest(w, r, "INVALID_FILE_TYPE", "Resume must be a PDF or DOCX file")
+		return
+	}
+
+	key := storage.GenerateResumeKey(claims.UserID, req.Filename)
+	url, err := h.s3Client.GetPresignedUploadURL(r.Context(), key, req.ContentType, req.Size, PresignedURLExpiry)
+	if err != nil {
+		httputil.WriteBadRequest(w, r, "INVALID_UPLOAD_PARAMS", err.Error())
+		return
+	}
+
+	httputil.WriteSuccess(w, http.StatusOK, PresignResumeResponse{
+		UploadURL: url,
+		Key:       key,
+		ExpiresIn: int(PresignedURLExpiry.Seconds()),
+	})
+}
+
+// ConfirmResume handles POST /api/v1/profile/resume/confirm
+func (h *Handler) ConfirmResume(w http.ResponseWriter, r *http.Request) {
+	if h.service == nil {
+		httputil.WriteInternalServerError(w, r, errors.New("user service not configured"))
+		return
+	}
+
+	claims, err := auth.GetUserContext(r.Context())
+	if err != nil || claims == nil || claims.UserID == "" {
+		httputil.WriteUnauthorized(w, r, "UNAUTHORIZED", "Missing credentials")
+		return
+	}
+	if err := auth.CheckEmailVerified(claims); err != nil {
+		httputil.WriteForbidden(w, r, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg)
+		return
+	}
+
+	var req ConfirmResumeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.WriteBadRequest(w, r, "BAD_REQUEST", "Invalid JSON body")
+		return
+	}
+
+	if strings.TrimSpace(req.Key) == "" {
+		httputil.WriteBadRequest(w, r, "BAD_REQUEST", "Resume key is required")
+		return
+	}
+
+	profile, err := h.service.ConfirmDirectResumeUpload(r.Context(), claims, req.Key)
+	if err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			httputil.WriteUnauthorized(w, r, "UNAUTHORIZED", "Missing credentials")
+			return
+		}
+		if errors.Is(err, ErrForbidden) || errors.Is(err, auth.ErrEmailNotVerified) {
+			httputil.WriteForbidden(w, r, "EMAIL_NOT_VERIFIED", auth.CampusVerificationPendingMsg)
+			return
+		}
+		if errors.Is(err, ErrInvalidInput) || errors.Is(err, ErrInvalidFileType) {
+			httputil.WriteBadRequest(w, r, "BAD_REQUEST", err.Error())
+			return
+		}
+		httputil.WriteInternalServerError(w, r, err)
+		return
+	}
+
+	httputil.WriteSuccess(w, http.StatusOK, profile)
 }

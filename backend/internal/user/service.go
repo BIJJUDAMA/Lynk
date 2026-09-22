@@ -405,6 +405,76 @@ func (s *Service) UploadResume(ctx context.Context, claims *auth.UserClaims, fil
 	return updated, nil
 }
 
+// ConfirmDirectResumeUpload confirms a direct-to-storage resume upload:
+// 1. Enforces authentication and institutional email verification gate.
+// 2. Validates that the provided S3 key matches the expected format for this user ("resumes/<userID>/...").
+// 3. Updates resume metadata in PostgreSQL under profile advisory lock.
+// 4. On success, if user had a previous ResumeKey, cleans up the old S3 object.
+func (s *Service) ConfirmDirectResumeUpload(ctx context.Context, claims *auth.UserClaims, key string) (*Profile, error) {
+	if claims == nil || claims.UserID == "" {
+		return nil, ErrUnauthorized
+	}
+	if !claims.EmailVerified {
+		return nil, auth.ErrEmailNotVerified
+	}
+
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, fmt.Errorf("%w: resume key is required", ErrInvalidInput)
+	}
+
+	expectedPrefix := fmt.Sprintf("resumes/%s/", claims.UserID)
+	if !strings.HasPrefix(key, expectedPrefix) || strings.Contains(key, "..") {
+		return nil, fmt.Errorf("%w: invalid resume key format", ErrInvalidInput)
+	}
+
+	ext := strings.ToLower(filepath.Ext(key))
+	if ext != ".pdf" && ext != ".docx" {
+		return nil, ErrInvalidFileType
+	}
+
+	base := filepath.Base(key)
+	filename := base
+	// In storage.GenerateResumeKey, the pattern is <uuid>-<sanitized_filename>.
+	// If a UUID prefix is present (36 chars uuid + hyphen), extract the original filename.
+	if len(base) > 37 && base[36] == '-' {
+		filename = base[37:]
+	}
+
+	var oldResumeKey string
+	var updated *Profile
+	err := s.repo.WithProfileLock(ctx, claims.UserID, func(lockCtx context.Context) error {
+		existingProfile, err := s.repo.GetProfile(lockCtx, claims.UserID)
+		if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrProfileNotFound) {
+			slog.Warn("failed to lookup existing profile during resume confirm", "user_id", claims.UserID, "err", err)
+		}
+		if existingProfile != nil && existingProfile.ResumeKey != nil {
+			oldResumeKey = *existingProfile.ResumeKey
+		}
+
+		if err := s.repo.UpdateResume(lockCtx, claims.UserID, key, filename, 0); err != nil {
+			return err
+		}
+
+		p, err := s.repo.GetProfile(lockCtx, claims.UserID)
+		if err != nil {
+			return err
+		}
+		updated = p
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("update resume metadata: %w", err)
+	}
+
+	// Clean up previous resume object if replacing
+	if oldResumeKey != "" && oldResumeKey != key {
+		s.deleteResumeBestEffort(ctx, oldResumeKey, "replace previous object")
+	}
+
+	return updated, nil
+}
+
 func (s *Service) deleteResumeBestEffort(ctx context.Context, key, reason string) {
 	if s.storage == nil || key == "" {
 		return

@@ -63,9 +63,13 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 		r.Group(func(vr chi.Router) {
 			vr.Use(middleware.RequireVerifiedEmail())
 			vr.Post("/profile/resume", h.UploadResume(h.s3Client))
+			vr.Post("/profile/resume/presign", h.PresignResume)
+			vr.Post("/profile/resume/confirm", h.ConfirmResume)
 			vr.Get("/profile/resume", h.GetMyResumeURL(h.s3Client))
 			vr.Get("/profile/{id}/resume", h.GetMemberResumeURL(h.s3Client))
 			vr.Post("/profile/student/resume", h.UploadResume(h.s3Client))
+			vr.Post("/profile/student/resume/presign", h.PresignResume)
+			vr.Post("/profile/student/resume/confirm", h.ConfirmResume)
 			vr.Get("/profile/student/resume", h.GetMyResumeURL(h.s3Client))
 			vr.Get("/profile/student/{id}/resume", h.GetMemberResumeURL(h.s3Client))
 		})
@@ -79,6 +83,43 @@ func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Rou
 	r.Put("/profile/employer", h.UpdateMyProfile)
 
 	return r
+}
+
+// RegisterRoutes mounts all user auth, profile, and resume endpoints onto the provided chi router.
+func (h *Handler) RegisterRoutes(r chi.Router, authMiddleware func(http.Handler) http.Handler) {
+	r.Group(func(pr chi.Router) {
+		pr.Use(httpx.DefaultAuthMiddleware(authMiddleware))
+
+		pr.Post("/auth/sync", h.SyncUser)
+		pr.Get("/auth/me", h.GetMe)
+
+		pr.Get("/profile/me", h.GetMyProfile)
+		pr.Put("/profile/me", h.UpdateMyProfile)
+		pr.Get("/profile/{id}", h.GetProfileByID)
+
+		if h.s3Client != nil {
+			pr.Group(func(vr chi.Router) {
+				vr.Use(middleware.RequireVerifiedEmail())
+				vr.Post("/profile/resume", h.UploadResume(h.s3Client))
+				vr.Post("/profile/resume/presign", h.PresignResume)
+				vr.Post("/profile/resume/confirm", h.ConfirmResume)
+				vr.Get("/profile/resume", h.GetMyResumeURL(h.s3Client))
+				vr.Get("/profile/{id}/resume", h.GetMemberResumeURL(h.s3Client))
+				vr.Post("/profile/student/resume", h.UploadResume(h.s3Client))
+				vr.Post("/profile/student/resume/presign", h.PresignResume)
+				vr.Post("/profile/student/resume/confirm", h.ConfirmResume)
+				vr.Get("/profile/student/resume", h.GetMyResumeURL(h.s3Client))
+				vr.Get("/profile/student/{id}/resume", h.GetMemberResumeURL(h.s3Client))
+			})
+		}
+
+		// Aliases
+		pr.Get("/profile/student", h.GetMyProfile)
+		pr.Put("/profile/student", h.UpdateMyProfile)
+		pr.Get("/profile/student/{id}", h.GetProfileByID)
+		pr.Get("/profile/employer", h.GetMyProfile)
+		pr.Put("/profile/employer", h.UpdateMyProfile)
+	})
 }
 
 // AuthRoutes provides subrouter for mounting at /auth prefix.
@@ -102,9 +143,13 @@ func (h *Handler) ProfileRoutes(authMiddleware func(http.Handler) http.Handler) 
 		r.Group(func(vr chi.Router) {
 			vr.Use(middleware.RequireVerifiedEmail())
 			vr.Post("/resume", h.UploadResume(h.s3Client))
+			vr.Post("/resume/presign", h.PresignResume)
+			vr.Post("/resume/confirm", h.ConfirmResume)
 			vr.Get("/resume", h.GetMyResumeURL(h.s3Client))
 			vr.Get("/{id}/resume", h.GetMemberResumeURL(h.s3Client))
 			vr.Post("/student/resume", h.UploadResume(h.s3Client))
+			vr.Post("/student/resume/presign", h.PresignResume)
+			vr.Post("/student/resume/confirm", h.ConfirmResume)
 			vr.Get("/student/resume", h.GetMyResumeURL(h.s3Client))
 			vr.Get("/student/{id}/resume", h.GetMemberResumeURL(h.s3Client))
 		})
