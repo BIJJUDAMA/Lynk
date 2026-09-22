@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   formatJobDate,
   getStatusBadgeClasses,
+  formatJobBudget,
   COMMON_DEPARTMENTS,
   POPULAR_SKILLS,
   formatFileSize,
@@ -26,17 +27,26 @@ test("formatJobDate formats ISO date strings and handles null/undefined", () => 
 
 test("getStatusBadgeClasses returns distinctive style tokens for all job statuses", () => {
   const openStyles = getStatusBadgeClasses("open");
-  assert.ok(openStyles.bg.includes("emerald"));
-  assert.ok(openStyles.text.includes("emerald"));
+  assert.ok(openStyles.bg.includes("pastel-green"));
+  assert.ok(openStyles.text.includes("pastel-greenText"));
 
   const inProgressStyles = getStatusBadgeClasses("in_progress");
-  assert.ok(inProgressStyles.bg.includes("sky"));
+  assert.ok(inProgressStyles.bg.includes("pastel-blue"));
 
   const closedStyles = getStatusBadgeClasses("closed");
-  assert.ok(closedStyles.bg.includes("slate"));
+  assert.ok(closedStyles.bg.includes("muted"));
 
   const cancelledStyles = getStatusBadgeClasses("cancelled");
-  assert.ok(cancelledStyles.bg.includes("rose"));
+  assert.ok(cancelledStyles.bg.includes("pastel-red"));
+});
+
+test("formatJobBudget formats numerical and fallback departmental budgets", () => {
+  assert.equal(formatJobBudget({ budget: 500 }), "$500 Fixed");
+  assert.equal(formatJobBudget({ budget: "$35/hr" }), "$35/hr");
+  assert.equal(formatJobBudget({ budget: "750" }), "$750");
+  assert.equal(formatJobBudget({ department: "Computer Science & Engineering" }), "$45/hr");
+  assert.equal(formatJobBudget({ department: "Design & Creative Arts" }), "$650 Fixed");
+  assert.equal(formatJobBudget({}), "$35/hr");
 });
 
 test("COMMON_DEPARTMENTS and POPULAR_SKILLS contain academic presets", () => {
@@ -60,15 +70,15 @@ test("formatFileSize formats bytes to human-readable strings", () => {
 
 test("getApplicationStatusBadgeClasses returns styling for all application statuses", () => {
   const pending = getApplicationStatusBadgeClasses("pending");
-  assert.ok(pending.bg.includes("amber"));
+  assert.ok(pending.bg.includes("pastel-yellow"));
   assert.equal(pending.label, "Pending Review");
 
   const accepted = getApplicationStatusBadgeClasses("accepted");
-  assert.ok(accepted.bg.includes("emerald"));
+  assert.ok(accepted.bg.includes("pastel-green"));
   assert.equal(accepted.label, "Accepted");
 
   const rejected = getApplicationStatusBadgeClasses("rejected");
-  assert.ok(rejected.bg.includes("rose"));
+  assert.ok(rejected.bg.includes("pastel-red"));
   assert.equal(rejected.label, "Not Selected");
 });
 
@@ -85,18 +95,18 @@ test("isValidUrl validates web URLs with http/https protocols", () => {
 
 test("getContractStatusBadgeClasses returns styling for all contract statuses", () => {
   const draft = getContractStatusBadgeClasses("draft");
-  assert.ok(draft.bg.includes("slate"));
+  assert.ok(draft.bg.includes("muted"));
   assert.equal(draft.label, "Draft");
 
   const active = getContractStatusBadgeClasses("active");
-  assert.ok(active.bg.includes("blue"));
+  assert.ok(active.bg.includes("pastel-blue"));
   assert.equal(active.label, "Active");
 
   const completed = getContractStatusBadgeClasses("completed");
-  assert.ok(completed.bg.includes("emerald"));
+  assert.ok(completed.bg.includes("pastel-green"));
   assert.equal(completed.label, "Completed");
 
   const cancelled = getContractStatusBadgeClasses("cancelled");
-  assert.ok(cancelled.bg.includes("rose"));
+  assert.ok(cancelled.bg.includes("pastel-red"));
   assert.equal(cancelled.label, "Cancelled");
 });

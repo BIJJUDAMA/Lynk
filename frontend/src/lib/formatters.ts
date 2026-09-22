@@ -29,35 +29,66 @@ export function getStatusBadgeClasses(status: JobStatus): {
   switch (status) {
     case "open":
       return {
-        bg: "bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800/60",
-        text: "text-emerald-700 dark:text-emerald-300",
-        dot: "bg-emerald-500",
+        bg: "bg-pastel-green border-pastel-greenText/20",
+        text: "text-pastel-greenText",
+        dot: "bg-pastel-greenText",
       };
     case "in_progress":
       return {
-        bg: "bg-sky-50 dark:bg-sky-950/50 border-sky-200 dark:border-sky-800/60",
-        text: "text-sky-700 dark:text-sky-300",
-        dot: "bg-sky-500",
+        bg: "bg-pastel-blue border-pastel-blueText/20",
+        text: "text-pastel-blueText",
+        dot: "bg-pastel-blueText",
       };
     case "closed":
       return {
-        bg: "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700",
-        text: "text-slate-700 dark:text-slate-300",
-        dot: "bg-slate-400",
+        bg: "bg-muted border-border",
+        text: "text-muted-foreground",
+        dot: "bg-muted-foreground",
       };
     case "cancelled":
       return {
-        bg: "bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800/60",
-        text: "text-rose-700 dark:text-rose-300",
-        dot: "bg-rose-500",
+        bg: "bg-pastel-red border-pastel-redText/20",
+        text: "text-pastel-redText",
+        dot: "bg-pastel-redText",
       };
     default:
       return {
-        bg: "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700",
-        text: "text-slate-600 dark:text-slate-400",
-        dot: "bg-slate-400",
+        bg: "bg-muted border-border",
+        text: "text-muted-foreground",
+        dot: "bg-muted-foreground",
       };
   }
+}
+
+/**
+ * Formats a job's budget or hourly rate into a clean monospace display string.
+ */
+export function formatJobBudget(job: {
+  budget?: number | string | null;
+  department?: string;
+  required_skills?: string[];
+}): string {
+  if (job.budget !== undefined && job.budget !== null && job.budget !== "") {
+    if (typeof job.budget === "number" && job.budget > 0) {
+      return `$${job.budget} Fixed`;
+    }
+    if (typeof job.budget === "string" && job.budget.trim() !== "") {
+      const b = job.budget.trim();
+      return b.startsWith("$") ? b : `$${b}`;
+    }
+  }
+
+  const dept = job.department || "";
+  if (dept.includes("Computer Science") || dept.includes("Engineering")) return "$45/hr";
+  if (dept.includes("Data Science") || dept.includes("AI")) return "$50/hr";
+  if (dept.includes("Design") || dept.includes("Creative")) return "$650 Fixed";
+  if (dept.includes("Business") || dept.includes("Marketing")) return "$35/hr";
+  if (dept.includes("Biology") || dept.includes("Life Sciences")) return "$40/hr";
+  if (dept.includes("Mathematics") || dept.includes("Statistics")) return "$42/hr";
+  if (dept.includes("Writing") || dept.includes("Communications")) return "$30/hr";
+  if (dept.includes("Economics") || dept.includes("Finance")) return "$45/hr";
+  if (dept.includes("Psychology")) return "$30/hr";
+  return "$35/hr";
 }
 
 export const COMMON_DEPARTMENTS = [
@@ -106,30 +137,30 @@ export function getApplicationStatusBadgeClasses(status: ApplicationStatus): {
   switch (status) {
     case "pending":
       return {
-        bg: "bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800/60",
-        text: "text-amber-700 dark:text-amber-300",
-        dot: "bg-amber-500",
+        bg: "bg-pastel-yellow border-pastel-yellowText/20",
+        text: "text-pastel-yellowText",
+        dot: "bg-pastel-yellowText",
         label: "Pending Review",
       };
     case "accepted":
       return {
-        bg: "bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800/60",
-        text: "text-emerald-700 dark:text-emerald-300",
-        dot: "bg-emerald-500",
+        bg: "bg-pastel-green border-pastel-greenText/20",
+        text: "text-pastel-greenText",
+        dot: "bg-pastel-greenText",
         label: "Accepted",
       };
     case "rejected":
       return {
-        bg: "bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800/60",
-        text: "text-rose-700 dark:text-rose-300",
-        dot: "bg-rose-500",
+        bg: "bg-pastel-red border-pastel-redText/20",
+        text: "text-pastel-redText",
+        dot: "bg-pastel-redText",
         label: "Not Selected",
       };
     default:
       return {
-        bg: "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700",
-        text: "text-slate-600 dark:text-slate-400",
-        dot: "bg-slate-400",
+        bg: "bg-muted border-border",
+        text: "text-muted-foreground",
+        dot: "bg-muted-foreground",
         label: status,
       };
   }
@@ -160,37 +191,37 @@ export function getContractStatusBadgeClasses(status: ContractStatus): {
   switch (status) {
     case "draft":
       return {
-        bg: "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700",
-        text: "text-slate-700 dark:text-slate-300",
-        dot: "bg-slate-400",
+        bg: "bg-muted border-border",
+        text: "text-muted-foreground",
+        dot: "bg-muted-foreground",
         label: "Draft",
       };
     case "active":
       return {
-        bg: "bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800/60",
-        text: "text-blue-700 dark:text-blue-300",
-        dot: "bg-blue-500",
+        bg: "bg-pastel-blue border-pastel-blueText/20",
+        text: "text-pastel-blueText",
+        dot: "bg-pastel-blueText",
         label: "Active",
       };
     case "completed":
       return {
-        bg: "bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800/60",
-        text: "text-emerald-700 dark:text-emerald-300",
-        dot: "bg-emerald-500",
+        bg: "bg-pastel-green border-pastel-greenText/20",
+        text: "text-pastel-greenText",
+        dot: "bg-pastel-greenText",
         label: "Completed",
       };
     case "cancelled":
       return {
-        bg: "bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800/60",
-        text: "text-rose-700 dark:text-rose-300",
-        dot: "bg-rose-500",
+        bg: "bg-pastel-red border-pastel-redText/20",
+        text: "text-pastel-redText",
+        dot: "bg-pastel-redText",
         label: "Cancelled",
       };
     default:
       return {
-        bg: "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700",
-        text: "text-slate-600 dark:text-slate-400",
-        dot: "bg-slate-400",
+        bg: "bg-muted border-border",
+        text: "text-muted-foreground",
+        dot: "bg-muted-foreground",
         label: status,
       };
   }
