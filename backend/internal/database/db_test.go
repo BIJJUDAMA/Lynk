@@ -115,6 +115,47 @@ func TestMigration000013_FilesExistAndSyntaxValid(t *testing.T) {
 	}
 }
 
+func TestMigration000014_FilesExistAndSyntaxValid(t *testing.T) {
+	upPath := filepath.Clean(filepath.Join("..", "..", "migrations", "000014_active_partial_indexes.up.sql"))
+	downPath := filepath.Clean(filepath.Join("..", "..", "migrations", "000014_active_partial_indexes.down.sql"))
+
+	// #nosec G304 -- test file path is fixed and internal
+	upBytes, err := os.ReadFile(upPath) //nolint:gosec
+	if err != nil {
+		t.Fatalf("failed to read 000014 up migration: %v", err)
+	}
+	upContent := string(upBytes)
+	if len(strings.TrimSpace(upContent)) == 0 {
+		t.Errorf("000014 up migration file is empty")
+	}
+
+	// #nosec G304 -- test file path is fixed and internal
+	downBytes, err := os.ReadFile(downPath) //nolint:gosec
+	if err != nil {
+		t.Fatalf("failed to read 000014 down migration: %v", err)
+	}
+	downContent := string(downBytes)
+	if len(strings.TrimSpace(downContent)) == 0 {
+		t.Errorf("000014 down migration file is empty")
+	}
+
+	expectedIndexes := []string{
+		"idx_jobs_active_created_at",
+		"idx_applications_pending_job",
+		"idx_contracts_active_status",
+		"idx_recommendations_active_user",
+	}
+
+	for _, idx := range expectedIndexes {
+		if !strings.Contains(upContent, idx) {
+			t.Errorf("expected up migration to create index %s", idx)
+		}
+		if !strings.Contains(downContent, idx) {
+			t.Errorf("expected down migration to drop index %s", idx)
+		}
+	}
+}
+
 func TestNewPool_InvalidURL(t *testing.T) {
 	ctx := context.Background()
 	_, err := database.NewPool(ctx, "postgres://invalid uri with spaces")
