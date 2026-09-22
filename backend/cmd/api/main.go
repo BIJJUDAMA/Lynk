@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -23,6 +22,7 @@ import (
 	"github.com/lynk/backend/internal/ai/orchestrator"
 	"github.com/lynk/backend/internal/application"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/config"
 	"github.com/lynk/backend/internal/contract"
 	"github.com/lynk/backend/internal/database"
 	"github.com/lynk/backend/internal/job"
@@ -33,71 +33,12 @@ import (
 	"github.com/supertokens/supertokens-golang/supertokens"
 )
 
-// Config holds environment and runtime configuration for the Lynk API server.
-type Config struct {
-	Port                     string
-	DatabaseURL              string
-	MigrationsDir            string
-	SuperTokensConnectionURI string
-	SuperTokensAPIKey        string
-	APIDomain                string
-	WebsiteDomain            string
-	MinioEndpoint            string
-	MinioPublicEndpoint      string
-	MinioAccessKey           string
-	MinioSecretKey           string
-	MinioBucket              string
-	MinioUseSSL              bool
-	CORSAllowedOrigins       string
-}
+// Config aliases config.Config for backward compatibility within cmd/api.
+type Config = config.Config
 
-// LoadConfig reads configuration from environment variables with sane defaults.
-func LoadConfig() Config {
-	port := getEnv("PORT", "8080")
-	dbURL := getEnv("DATABASE_URL", "postgres://lynk_user:lynk_password@localhost:5432/lynk_db?sslmode=disable")
-
-	migrationsDir := getEnv("MIGRATIONS_DIR", "")
-	if migrationsDir == "" {
-		candidates := []string{"migrations", "backend/migrations", "/app/migrations"}
-		for _, c := range candidates {
-			if _, err := os.Stat(c); err == nil {
-				migrationsDir = c
-				break
-			}
-		}
-		if migrationsDir == "" {
-			migrationsDir = "migrations"
-		}
-	}
-
-	stConnectionURI := getEnv("SUPERTOKENS_CONNECTION_URI", "http://localhost:3567")
-	stAPIKey := getEnv("SUPERTOKENS_API_KEY", "lynk-supertokens-secret-api-key-2026")
-	apiDomain := getEnv("API_DOMAIN", "http://localhost:8080")
-	websiteDomain := getEnv("WEBSITE_DOMAIN", "http://localhost:3000")
-	minioEndpoint := getEnv("MINIO_ENDPOINT", "localhost:9000")
-	minioPublicEndpoint := getEnv("MINIO_PUBLIC_ENDPOINT", "http://localhost:9000")
-	minioAccessKey := getEnv("MINIO_ACCESS_KEY", "minio_admin")
-	minioSecretKey := getEnv("MINIO_SECRET_KEY", "minio_password")
-	minioBucket := getEnv("MINIO_BUCKET", "resumes")
-	minioUseSSL, _ := strconv.ParseBool(getEnv("MINIO_USE_SSL", "false"))
-	corsAllowedOrigins := getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
-
-	return Config{
-		Port:                     port,
-		DatabaseURL:              dbURL,
-		MigrationsDir:            migrationsDir,
-		SuperTokensConnectionURI: stConnectionURI,
-		SuperTokensAPIKey:        stAPIKey,
-		APIDomain:                apiDomain,
-		WebsiteDomain:            websiteDomain,
-		MinioEndpoint:            minioEndpoint,
-		MinioPublicEndpoint:      minioPublicEndpoint,
-		MinioAccessKey:           minioAccessKey,
-		MinioSecretKey:           minioSecretKey,
-		MinioBucket:              minioBucket,
-		MinioUseSSL:              minioUseSSL,
-		CORSAllowedOrigins:       corsAllowedOrigins,
-	}
+// LoadConfig delegates to config.Load for backward compatibility within cmd/api tests.
+func LoadConfig() config.Config {
+	return config.Load()
 }
 
 func getEnv(key, fallback string) string {
@@ -259,7 +200,11 @@ func BuildRouter(
 						vr.Get("/resume", userHandler.GetMyResumeURL())
 						vr.Get("/{id}/resume", userHandler.GetMemberResumeURL())
 						vr.Post("/resume", userHandler.UploadResume())
+						vr.Post("/resume/presign", userHandler.PresignResume)
+						vr.Post("/resume/confirm", userHandler.ConfirmResume)
 						vr.Post("/student/resume", userHandler.UploadResume())
+						vr.Post("/student/resume/presign", userHandler.PresignResume)
+						vr.Post("/student/resume/confirm", userHandler.ConfirmResume)
 						vr.Get("/student/resume", userHandler.GetMyResumeURL())
 						vr.Get("/student/{id}/resume", userHandler.GetStudentResumeURL())
 					}
@@ -411,7 +356,11 @@ func NewServer(cfg Config, handler http.Handler) *http.Server {
 }
 
 func main() {
-	cfg := LoadConfig()
+	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
 	_, aiSecret := resolveAIConfig()
 	if msg := warnIfDefaultSecrets(getEnv("APP_ENV", ""), cfg.MinioAccessKey, cfg.MinioSecretKey, cfg.SuperTokensAPIKey, aiSecret); msg != "" {
 		log.Printf("[WARN] %s", msg)

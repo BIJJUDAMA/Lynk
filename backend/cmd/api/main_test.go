@@ -31,6 +31,9 @@ func (stubStore) UploadResume(context.Context, string, string, io.Reader) error 
 func (stubStore) GetPresignedDownloadURL(context.Context, string, time.Duration) (string, error) {
 	return "http://example/signed", nil
 }
+func (stubStore) GetPresignedUploadURL(context.Context, string, string, int64, time.Duration) (string, error) {
+	return "http://example/upload", nil
+}
 func (stubStore) DeleteResume(context.Context, string) error { return nil }
 
 var _ storage.Client = stubStore{}
@@ -41,6 +44,9 @@ type readOnlyStoreStub struct {
 
 func (r readOnlyStoreStub) UploadResume(context.Context, string, string, io.Reader) error { return nil }
 func (r readOnlyStoreStub) GetPresignedDownloadURL(context.Context, string, time.Duration) (string, error) {
+	return "", nil
+}
+func (r readOnlyStoreStub) GetPresignedUploadURL(context.Context, string, string, int64, time.Duration) (string, error) {
 	return "", nil
 }
 func (r readOnlyStoreStub) DeleteResume(context.Context, string) error { return nil }

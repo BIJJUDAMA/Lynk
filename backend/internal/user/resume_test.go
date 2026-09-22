@@ -4,11 +4,13 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -91,6 +93,27 @@ func (m *mockStorageClient) GetPresignedDownloadURL(ctx context.Context, key str
 		return url, nil
 	}
 	return "https://minio.local/resumes/" + key + "?expires=900", nil
+}
+
+func (m *mockStorageClient) GetPresignedUploadURL(ctx context.Context, key string, contentType string, contentLength int64, expiry time.Duration) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.errPresign != nil {
+		return "", m.errPresign
+	}
+	if strings.TrimSpace(key) == "" {
+		return "", errors.New("key cannot be empty")
+	}
+	if contentType != "application/pdf" && contentType != "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
+		return "", errors.New("unsupported content type (must be PDF or DOCX)")
+	}
+	if contentLength <= 0 || contentLength > 10<<20 {
+		return "", errors.New("invalid content length (must be between 1 byte and 10MB)")
+	}
+	if url, ok := m.presignedURLs[key]; ok {
+		return url, nil
+	}
+	return "https://minio.local/resumes/" + key + "?upload=true&expires=900", nil
 }
 
 func (m *mockStorageClient) DeleteResume(ctx context.Context, key string) error {
@@ -1098,5 +1121,402 @@ func TestService_UploadResume_DBFailure_CompensatingDeleteOutsideLock(t *testing
 	}
 	if lockActiveDuringDelete {
 		t.Error("compensating S3 delete was executed while holding database advisory lock")
+	}
+}
+
+func TestResume_PresignSuccess(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	userUUID := uuid.New()
+
+	claims := &auth.UserClaims{
+		UserID:        userUUID.String(),
+		Email:         "alex@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	_, router := setupResumeTestRouter(repo, s3Client, claims)
+
+	payload := map[string]interface{}{
+		"filename":     "alex_resume.pdf",
+		"content_type": "application/pdf",
+		"size":         102400,
+	}
+	bodyBytes, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/profile/resume/presign", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Success bool                       `json:"success"`
+		Data    user.PresignResumeResponse `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if !resp.Success {
+		t.Errorf("expected success: true")
+	}
+	if resp.Data.UploadURL == "" {
+		t.Errorf("expected non-empty upload url")
+	}
+	expectedPrefix := "resumes/" + userUUID.String() + "/"
+	if !strings.HasPrefix(resp.Data.Key, expectedPrefix) {
+		t.Errorf("expected key prefix %s, got %s", expectedPrefix, resp.Data.Key)
+	}
+	if resp.Data.ExpiresIn != 900 {
+		t.Errorf("expected expiresIn 900, got %d", resp.Data.ExpiresIn)
+	}
+}
+
+func TestResume_Presign_UnverifiedEmail(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	userUUID := uuid.New()
+
+	claims := &auth.UserClaims{
+		UserID:        userUUID.String(),
+		Email:         "unverified@mit.edu",
+		EmailVerified: false,
+		Roles:         []string{"member"},
+	}
+
+	_, router := setupResumeTestRouter(repo, s3Client, claims)
+
+	payload := map[string]interface{}{
+		"filename":     "resume.pdf",
+		"content_type": "application/pdf",
+		"size":         1024,
+	}
+	bodyBytes, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/profile/resume/presign", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for unverified email, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestResume_Presign_ValidationErrors(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	userUUID := uuid.New()
+
+	claims := &auth.UserClaims{
+		UserID:        userUUID.String(),
+		Email:         "alex@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	_, router := setupResumeTestRouter(repo, s3Client, claims)
+
+	testCases := []struct {
+		name    string
+		payload map[string]interface{}
+		rawBody string
+	}{
+		{
+			name: "empty filename",
+			payload: map[string]interface{}{
+				"filename":     "",
+				"content_type": "application/pdf",
+				"size":         1024,
+			},
+		},
+		{
+			name: "unsupported content type",
+			payload: map[string]interface{}{
+				"filename":     "resume.exe",
+				"content_type": "application/octet-stream",
+				"size":         1024,
+			},
+		},
+		{
+			name: "excessive size",
+			payload: map[string]interface{}{
+				"filename":     "resume.pdf",
+				"content_type": "application/pdf",
+				"size":         15 << 20,
+			},
+		},
+		{
+			name: "zero size",
+			payload: map[string]interface{}{
+				"filename":     "resume.pdf",
+				"content_type": "application/pdf",
+				"size":         0,
+			},
+		},
+		{
+			name:    "invalid json body",
+			rawBody: "{invalid-json",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var bodyReader io.Reader
+			if tc.rawBody != "" {
+				bodyReader = strings.NewReader(tc.rawBody)
+			} else {
+				bytesBody, _ := json.Marshal(tc.payload)
+				bodyReader = bytes.NewReader(bytesBody)
+			}
+
+			req := httptest.NewRequest("POST", "/profile/resume/presign", bodyReader)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 Bad Request for %s, got %d: %s", tc.name, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestResume_ConfirmSuccess(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	userUUID := uuid.New()
+
+	claims := &auth.UserClaims{
+		UserID:        userUUID.String(),
+		Email:         "alex@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	_, router := setupResumeTestRouter(repo, s3Client, claims)
+
+	key := storage.GenerateResumeKey(userUUID.String(), "alex_cv.pdf")
+
+	payload := user.ConfirmResumeRequest{
+		Key: key,
+	}
+	bodyBytes, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/profile/resume/confirm", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	profile, err := repo.GetProfile(context.Background(), userUUID.String())
+	if err != nil || profile == nil {
+		t.Fatalf("failed to retrieve profile: %v", err)
+	}
+
+	if profile.ResumeKey == nil || *profile.ResumeKey != key {
+		t.Errorf("expected resume key %s, got %v", key, profile.ResumeKey)
+	}
+	if profile.ResumeFilename == nil || *profile.ResumeFilename != "alex_cv.pdf" {
+		t.Errorf("expected resume filename alex_cv.pdf, got %v", profile.ResumeFilename)
+	}
+}
+
+func TestResume_Confirm_ReplacesOldResumeInStorage(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	userUUID := uuid.New()
+
+	oldKey := "resumes/" + userUUID.String() + "/old_cv.pdf"
+	s3Client.uploads[oldKey] = []byte("%PDF-1.4 old resume")
+	if err := repo.UpdateResume(context.Background(), userUUID.String(), oldKey, "old_cv.pdf", 500); err != nil {
+		t.Fatalf("failed to seed initial resume: %v", err)
+	}
+
+	claims := &auth.UserClaims{
+		UserID:        userUUID.String(),
+		Email:         "alex@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	_, router := setupResumeTestRouter(repo, s3Client, claims)
+
+	newKey := storage.GenerateResumeKey(userUUID.String(), "new_cv.pdf")
+	payload := user.ConfirmResumeRequest{Key: newKey}
+	bodyBytes, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/profile/resume/confirm", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Verify old key was deleted from S3
+	foundDeleted := false
+	for _, k := range s3Client.deletedKeys {
+		if k == oldKey {
+			foundDeleted = true
+			break
+		}
+	}
+	if !foundDeleted {
+		t.Errorf("expected old key %s to be deleted, got deleted keys: %v", oldKey, s3Client.deletedKeys)
+	}
+}
+
+func TestResume_Confirm_UnverifiedEmail(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	userUUID := uuid.New()
+
+	claims := &auth.UserClaims{
+		UserID:        userUUID.String(),
+		Email:         "unverified@berkeley.edu",
+		EmailVerified: false,
+		Roles:         []string{"member"},
+	}
+
+	_, router := setupResumeTestRouter(repo, s3Client, claims)
+
+	key := storage.GenerateResumeKey(userUUID.String(), "resume.pdf")
+	payload := user.ConfirmResumeRequest{Key: key}
+	bodyBytes, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/profile/resume/confirm", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for unverified email, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestResume_Confirm_ValidationErrors(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	userUUID := uuid.New()
+
+	claims := &auth.UserClaims{
+		UserID:        userUUID.String(),
+		Email:         "alex@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	_, router := setupResumeTestRouter(repo, s3Client, claims)
+
+	testCases := []struct {
+		name    string
+		payload map[string]interface{}
+		rawBody string
+	}{
+		{
+			name: "empty key",
+			payload: map[string]interface{}{
+				"key": "",
+			},
+		},
+		{
+			name: "key from different user",
+			payload: map[string]interface{}{
+				"key": "resumes/other-user-uuid/test.pdf",
+			},
+		},
+		{
+			name: "key with path traversal",
+			payload: map[string]interface{}{
+				"key": "resumes/" + userUUID.String() + "/../../traversal.pdf",
+			},
+		},
+		{
+			name: "key with invalid file extension",
+			payload: map[string]interface{}{
+				"key": "resumes/" + userUUID.String() + "/exploit.exe",
+			},
+		},
+		{
+			name:    "invalid json body",
+			rawBody: "{invalid-json",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var bodyReader io.Reader
+			if tc.rawBody != "" {
+				bodyReader = strings.NewReader(tc.rawBody)
+			} else {
+				bytesBody, _ := json.Marshal(tc.payload)
+				bodyReader = bytes.NewReader(bytesBody)
+			}
+
+			req := httptest.NewRequest("POST", "/profile/resume/confirm", bodyReader)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 Bad Request for %s, got %d: %s", tc.name, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestService_ConfirmDirectResumeUpload_UnitTests(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	svc := user.NewService(repo, s3Client)
+
+	userID := uuid.New().String()
+	verifiedClaims := &auth.UserClaims{
+		UserID:        userID,
+		Email:         "test@stanford.edu",
+		EmailVerified: true,
+	}
+
+	// 1. Nil claims returns ErrUnauthorized
+	_, err := svc.ConfirmDirectResumeUpload(context.Background(), nil, "resumes/test/cv.pdf")
+	if !errors.Is(err, user.ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized for nil claims, got: %v", err)
+	}
+
+	// 2. Unverified email returns ErrEmailNotVerified
+	unverifiedClaims := &auth.UserClaims{
+		UserID:        userID,
+		Email:         "test@stanford.edu",
+		EmailVerified: false,
+	}
+	_, err = svc.ConfirmDirectResumeUpload(context.Background(), unverifiedClaims, "resumes/"+userID+"/cv.pdf")
+	if !errors.Is(err, auth.ErrEmailNotVerified) {
+		t.Errorf("expected ErrEmailNotVerified, got: %v", err)
+	}
+
+	// 3. Empty key returns ErrInvalidInput
+	_, err = svc.ConfirmDirectResumeUpload(context.Background(), verifiedClaims, "   ")
+	if !errors.Is(err, user.ErrInvalidInput) {
+		t.Errorf("expected ErrInvalidInput for empty key, got: %v", err)
+	}
+
+	// 4. Valid docx key
+	docxKey := storage.GenerateResumeKey(userID, "portfolio.docx")
+	p, err := svc.ConfirmDirectResumeUpload(context.Background(), verifiedClaims, docxKey)
+	if err != nil {
+		t.Fatalf("expected success for valid docx key, got: %v", err)
+	}
+	if p.ResumeFilename == nil || *p.ResumeFilename != "portfolio.docx" {
+		t.Errorf("expected extracted filename portfolio.docx, got: %v", p.ResumeFilename)
 	}
 }
