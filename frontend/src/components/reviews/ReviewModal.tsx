@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Star, X, AlertCircle, Loader2, CheckCircle2, ShieldCheck } from "lucide-react";
+import { AlertCircle, Loader2, CheckCircle2, ShieldCheck } from "lucide-react";
 import { createReview, ApiClientError, createApiClient } from "@/lib/api";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { animateModal } from "@/lib/animations";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Review } from "@/types/api";
 
 export interface ReviewModalProps {
@@ -18,12 +18,35 @@ export interface ReviewModalProps {
 }
 
 const RATING_LABELS: Record<number, string> = {
-  1: "1 - Poor",
-  2: "2 - Fair",
-  3: "3 - Good",
-  4: "4 - Very Good",
-  5: "5 - Excellent",
+  1: "Poor",
+  2: "Fair",
+  3: "Good",
+  4: "Very Good",
+  5: "Excellent",
 };
+
+// SVG star primitive - no emoji, no text star
+function StarIcon({
+  filled,
+  hovered,
+  className,
+}: {
+  filled: boolean;
+  hovered: boolean;
+  className?: string;
+}) {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={className} style={{ display: "block" }}>
+      <path
+        d="M10 1.5l2.47 5.01 5.53.8-4 3.9.94 5.5L10 14.27l-4.94 2.59.94-5.5-4-3.9 5.53-.8z"
+        fill={filled || hovered ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth={filled || hovered ? "0" : "1.5"}
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export function ReviewModal({
   isOpen,
@@ -42,7 +65,6 @@ export function ReviewModal({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
       setRating(0);
@@ -53,14 +75,9 @@ export function ReviewModal({
     }
   }, [isOpen]);
 
-  const modalCardRef = React.useRef<HTMLDivElement | null>(null);
-
-  // Handle ESC key to dismiss modal
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !isSubmitting) {
-        onClose();
-      }
+      if (e.key === "Escape" && !isSubmitting) onClose();
     },
     [isSubmitting, onClose]
   );
@@ -72,23 +89,9 @@ export function ReviewModal({
     }
   }, [isOpen, handleKeyDown]);
 
-  // GSAP entrance animation
-  useEffect(() => {
-    if (isOpen && modalCardRef.current) {
-      const revert = animateModal(modalCardRef.current);
-      return () => revert();
-    }
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const currentDisplayRating = hoveredRating || rating;
-  const ratingText =
-    currentDisplayRating > 0
-      ? RATING_LABELS[currentDisplayRating]
-      : "Select a rating (1 to 5 stars)";
   const trimmedComment = comment.trim();
   const isFormValid = rating >= 1 && rating <= 5 && trimmedComment.length >= 5;
+  const currentDisplayRating = hoveredRating || rating;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,12 +101,10 @@ export function ReviewModal({
       setErrorMessage("Please select a rating between 1 and 5 stars.");
       return;
     }
-
     if (trimmedComment.length < 5) {
-      setErrorMessage("Please enter at least 5 characters in your written review.");
+      setErrorMessage("Please enter at least 5 characters in your review.");
       return;
     }
-
     if (trimmedComment.length > 5000) {
       setErrorMessage("Review comment cannot exceed 5,000 characters.");
       return;
@@ -114,15 +115,7 @@ export function ReviewModal({
 
     try {
       const client = createApiClient(getToken);
-      const newReview = await createReview(
-        contractId,
-        {
-          rating,
-          comment: trimmedComment,
-        },
-        client
-      );
-
+      const newReview = await createReview(contractId, { rating, comment: trimmedComment }, client);
       onSuccess?.(newReview);
       onClose();
     } catch (err: unknown) {
@@ -135,7 +128,7 @@ export function ReviewModal({
         ) {
           setErrorMessage("Reviews can only be submitted for completed contracts.");
         } else if (err.code === "FORBIDDEN" || err.status === 403) {
-          setErrorMessage("Only participants of this contract are permitted to submit reviews.");
+          setErrorMessage("Only participants of this contract may submit reviews.");
         } else {
           setErrorMessage(err.message || "Failed to submit review. Please try again.");
         }
@@ -150,90 +143,65 @@ export function ReviewModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="review-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-sm animate-in fade-in duration-200"
-      onClick={() => {
-        if (!isSubmitting) onClose();
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open && !isSubmitting) onClose();
       }}
     >
-      <div
-        ref={modalCardRef}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-[10px] border border-border bg-card p-6 shadow-2xl transition-all text-card-foreground sm:p-7"
+      <DialogContent
+        onClose={isSubmitting ? undefined : onClose}
+        className="max-w-lg"
+        aria-labelledby="review-modal-title"
       >
-        {/* Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400">
-              <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
-            </div>
-            <div>
-              <h2
-                id="review-modal-title"
-                className="text-lg font-bold text-slate-900 dark:text-white"
-              >
-                Leave a Peer Review
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {jobTitle ? (
-                  <span>
-                    For{" "}
-                    <strong className="font-semibold text-slate-700 dark:text-slate-300">
-                      {jobTitle}
-                    </strong>
-                  </span>
-                ) : (
-                  "Share your feedback with your project collaborator"
-                )}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSubmitting}
-            className="rounded-[10px] p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200 disabled:opacity-50"
-            aria-label="Close dialog"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+        <DialogHeader>
+          <DialogTitle id="review-modal-title">Leave a Peer Review</DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            {jobTitle ? (
+              <>
+                For <span className="font-medium text-foreground">{jobTitle}</span>
+              </>
+            ) : (
+              "Share your feedback with your project collaborator."
+            )}
+          </p>
+        </DialogHeader>
 
         {/* Counterparty context */}
         {counterpartyName && (
-          <div className="mt-4 flex items-center gap-2 rounded-[10px] bg-slate-50 px-3.5 py-2.5 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-            <ShieldCheck className="h-4 w-4 text-primary dark:text-emerald-500 shrink-0" />
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground mb-2">
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-foreground" />
             <span>
-              Reviewing{" "}
-              <strong className="font-semibold text-slate-900 dark:text-white">
-                {counterpartyName}
-              </strong>
+              Reviewing <span className="font-medium text-foreground">{counterpartyName}</span>
               {counterpartyRole ? ` (${counterpartyRole})` : ""}
             </span>
           </div>
         )}
 
-        {/* Error Alert */}
+        {/* Error alert */}
         {errorMessage && (
-          <div className="mt-4 flex items-start gap-2.5 rounded-[10px] border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
-            <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+          <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 p-3.5 text-xs text-foreground mb-2">
+            <AlertCircle className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
             <span>{errorMessage}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-5">
-          {/* Star Rating Selector */}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Star rating selector */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
-              Overall Rating <span className="text-rose-500">*</span>
+            <label className="block text-xs font-medium text-foreground mb-2">
+              Overall Rating <span className="text-muted-foreground">*</span>
             </label>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5" onMouseLeave={() => setHoveredRating(0)}>
+            <div className="flex items-center gap-3">
+              <div
+                className="flex items-center gap-1"
+                onMouseLeave={() => setHoveredRating(0)}
+                role="radiogroup"
+                aria-label="Star rating"
+              >
                 {[1, 2, 3, 4, 5].map((starValue) => {
                   const isFilled = starValue <= currentDisplayRating;
+                  const isHovered = hoveredRating > 0 && starValue <= hoveredRating;
                   return (
                     <button
                       key={starValue}
@@ -244,45 +212,49 @@ export function ReviewModal({
                         setErrorMessage(null);
                       }}
                       onMouseEnter={() => setHoveredRating(starValue)}
-                      className="group rounded-[10px] p-1 transition transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-amber-400"
-                      aria-label={`Rate ${starValue} of 5 stars`}
+                      className="p-0.5 rounded transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground disabled:opacity-50"
+                      aria-label={`Rate ${starValue} out of 5`}
+                      role="radio"
+                      aria-checked={rating === starValue}
                     >
-                      <Star
+                      <StarIcon
+                        filled={isFilled && !isHovered}
+                        hovered={isHovered}
                         className={`h-7 w-7 transition-colors ${
                           isFilled
-                            ? "fill-amber-400 text-amber-400"
-                            : "text-slate-300 dark:text-slate-600 group-hover:text-amber-300"
+                            ? "text-foreground"
+                            : "text-muted-foreground hover:text-foreground/60"
                         }`}
                       />
                     </button>
                   );
                 })}
               </div>
-              <span className="ml-2 text-xs font-medium text-slate-600 dark:text-slate-400">
-                {ratingText}
-              </span>
+              {currentDisplayRating > 0 && (
+                <span className="text-xs font-mono text-muted-foreground">
+                  {currentDisplayRating}/5 &mdash; {RATING_LABELS[currentDisplayRating]}
+                </span>
+              )}
+              {currentDisplayRating === 0 && (
+                <span className="text-xs text-muted-foreground">Select 1-5 stars</span>
+              )}
             </div>
           </div>
 
-          {/* Written Feedback Textarea */}
+          {/* Comment textarea */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label
-                htmlFor="review-comment"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
-              >
-                Written Feedback <span className="text-rose-500">*</span>
+              <label htmlFor="review-comment" className="text-xs font-medium text-foreground">
+                Written Feedback <span className="text-muted-foreground">*</span>
               </label>
               <span
-                className={`text-[11px] ${
+                className={`text-[11px] font-mono ${
                   trimmedComment.length > 5000
-                    ? "text-rose-600 font-semibold"
-                    : trimmedComment.length >= 5
-                      ? "text-slate-500 dark:text-slate-400"
-                      : "text-amber-600 dark:text-amber-400"
+                    ? "text-foreground font-semibold"
+                    : "text-muted-foreground"
                 }`}
               >
-                {comment.length} / 5,000 characters (min 5)
+                {comment.length}/5000
               </span>
             </div>
             <textarea
@@ -294,41 +266,41 @@ export function ReviewModal({
                 setComment(e.target.value);
                 if (errorMessage) setErrorMessage(null);
               }}
-              placeholder="Highlight project deliverables and communication, reliability, work quality, and what it was like working together..."
-              className="w-full rounded-[10px] border border-input bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 transition-colors"
+              placeholder="Share specific feedback on deliverable quality, communication, and timeliness..."
+              className="w-full min-h-[100px] rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-foreground/50 focus:outline-none transition resize-y"
             />
           </div>
 
-          {/* Modal Actions */}
+          {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="rounded-[10px] border border-border bg-card px-4 py-2.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-secondary disabled:opacity-50"
+              className="rounded-md border border-border px-4 py-2 text-xs font-medium text-foreground transition hover:bg-muted disabled:opacity-50 active:scale-[0.98]"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!isFormValid || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-[10px] bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-md bg-foreground px-5 py-2 text-xs font-medium text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.98]"
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Submitting Review...</span>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Submitting...
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>Submit Review</span>
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Submit Review
                 </>
               )}
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
