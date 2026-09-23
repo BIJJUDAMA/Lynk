@@ -30,7 +30,7 @@ services:
         condition: service_healthy
     environment:
       POSTGRESQL_CONNECTION_URI: "postgresql://lynk_user:lynk_password@postgres:5432/supertokens_db"
-      API_KEYS: "${SUPERTOKENS_API_KEY:-lynk-supertokens-secret-api-key-2026}"
+      API_KEYS: "${SUPERTOKENS_API_KEY:-lynksupertokenssecretapikey2026dev}"
     ports:
       - "3567:3567"
     networks:
@@ -74,7 +74,7 @@ services:
       DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
       MIGRATIONS_DIR: "/app/migrations"
       SUPERTOKENS_CONNECTION_URI: "http://supertokens:3567"
-      SUPERTOKENS_API_KEY: "${SUPERTOKENS_API_KEY:-lynk-supertokens-secret-api-key-2026}"
+      SUPERTOKENS_API_KEY: "${SUPERTOKENS_API_KEY:-lynksupertokenssecretapikey2026dev}"
       API_DOMAIN: "http://localhost:8080"
       WEBSITE_DOMAIN: "http://localhost:3000"
       MINIO_ENDPOINT: "minio:9000"

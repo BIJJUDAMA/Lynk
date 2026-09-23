@@ -48,7 +48,7 @@ func Load() Config {
 	}
 
 	stConnectionURI := getEnv("SUPERTOKENS_CONNECTION_URI", "http://localhost:3567")
-	stAPIKey := getEnv("SUPERTOKENS_API_KEY", "lynk-supertokens-secret-api-key-2026")
+	stAPIKey := getEnv("SUPERTOKENS_API_KEY", "lynksupertokenssecretapikey2026dev")
 	apiDomain := getEnv("API_DOMAIN", "http://localhost:8080")
 	websiteDomain := getEnv("WEBSITE_DOMAIN", "http://localhost:3000")
 

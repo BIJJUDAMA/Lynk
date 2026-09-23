@@ -58,7 +58,7 @@ func warnIfDefaultSecrets(appEnv, accessKey, secretKey, stAPIKey string, aiSecre
 	if len(aiSecret) > 0 {
 		aiSec = aiSecret[0]
 	}
-	if accessKey == "minio_admin" || secretKey == "minio_password" || stAPIKey == "lynk-supertokens-secret-api-key-2026" || aiSec == "lynk-ai-internal-secret-key-2026" {
+	if accessKey == "minio_admin" || secretKey == "minio_password" || stAPIKey == "lynksupertokenssecretapikey2026dev" || aiSec == "lynk-ai-internal-secret-key-2026" {
 		return "default MinIO, SuperTokens, or AI credentials detected; set unique MINIO_ACCESS_KEY/MINIO_SECRET_KEY, SUPERTOKENS_API_KEY, and INTERNAL_AI_SECRET"
 	}
 	return ""
