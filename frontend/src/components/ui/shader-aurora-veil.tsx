@@ -55,12 +55,14 @@ export function getShaderPreviewStyle(
 }
 
 export function useReducedMotion(): boolean {
-  const [matches, setMatches] = useState(false);
+  const [matches, setMatches] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setMatches(mql.matches);
     const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
     mql.addEventListener("change", handler);
     return () => mql.removeEventListener("change", handler);
@@ -70,15 +72,18 @@ export function useReducedMotion(): boolean {
 }
 
 function useThemeTone(explicitTone?: "light" | "dark" | "auto"): "light" | "dark" {
-  const [detectedTone, setDetectedTone] = useState<"light" | "dark">("light");
+  const [detectedTone, setDetectedTone] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    const isDark =
+      document.documentElement.classList.contains("dark") ||
+      document.body.classList.contains("dark") ||
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return isDark ? "dark" : "light";
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-
-    if (explicitTone === "light" || explicitTone === "dark") {
-      setDetectedTone(explicitTone);
-      return;
-    }
+    if (explicitTone === "light" || explicitTone === "dark") return;
 
     const update = () => {
       const isDark =
@@ -88,20 +93,18 @@ function useThemeTone(explicitTone?: "light" | "dark" | "auto"): "light" | "dark
       setDetectedTone(isDark ? "dark" : "light");
     };
 
-    update();
-
     const observer = new MutationObserver(update);
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["class"],
     });
 
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    media.addEventListener("change", update);
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    mql.addEventListener("change", update);
 
     return () => {
       observer.disconnect();
-      media.removeEventListener("change", update);
+      mql.removeEventListener("change", update);
     };
   }, [explicitTone]);
 

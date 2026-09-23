@@ -88,12 +88,13 @@ export function useQuery<T>(
   const [error, setError] = useState<ApiClientError | Error | null>(null);
 
   const queryFnRef = useRef(queryFn);
-  queryFnRef.current = queryFn;
-
   const optionsRef = useRef(options);
-  optionsRef.current = options;
-
   const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    queryFnRef.current = queryFn;
+    optionsRef.current = options;
+  });
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -133,7 +134,6 @@ export function useQuery<T>(
 
   useEffect(() => {
     if (!enabled) {
-      setIsLoading(false);
       return;
     }
 
@@ -193,10 +193,12 @@ export function useMutation<TArgs, TResult>(
   const [error, setError] = useState<ApiClientError | Error | null>(null);
 
   const mutationFnRef = useRef(mutationFn);
-  mutationFnRef.current = mutationFn;
-
   const optionsRef = useRef(options);
-  optionsRef.current = options;
+
+  useEffect(() => {
+    mutationFnRef.current = mutationFn;
+    optionsRef.current = options;
+  });
 
   const reset = useCallback(() => {
     setData(null);

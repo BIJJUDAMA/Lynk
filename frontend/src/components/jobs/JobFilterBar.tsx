@@ -36,9 +36,13 @@ export function JobFilterBar({
 }: JobFilterBarProps) {
   const [searchDraft, setSearchDraft] = useState(filters.search);
   const onFilterChangeRef = useRef(onFilterChange);
-  onFilterChangeRef.current = onFilterChange;
   const filtersRef = useRef(filters);
-  filtersRef.current = filters;
+
+  useEffect(() => {
+    onFilterChangeRef.current = onFilterChange;
+    filtersRef.current = filters;
+  });
+
   const searchDebounced = useRef<
     ReturnType<typeof createDebounced<(value: string) => void>> | undefined
   >(undefined);

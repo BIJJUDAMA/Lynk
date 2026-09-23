@@ -65,21 +65,25 @@ export function ReviewModal({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      setRating(0);
-      setHoveredRating(0);
-      setComment("");
-      setErrorMessage(null);
-      setIsSubmitting(false);
-    }
-  }, [isOpen]);
+  const resetForm = () => {
+    setRating(0);
+    setHoveredRating(0);
+    setComment("");
+    setErrorMessage(null);
+    setIsSubmitting(false);
+  };
+
+  const handleClose = useCallback(() => {
+    if (isSubmitting) return;
+    resetForm();
+    onClose();
+  }, [isSubmitting, onClose]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !isSubmitting) onClose();
+      if (e.key === "Escape") handleClose();
     },
-    [isSubmitting, onClose]
+    [handleClose]
   );
 
   useEffect(() => {
@@ -116,6 +120,7 @@ export function ReviewModal({
     try {
       const client = createApiClient(getToken);
       const newReview = await createReview(contractId, { rating, comment: trimmedComment }, client);
+      resetForm();
       onSuccess?.(newReview);
       onClose();
     } catch (err: unknown) {
@@ -146,11 +151,11 @@ export function ReviewModal({
     <Dialog
       open={isOpen}
       onOpenChange={(open) => {
-        if (!open && !isSubmitting) onClose();
+        if (!open) handleClose();
       }}
     >
       <DialogContent
-        onClose={isSubmitting ? undefined : onClose}
+        onClose={isSubmitting ? undefined : handleClose}
         className="max-w-lg"
         aria-labelledby="review-modal-title"
       >
@@ -275,7 +280,7 @@ export function ReviewModal({
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               disabled={isSubmitting}
               className="rounded-md border border-border px-4 py-2 text-xs font-medium text-foreground transition hover:bg-muted disabled:opacity-50 active:scale-[0.98]"
             >
