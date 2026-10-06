@@ -5,20 +5,22 @@ import { ArrowLeft } from "lucide-react";
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center text-center px-4">
-      <h1 className="text-6xl font-bold text-slate-900 dark:text-white">404</h1>
-      <h2 className="mt-4 text-xl font-semibold text-slate-700 dark:text-slate-300">
-        Page Not Found
-      </h2>
-      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-        The page you are looking for does not exist or has been moved.
+    <div className="flex min-h-[70vh] flex-col items-center justify-center text-center px-6 bg-canvas">
+      <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary mb-3">
+        404 // Not Found
+      </p>
+      <h1 className="font-display text-5xl sm:text-6xl font-normal tracking-[-0.025em] text-ink">
+        Page not found.
+      </h1>
+      <p className="mt-4 text-base text-ink-secondary max-w-md leading-relaxed">
+        The archive or opportunity you are looking for does not exist or has been moved.
       </p>
       <Link
         href="/"
-        className="mt-6 inline-flex items-center gap-2 rounded-[10px] bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
+        className="mt-8 inline-flex items-center gap-2 px-6 py-3 bg-ink text-canvas text-sm tracking-wide hover:bg-ink/90 transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
-        Return Home
+        <span>Return to Campus</span>
       </Link>
     </div>
   );

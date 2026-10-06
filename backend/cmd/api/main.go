@@ -22,12 +22,17 @@ import (
 	"github.com/lynk/backend/internal/ai/orchestrator"
 	"github.com/lynk/backend/internal/application"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/cache"
 	"github.com/lynk/backend/internal/config"
 	"github.com/lynk/backend/internal/contract"
 	"github.com/lynk/backend/internal/database"
 	"github.com/lynk/backend/internal/job"
+	"github.com/lynk/backend/internal/metrics"
 	"github.com/lynk/backend/internal/middleware"
+	"github.com/lynk/backend/internal/outbox"
+	"github.com/lynk/backend/internal/ratelimit"
 	"github.com/lynk/backend/internal/review"
+	"github.com/lynk/backend/internal/sse"
 	"github.com/lynk/backend/internal/storage"
 	"github.com/lynk/backend/internal/user"
 	"github.com/supertokens/supertokens-golang/supertokens"
@@ -91,6 +96,9 @@ func storageReady(ctx context.Context, s3Client storage.Client) error {
 
 func requestTimeout(r *http.Request) time.Duration {
 	cleanPath := strings.TrimSuffix(r.URL.Path, "/")
+	if cleanPath == "/events/stream" || strings.HasSuffix(cleanPath, "/events/stream") {
+		return 0
+	}
 	if r.Method == http.MethodPost && strings.HasSuffix(cleanPath, "/resume") {
 		return 90 * time.Second
 	}
@@ -108,6 +116,7 @@ func BuildRouter(
 	reviewHandler *review.Handler,
 	authMiddleware func(http.Handler) http.Handler,
 	s3Client storage.Client,
+	sseBroker *sse.Broker,
 	aiHandler ...*ai.AIHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
@@ -119,14 +128,29 @@ func BuildRouter(
 	// a reverse proxy is part of the deployment topology.
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
+	r.Use(metrics.Middleware)
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx, cancel := context.WithTimeout(r.Context(), requestTimeout(r))
+			timeout := requestTimeout(r)
+			if timeout <= 0 {
+				next.ServeHTTP(w, r)
+				return
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), timeout)
 			defer cancel()
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	})
 	r.Use(middleware.CORS(cfg.CORSAllowedOrigins))
+
+	// Rate Limiting Store (global 120 requests/minute per IP, health checks exempted)
+	var limiterStore ratelimit.Store = ratelimit.NewMemoryStore()
+	if cfg.RedisURL != "" {
+		if rStore, err := ratelimit.NewRedisStoreFromURL(cfg.RedisURL); err == nil {
+			limiterStore = rStore
+		}
+	}
+	r.Use(ratelimit.NewSlidingWindowMiddleware(limiterStore, 120, time.Minute))
 
 	// Enforce 1MB limit for JSON request bodies to prevent OOM DoS attacks (F-09)
 	r.Use(func(next http.Handler) http.Handler {
@@ -171,6 +195,7 @@ func BuildRouter(
 	}
 	r.Get("/health", healthHandler)
 	r.Get("/api/v1/health", healthHandler)
+	r.Get("/metrics", metrics.Handler())
 
 	if authMiddleware == nil {
 		authMiddleware = middleware.SessionMiddleware()
@@ -178,6 +203,7 @@ func BuildRouter(
 
 	// API v1 Domain Routes
 	r.Route("/api/v1", func(r chi.Router) {
+
 		// Auth endpoints
 		if userHandler != nil {
 			r.Route("/auth", func(r chi.Router) {
@@ -327,6 +353,14 @@ func BuildRouter(
 				})
 			}
 		}
+
+		// Real-time Server-Sent Events stream (requires session auth)
+		if sseBroker != nil {
+			r.Group(func(er chi.Router) {
+				er.Use(authMiddleware)
+				er.Get("/events/stream", sse.StreamHandler(sseBroker))
+			})
+		}
 	})
 
 	return r
@@ -442,13 +476,18 @@ func main() {
 	log.Printf("SuperTokens SDK initialized with connection %s", cfg.SuperTokensConnectionURI)
 
 	// 5. Wire Repositories, Services, and Handlers
+
+	// Initialize cache layer (Redis with MemoryCache fallback)
+	appCache := cache.New(cfg.RedisURL)
+
 	userRepo := user.NewRepository(pool)
 	userService := user.NewService(userRepo, s3Client).
-		WithResumeAccessChecker(user.NewPGResumeAccessChecker(pool))
+		WithResumeAccessChecker(user.NewPGResumeAccessChecker(pool)).
+		WithCache(appCache)
 	userHandler := user.NewHandler(userService, userRepo, s3Client)
 
 	jobRepo := job.NewRepository(pool)
-	jobService := job.NewService(jobRepo)
+	jobService := job.NewService(jobRepo).WithCache(appCache)
 	jobHandler := job.NewHandler(jobService, jobRepo)
 
 	appRepo := application.NewRepository(pool)
@@ -472,7 +511,46 @@ func main() {
 	aiOrch := orchestrator.NewOrchestrator(aiClient, orchestrator.NewFeatureFlagsFromEnv(), slog.Default())
 	aiHandler := ai.NewHandler(aiOrch, pool, jobRepo, userRepo, appRepo).WithReviewRepo(reviewRepo)
 
-	// 6. Build HTTP Router
+	// 6. Initialize Outbox Writer & SSE Broker
+	// Create SSE broker first so outbox handlers can close over it.
+	sseBroker := sse.NewBroker()
+
+	// The outbox writer is injected into services that emit domain events.
+	// The worker polls outbox_events and dispatches to registered handlers.
+	outboxWriter := outbox.NewWriter(outbox.NewDBRecorder(pool))
+	appService = appService.WithOutbox(outboxWriter)
+	contractService = contractService.WithOutbox(outboxWriter)
+
+	outboxWorker := outbox.NewWorkerPool(pool)
+	outboxWorker.RegisterHandler("application_submitted", func(ctx context.Context, evt outbox.Event) error {
+		// Notify job poster that a new application arrived
+		if cid, ok := evt.Payload["client_id"].(string); ok && cid != "" {
+			sseBroker.SendToUser(cid, "application_updated", evt.Payload)
+		}
+		return nil
+	})
+	outboxWorker.RegisterHandler("application_accepted", func(ctx context.Context, evt outbox.Event) error {
+		// Notify freelancer that their application was accepted
+		if fid, ok := evt.Payload["freelancer_id"].(string); ok && fid != "" {
+			sseBroker.SendToUser(fid, "application_updated", evt.Payload)
+		}
+		return nil
+	})
+	outboxWorker.RegisterHandler("application_rejected", func(ctx context.Context, evt outbox.Event) error {
+		// No-op for now; extend with email notification in Phase 2
+		return nil
+	})
+	outboxWorker.RegisterHandler("contract_status_changed", func(ctx context.Context, evt outbox.Event) error {
+		// Notify both client and freelancer of the status change
+		for _, key := range []string{"client_id", "freelancer_id"} {
+			if uid, ok := evt.Payload[key].(string); ok && uid != "" {
+				sseBroker.SendToUser(uid, "contract_status_changed", evt.Payload)
+			}
+		}
+		return nil
+	})
+
+	go outboxWorker.Start(ctx)
 
 	router := BuildRouter(
 		cfg,
@@ -484,6 +562,7 @@ func main() {
 		reviewHandler,
 		middleware.SessionMiddleware(),
 		s3Client,
+		sseBroker,
 		aiHandler,
 	)
 

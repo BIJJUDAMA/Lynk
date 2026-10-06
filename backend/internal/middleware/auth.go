@@ -47,6 +47,14 @@ func (w *statusTrackingWriter) Write(b []byte) (int, error) {
 
 func (w *statusTrackingWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
+func (w *statusTrackingWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+var _ http.Flusher = (*statusTrackingWriter)(nil)
+
 // ParseSessionPayload extracts email, verification status, and roles from an access-token payload.
 // Returns complete=true only when all three fields are present and valid.
 func ParseSessionPayload(payload map[string]interface{}) (email string, verified bool, roles []string, complete bool) {

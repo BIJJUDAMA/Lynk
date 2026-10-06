@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
 	"github.com/lynk/backend/internal/job"
+	"github.com/lynk/backend/internal/outbox"
+	"github.com/lynk/backend/internal/sanitizer"
 	"github.com/lynk/backend/internal/user"
 )
 
@@ -40,6 +43,7 @@ type Service struct {
 	repo          ApplicationRepository
 	jobReader     JobReader
 	profileReader ProfileReader
+	outbox        outbox.Publisher
 }
 
 func clampPage(limit, offset int) (int, int) {
@@ -64,6 +68,12 @@ func NewService(repo ApplicationRepository, jobReader JobReader, profileReader P
 	}
 }
 
+// WithOutbox wires an outbox.Publisher to emit domain events on state transitions.
+func (s *Service) WithOutbox(r outbox.Publisher) *Service {
+	s.outbox = r
+	return s
+}
+
 // ApplyToJob enforces the Institutional Email Gate and resource authorization before recording a job application.
 func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID uuid.UUID, req ApplyRequest) (*Application, error) {
 	if claims == nil {
@@ -84,7 +94,7 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 		return nil, fmt.Errorf("%w: valid job id is required", ErrInvalidInput)
 	}
 
-	coverLetter := strings.TrimSpace(req.CoverLetter)
+	coverLetter := sanitizer.SanitizeStrict(req.CoverLetter)
 	if coverLetter == "" {
 		return nil, fmt.Errorf("%w: cover letter is required", ErrInvalidInput)
 	}
@@ -93,8 +103,10 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 	}
 
 	// 2. Validate job exists, is open, and caller is not the job creator
+	var targetJob *job.Job
 	if s.jobReader != nil {
-		targetJob, err := s.jobReader.GetJobByID(ctx, jobID)
+		var err error
+		targetJob, err = s.jobReader.GetJobByID(ctx, jobID)
 		if err != nil {
 			if errors.Is(err, job.ErrJobNotFound) {
 				return nil, ErrJobNotFound
@@ -155,6 +167,27 @@ func (s *Service) ApplyToJob(ctx context.Context, claims *auth.UserClaims, jobID
 
 	if err := s.repo.CreateApplication(ctx, app); err != nil {
 		return nil, err
+	}
+
+	// Publish domain event - best-effort; never block the happy path
+	if s.outbox != nil {
+		var clientID string
+		if targetJob != nil {
+			clientID = targetJob.CreatedBy
+		}
+		if err := s.outbox.Publish(ctx, outbox.Event{
+			EventType:     "application_submitted",
+			AggregateType: "application",
+			AggregateID:   app.ID.String(),
+			Payload: map[string]any{
+				"application_id": app.ID.String(),
+				"job_id":         app.JobID.String(),
+				"applicant_id":   app.ApplicantID,
+				"client_id":      clientID,
+			},
+		}); err != nil {
+			slog.Warn("outbox: failed to record application_submitted", "error", err)
+		}
 	}
 
 	return app, nil
@@ -349,13 +382,49 @@ func (s *Service) UpdateApplicationStatus(
 	}
 
 	if targetStatus == StatusAccepted {
-		return s.repo.AcceptApplicationTx(ctx, appID)
+		acceptedApp, contract, err := s.repo.AcceptApplicationTx(ctx, appID)
+		if err != nil {
+			return nil, nil, err
+		}
+		// Publish domain event - best-effort
+		if s.outbox != nil {
+			payload := map[string]any{
+				"application_id": appID.String(),
+			}
+			if contract != nil {
+				payload["contract_id"] = contract.ID.String()
+				payload["freelancer_id"] = contract.FreelancerID
+				payload["client_id"] = contract.ClientID
+			}
+			if err2 := s.outbox.Publish(ctx, outbox.Event{
+				EventType:     "application_accepted",
+				AggregateType: "application",
+				AggregateID:   appID.String(),
+				Payload:       payload,
+			}); err2 != nil {
+				slog.Warn("outbox: failed to record application_accepted", "error", err2)
+			}
+		}
+		return acceptedApp, contract, nil
 	}
 
 	// StatusRejected path
 	rejectedApp, err := s.repo.RejectApplication(ctx, appID)
 	if err != nil {
 		return nil, nil, err
+	}
+	// Publish domain event - best-effort
+	if s.outbox != nil {
+		if err2 := s.outbox.Publish(ctx, outbox.Event{
+			EventType:     "application_rejected",
+			AggregateType: "application",
+			AggregateID:   appID.String(),
+			Payload: map[string]any{
+				"application_id": appID.String(),
+			},
+		}); err2 != nil {
+			slog.Warn("outbox: failed to record application_rejected", "error", err2)
+		}
 	}
 	existing.Application = *rejectedApp
 	return existing, nil, nil

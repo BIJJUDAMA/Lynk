@@ -3,9 +3,9 @@ import { Building2, ArrowRight } from "lucide-react";
 import { Job } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { formatJobDate, getStatusBadgeClasses, formatJobBudget } from "@/lib/formatters";
+import { formatJobDate, getStatusBadgeClasses } from "@/lib/formatters";
 
-export { formatJobDate, getStatusBadgeClasses, formatJobBudget };
+export { formatJobDate, getStatusBadgeClasses };
 
 export interface JobCardProps {
   job: Job;
@@ -25,7 +25,6 @@ export function JobCard({ job, className }: JobCardProps) {
   const skills = job.required_skills ?? [];
   const visibleSkills = skills.slice(0, 4);
   const overflowSkillsCount = skills.length - visibleSkills.length;
-  const budgetDisplay = formatJobBudget(job);
 
   return (
     <article
@@ -99,16 +98,14 @@ export function JobCard({ job, className }: JobCardProps) {
         )}
       </div>
 
-      {/* Card Footer: Budget, Posted Date & Direct Link */}
+      {/* Card Footer: Posted Date, Deadline & Direct Link */}
       <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
         <div className="flex flex-col">
-          <span className="font-mono text-base font-semibold text-foreground">{budgetDisplay}</span>
-          <span className="text-xs text-muted-foreground font-mono">
-            {job.created_at
-              ? `Posted ${formatJobDate(job.created_at)}`
-              : job.deadline
-                ? `Due ${formatJobDate(job.deadline)}`
-                : "Active"}
+          <span className="font-mono text-xs font-medium text-foreground">
+            {job.deadline ? `Deadline: ${formatJobDate(job.deadline)}` : "Flexible Timeline"}
+          </span>
+          <span className="text-[11px] text-muted-foreground font-mono">
+            {job.created_at ? `Posted ${formatJobDate(job.created_at)}` : "Active Opportunity"}
           </span>
         </div>
 

@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {
   formatJobDate,
   getStatusBadgeClasses,
-  formatJobBudget,
   COMMON_DEPARTMENTS,
   POPULAR_SKILLS,
   formatFileSize,
@@ -38,15 +37,6 @@ test("getStatusBadgeClasses returns distinctive style tokens for all job statuse
 
   const cancelledStyles = getStatusBadgeClasses("cancelled");
   assert.ok(cancelledStyles.bg.includes("pastel-red"));
-});
-
-test("formatJobBudget formats numerical and fallback departmental budgets", () => {
-  assert.equal(formatJobBudget({ budget: 500 }), "$500 Fixed");
-  assert.equal(formatJobBudget({ budget: "$35/hr" }), "$35/hr");
-  assert.equal(formatJobBudget({ budget: "750" }), "$750");
-  assert.equal(formatJobBudget({ department: "Computer Science & Engineering" }), "$45/hr");
-  assert.equal(formatJobBudget({ department: "Design & Creative Arts" }), "$650 Fixed");
-  assert.equal(formatJobBudget({}), "$35/hr");
 });
 
 test("COMMON_DEPARTMENTS and POPULAR_SKILLS contain academic presets", () => {

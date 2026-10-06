@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, Suspense, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Briefcase, AlertCircle, RotateCcw, ShieldCheck, PlusCircle } from "lucide-react";
@@ -10,9 +10,10 @@ import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { JobCard } from "@/components/jobs/JobCard";
 import { JobFilterBar, JobFilterValues } from "@/components/jobs/JobFilterBar";
-import { formatJobBudget } from "@/lib/formatters";
 import { animateStaggerList } from "@/lib/animations";
 import { Badge } from "@/components/ui/badge";
+import { JobCardSkeleton } from "@/components/ui/skeleton";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function JobSearchContent() {
   const searchParams = useSearchParams();
@@ -29,7 +30,6 @@ function JobSearchContent() {
     department: initialDept,
     skill: initialSkill,
     status: "open",
-    budgetSort: "",
   });
 
   // Query jobs from API with the current filters
@@ -71,27 +71,10 @@ function JobSearchContent() {
       department: "",
       skill: "",
       status: "open",
-      budgetSort: "",
     });
   };
 
-  // Sort jobs by budget rate if requested
-  const jobList = useMemo(() => {
-    let list = jobs ?? [];
-    if (filters.budgetSort) {
-      list = [...list].sort((a, b) => {
-        const getRate = (j: Job) => {
-          const bStr = formatJobBudget(j);
-          const match = bStr.match(/\$(\d+)/);
-          return match ? parseInt(match[1], 10) : 0;
-        };
-        const rateA = getRate(a);
-        const rateB = getRate(b);
-        return filters.budgetSort === "high" ? rateB - rateA : rateA - rateB;
-      });
-    }
-    return list;
-  }, [jobs, filters.budgetSort]);
+  const jobList = jobs ?? [];
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -158,32 +141,7 @@ function JobSearchContent() {
         {isLoading && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="flex flex-col justify-between rounded-xl border border-border bg-card p-6 shadow-none"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="h-5 w-20 animate-pulse rounded-full bg-muted" />
-                    <div className="h-5 w-24 animate-pulse rounded-full bg-muted" />
-                  </div>
-                  <div className="mt-4 h-6 w-3/4 animate-pulse rounded-md bg-muted" />
-                  <div className="mt-2 h-4 w-1/3 animate-pulse rounded-md bg-muted" />
-                  <div className="mt-4 space-y-2">
-                    <div className="h-4 w-full animate-pulse rounded-md bg-muted/60" />
-                    <div className="h-4 w-4/5 animate-pulse rounded-md bg-muted/60" />
-                  </div>
-                  <div className="mt-4 flex gap-1.5">
-                    <div className="h-5 w-14 animate-pulse rounded-md bg-muted" />
-                    <div className="h-5 w-16 animate-pulse rounded-md bg-muted" />
-                    <div className="h-5 w-12 animate-pulse rounded-md bg-muted" />
-                  </div>
-                </div>
-                <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
-                  <div className="h-4 w-24 animate-pulse rounded-md bg-muted" />
-                  <div className="h-4 w-20 animate-pulse rounded-md bg-muted" />
-                </div>
-              </div>
+              <JobCardSkeleton key={i} />
             ))}
           </div>
         )}

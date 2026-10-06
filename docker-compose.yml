@@ -63,6 +63,43 @@ services:
       retries: 5
       start_period: 10s
 
+  redis:
+    image: redis:7-alpine
+    container_name: lynk-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - lynk-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.22.1
+    container_name: lynk-pgbouncer
+    restart: unless-stopped
+    volumes:
+      - ./.docker/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./.docker/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    ports:
+      - "6432:6432"
+    networks:
+      - lynk-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 6432 -U lynk_user -d lynk_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   api:
     build:
       context: ./backend
@@ -86,6 +123,7 @@ services:
       CORS_ALLOWED_ORIGINS: "http://localhost:3000"
       AI_API_URL: "http://ai-api:8000"
       INTERNAL_AI_SECRET: "${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}"
+      REDIS_URL: "redis://redis:6379"
     ports:
       - "8080:8080"
     depends_on:
@@ -115,6 +153,7 @@ services:
       INTERNAL_AI_SECRET: "${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}"
       DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
       VLLM_URL: "http://vllm:8000/v1"
+      REDIS_URL: "redis://redis:6379"
     ports:
       - "8000:8000"
     networks:
@@ -139,6 +178,7 @@ services:
     environment:
       INTERNAL_AI_SECRET: "${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}"
       DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
     networks:
       - lynk-net
     depends_on:
@@ -161,3 +201,4 @@ networks:
 volumes:
   postgres_data:
   minio_data:
+  redis_data:

@@ -156,6 +156,81 @@ func TestMigration000014_FilesExistAndSyntaxValid(t *testing.T) {
 	}
 }
 
+func TestMigration000015_FilesExistAndSyntaxValid(t *testing.T) {
+	upPath := filepath.Clean(filepath.Join("..", "..", "migrations", "000015_phase1_5_hardening.up.sql"))
+	downPath := filepath.Clean(filepath.Join("..", "..", "migrations", "000015_phase1_5_hardening.down.sql"))
+
+	// #nosec G304 -- test file path is fixed and internal
+	upBytes, err := os.ReadFile(upPath) //nolint:gosec
+	if err != nil {
+		t.Fatalf("failed to read 000015 up migration: %v", err)
+	}
+	upContent := string(upBytes)
+	if len(strings.TrimSpace(upContent)) == 0 {
+		t.Errorf("000015 up migration file is empty")
+	}
+
+	// #nosec G304 -- test file path is fixed and internal
+	downBytes, err := os.ReadFile(downPath) //nolint:gosec
+	if err != nil {
+		t.Fatalf("failed to read 000015 down migration: %v", err)
+	}
+	downContent := string(downBytes)
+	if len(strings.TrimSpace(downContent)) == 0 {
+		t.Errorf("000015 down migration file is empty")
+	}
+
+	expectedUpFragments := []string{
+		"CREATE TABLE IF NOT EXISTS embedding_cache",
+		"content_hash VARCHAR(64) NOT NULL",
+		"model_name VARCHAR(64) NOT NULL",
+		"dimensions INTEGER NOT NULL",
+		"embedding vector(384) NOT NULL",
+		"PRIMARY KEY (content_hash, model_name)",
+		"idx_embedding_cache_created",
+		"CREATE TABLE IF NOT EXISTS outbox_events",
+		"id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+		"event_type VARCHAR(128) NOT NULL",
+		"aggregate_type VARCHAR(64) NOT NULL",
+		"aggregate_id VARCHAR(64) NOT NULL",
+		"payload JSONB NOT NULL",
+		"status VARCHAR(32) NOT NULL DEFAULT 'pending'",
+		"retry_count INTEGER NOT NULL DEFAULT 0",
+		"max_retries INTEGER NOT NULL DEFAULT 5",
+		"last_error TEXT",
+		"next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+		"processed_at TIMESTAMPTZ",
+		"idx_outbox_pending_events",
+		"ON outbox_events (next_retry_at, created_at)",
+		"WHERE status IN ('pending', 'failed')",
+	}
+
+	for _, fragment := range expectedUpFragments {
+		if !strings.Contains(upContent, fragment) {
+			t.Errorf("000015 up migration missing expected fragment: %s", fragment)
+		}
+	}
+
+	expectedDownFragments := []string{
+		"DROP INDEX IF EXISTS idx_outbox_pending_events;",
+		"DROP TABLE IF EXISTS outbox_events;",
+		"DROP INDEX IF EXISTS idx_embedding_cache_created;",
+		"DROP TABLE IF EXISTS embedding_cache;",
+	}
+
+	for _, fragment := range expectedDownFragments {
+		if !strings.Contains(downContent, fragment) {
+			t.Errorf("000015 down migration missing expected fragment: %s", fragment)
+		}
+	}
+}
+
+func TestMigration_000015_SchemaObjects(t *testing.T) {
+	TestMigration000015_FilesExistAndSyntaxValid(t)
+}
+
+
 func TestNewPool_InvalidURL(t *testing.T) {
 	ctx := context.Background()
 	_, err := database.NewPool(ctx, "postgres://invalid uri with spaces")

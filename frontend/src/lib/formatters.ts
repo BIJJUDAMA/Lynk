@@ -60,37 +60,6 @@ export function getStatusBadgeClasses(status: JobStatus): {
   }
 }
 
-/**
- * Formats a job's budget or hourly rate into a clean monospace display string.
- */
-export function formatJobBudget(job: {
-  budget?: number | string | null;
-  department?: string;
-  required_skills?: string[];
-}): string {
-  if (job.budget !== undefined && job.budget !== null && job.budget !== "") {
-    if (typeof job.budget === "number" && job.budget > 0) {
-      return `$${job.budget} Fixed`;
-    }
-    if (typeof job.budget === "string" && job.budget.trim() !== "") {
-      const b = job.budget.trim();
-      return b.startsWith("$") ? b : `$${b}`;
-    }
-  }
-
-  const dept = job.department || "";
-  if (dept.includes("Computer Science") || dept.includes("Engineering")) return "$45/hr";
-  if (dept.includes("Data Science") || dept.includes("AI")) return "$50/hr";
-  if (dept.includes("Design") || dept.includes("Creative")) return "$650 Fixed";
-  if (dept.includes("Business") || dept.includes("Marketing")) return "$35/hr";
-  if (dept.includes("Biology") || dept.includes("Life Sciences")) return "$40/hr";
-  if (dept.includes("Mathematics") || dept.includes("Statistics")) return "$42/hr";
-  if (dept.includes("Writing") || dept.includes("Communications")) return "$30/hr";
-  if (dept.includes("Economics") || dept.includes("Finance")) return "$45/hr";
-  if (dept.includes("Psychology")) return "$30/hr";
-  return "$35/hr";
-}
-
 export const COMMON_DEPARTMENTS = [
   "Computer Science & Engineering",
   "Data Science & AI",

@@ -15,7 +15,7 @@ import {
 import { getMyJobs } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { formatJobDate, formatJobBudget, getStatusBadgeClasses } from "@/lib/formatters";
+import { formatJobDate, getStatusBadgeClasses } from "@/lib/formatters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Job } from "@/types/api";
@@ -177,9 +177,6 @@ export default function EmployerJobsPage() {
                         {job.department}
                       </Badge>
                     )}
-                    <span className="font-mono text-xs font-semibold text-foreground ml-auto sm:ml-2">
-                      {formatJobBudget(job)}
-                    </span>
                   </div>
 
                   <Link href={`/jobs/${job.id}`}>

@@ -26,6 +26,7 @@ type Config struct {
 	CORSAllowedOrigins       string
 	AIServiceURL             string
 	InternalAISecret         string
+	RedisURL                 string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -65,6 +66,7 @@ func Load() Config {
 	corsAllowedOrigins := getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
 	aiServiceURL := getEnv("AI_API_URL", getEnv("AI_SERVICE_URL", "http://localhost:8000"))
 	internalAISecret := getEnv("INTERNAL_AI_SECRET", "lynk-ai-internal-secret-key-2026")
+	redisURL := getEnv("REDIS_URL", "redis://localhost:6379")
 
 	return Config{
 		Port:                     port,
@@ -83,6 +85,7 @@ func Load() Config {
 		CORSAllowedOrigins:       corsAllowedOrigins,
 		AIServiceURL:             aiServiceURL,
 		InternalAISecret:         internalAISecret,
+		RedisURL:                 redisURL,
 	}
 }
 
@@ -102,6 +105,11 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.MinioBucket) == "" {
 		errs = append(errs, "MinioBucket cannot be empty")
+	}
+	if strings.TrimSpace(c.RedisURL) == "" {
+		errs = append(errs, "RedisURL cannot be empty")
+	} else if !strings.HasPrefix(c.RedisURL, "redis://") && !strings.HasPrefix(c.RedisURL, "rediss://") {
+		errs = append(errs, fmt.Sprintf("invalid RedisURL: %q (must begin with redis:// or rediss://)", c.RedisURL))
 	}
 
 	if len(errs) > 0 {

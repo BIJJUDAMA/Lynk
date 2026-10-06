@@ -328,3 +328,23 @@ func TestRepository_UpdateContractStatus_ReopensJob_Integration(t *testing.T) {
 		t.Fatalf("expected jobs table status to be 'open' in DB, got '%s'", jobStatusInDB)
 	}
 }
+
+func TestUpdateContractStatus_LockHierarchy(t *testing.T) {
+	// Verify that queryLockJobOnContractCancellation is used for both cancellation and completion
+	// to enforce standard lock hierarchy (jobs -> contracts).
+	if queryLockJobOnContractCancellation == "" {
+		t.Fatal("queryLockJobOnContractCancellation must not be empty")
+	}
+
+	content, err := os.ReadFile("repository.go")
+	if err != nil {
+		t.Fatalf("failed to read repository.go: %v", err)
+	}
+	src := string(content)
+
+	if !strings.Contains(src, "targetStatus == StatusCancelled || targetStatus == StatusCompleted") &&
+		!strings.Contains(src, "targetStatus == StatusCompleted || targetStatus == StatusCancelled") {
+		t.Fatalf("expected UpdateContractStatus to lock job for both StatusCancelled and StatusCompleted")
+	}
+}
+

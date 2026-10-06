@@ -41,3 +41,18 @@ func TestWriteError_NotCalledWhenTrackingWriterAlreadyWrote(t *testing.T) {
 		t.Fatalf("expected st-original body, got %s", rec.Body.String())
 	}
 }
+
+func TestStatusTrackingWriter_ImplementsFlusher(t *testing.T) {
+	rec := httptest.NewRecorder()
+	tw := newStatusTrackingWriter(rec)
+
+	flusher, ok := any(tw).(http.Flusher)
+	if !ok {
+		t.Fatal("expected statusTrackingWriter to implement http.Flusher")
+	}
+
+	flusher.Flush()
+	if !rec.Flushed {
+		t.Fatal("expected underlying recorder to be flushed")
+	}
+}

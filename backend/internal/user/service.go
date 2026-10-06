@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/cache"
 	"github.com/lynk/backend/internal/storage"
 )
 
@@ -33,6 +34,7 @@ type Service struct {
 	repo         UserRepository
 	storage      storage.Client
 	resumeAccess ResumeAccessChecker
+	cache        cache.Cacher
 }
 
 func NewService(repo UserRepository, storageClient ...storage.Client) *Service {
@@ -52,6 +54,12 @@ func (s *Service) WithStorage(storageClient storage.Client) *Service {
 // WithResumeAccessChecker sets the optional job-owner resume access checker.
 func (s *Service) WithResumeAccessChecker(c ResumeAccessChecker) *Service {
 	s.resumeAccess = c
+	return s
+}
+
+// WithCache sets the optional cache layer on the Service.
+func (s *Service) WithCache(c cache.Cacher) *Service {
+	s.cache = c
 	return s
 }
 
@@ -129,6 +137,15 @@ func (s *Service) GetMe(ctx context.Context, claims *auth.UserClaims) (*UserProf
 
 // GetProfile retrieves a campus member's profile.
 func (s *Service) GetProfile(ctx context.Context, userID string) (*Profile, error) {
+	cacheKey := fmt.Sprintf("profile:%s", userID)
+	if s.cache != nil {
+		var cached Profile
+		found, err := s.cache.Get(ctx, cacheKey, &cached)
+		if err == nil && found {
+			return &cached, nil
+		}
+	}
+
 	p, err := s.repo.GetProfile(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -136,6 +153,11 @@ func (s *Service) GetProfile(ctx context.Context, userID string) (*Profile, erro
 	if p == nil {
 		return nil, ErrProfileNotFound
 	}
+
+	if s.cache != nil {
+		_ = s.cache.Set(ctx, cacheKey, p, 5*time.Minute)
+	}
+
 	return p, nil
 }
 
@@ -277,6 +299,10 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 		return nil, err
 	}
 
+	if s.cache != nil {
+		_ = s.cache.Delete(ctx, fmt.Sprintf("profile:%s", userID))
+	}
+
 	return p, nil
 }
 
@@ -397,9 +423,18 @@ func (s *Service) UploadResume(ctx context.Context, claims *auth.UserClaims, fil
 		return nil, fmt.Errorf("update resume metadata: %w", err)
 	}
 
-	// 3. Clean up previous resume object if replacing
+	// 3. Clean up previous resume object if replacing and not referenced in applications
 	if oldResumeKey != "" && oldResumeKey != key {
-		s.deleteResumeBestEffort(ctx, oldResumeKey, "replace previous object")
+		referenced, err := s.repo.IsResumeReferenced(ctx, oldResumeKey)
+		if err != nil {
+			slog.Warn("failed to check if old resume is referenced, skipping deletion", "key", oldResumeKey, "err", err)
+		} else if !referenced {
+			s.deleteResumeBestEffort(ctx, oldResumeKey, "replace previous object")
+		}
+	}
+
+	if s.cache != nil {
+		_ = s.cache.Delete(ctx, fmt.Sprintf("profile:%s", claims.UserID))
 	}
 
 	return updated, nil
@@ -467,9 +502,18 @@ func (s *Service) ConfirmDirectResumeUpload(ctx context.Context, claims *auth.Us
 		return nil, fmt.Errorf("update resume metadata: %w", err)
 	}
 
-	// Clean up previous resume object if replacing
+	// Clean up previous resume object if replacing and not referenced in applications
 	if oldResumeKey != "" && oldResumeKey != key {
-		s.deleteResumeBestEffort(ctx, oldResumeKey, "replace previous object")
+		referenced, err := s.repo.IsResumeReferenced(ctx, oldResumeKey)
+		if err != nil {
+			slog.Warn("failed to check if old resume is referenced, skipping deletion", "key", oldResumeKey, "err", err)
+		} else if !referenced {
+			s.deleteResumeBestEffort(ctx, oldResumeKey, "replace previous object")
+		}
+	}
+
+	if s.cache != nil {
+		_ = s.cache.Delete(ctx, fmt.Sprintf("profile:%s", claims.UserID))
 	}
 
 	return updated, nil

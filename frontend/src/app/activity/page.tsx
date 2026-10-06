@@ -21,7 +21,6 @@ import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   formatJobDate,
-  formatJobBudget,
   getStatusBadgeClasses,
   getApplicationStatusBadgeClasses,
   getContractStatusBadgeClasses,
@@ -289,11 +288,6 @@ function ActivityContent() {
                           {app.job.department}
                         </Badge>
                       )}
-                      {app.job && (
-                        <span className="font-mono text-xs font-semibold text-foreground ml-auto sm:ml-2">
-                          {formatJobBudget(app.job)}
-                        </span>
-                      )}
                     </div>
 
                     <Link href={`/jobs/${app.job_id}`}>
@@ -395,11 +389,6 @@ function ActivityContent() {
                       <span className="font-mono text-xs text-muted-foreground">
                         {isClient ? "Client Role" : "Freelancer Role"}
                       </span>
-                      {contract.job && (
-                        <span className="font-mono text-xs font-semibold text-foreground ml-auto sm:ml-2">
-                          {formatJobBudget(contract.job)}
-                        </span>
-                      )}
                     </div>
 
                     <Link href={`/contracts/${contract.id}`}>
@@ -484,9 +473,6 @@ function ActivityContent() {
                           {job.department}
                         </Badge>
                       )}
-                      <span className="font-mono text-xs font-semibold text-foreground ml-auto sm:ml-2">
-                        {formatJobBudget(job)}
-                      </span>
                     </div>
 
                     <Link href={`/jobs/${job.id}`}>

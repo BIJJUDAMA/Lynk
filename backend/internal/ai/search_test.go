@@ -121,6 +121,10 @@ func (m *mockUserRepo) WithProfileLock(ctx context.Context, userID string, fn fu
 	return fn(ctx)
 }
 
+func (m *mockUserRepo) IsResumeReferenced(ctx context.Context, resumeKey string) (bool, error) {
+	return false, nil
+}
+
 func (m *mockUserRepo) SearchProfiles(ctx context.Context, query string, limit int) ([]*user.Profile, error) {
 	pattern := strings.ToLower(query)
 	var results []*user.Profile

@@ -36,7 +36,6 @@ export default function CreateJobPage() {
   const [departmentSelection, setDepartmentSelection] = useState("");
   const [customDepartment, setCustomDepartment] = useState("");
   const [description, setDescription] = useState("");
-  const [budget, setBudget] = useState("");
   const [deadline, setDeadline] = useState("");
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
@@ -137,19 +136,10 @@ export default function CreateJobPage() {
         ? customDepartment.trim()
         : departmentSelection.trim();
 
-    const trimmedBudget = budget.trim();
-    let finalDescription = description.trim();
-    if (trimmedBudget) {
-      const formattedBudget = trimmedBudget.startsWith("$") ? trimmedBudget : `$${trimmedBudget}`;
-      if (!finalDescription.toLowerCase().includes("compensation:")) {
-        finalDescription = `${finalDescription}\n\nCompensation: ${formattedBudget}`;
-      }
-    }
-
     const payload: CreateJobRequest = {
       title: title.trim(),
       department: resolvedDept,
-      description: finalDescription,
+      description: description.trim(),
       required_skills: skills,
       deadline: deadline ? deadline : undefined,
     };
@@ -250,12 +240,6 @@ export default function CreateJobPage() {
       ? customDepartment.trim() || "Unspecified Department"
       : departmentSelection || "Unspecified Department";
 
-  const displayBudget = budget.trim()
-    ? budget.trim().startsWith("$")
-      ? budget.trim()
-      : `$${budget.trim()}`
-    : "Negotiable / Departmental";
-
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Top Navigation & Mode Switcher */}
@@ -333,7 +317,11 @@ export default function CreateJobPage() {
               </Badge>
               <span className="font-mono text-xs text-muted-foreground">{resolvedDept}</span>
             </div>
-            <span className="font-mono text-xs font-medium text-foreground">{displayBudget}</span>
+            {deadline && (
+              <span className="font-mono text-xs text-muted-foreground">
+                Deadline: {formatJobDate(deadline)}
+              </span>
+            )}
           </div>
 
           <div>
@@ -550,66 +538,46 @@ export default function CreateJobPage() {
             </div>
           </div>
 
-          {/* Section 3: Budget / Compensation & Deadline */}
+          {/* Section 3: Project Timeline */}
           <div className="space-y-4 border-t border-border pt-6">
             <div>
               <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                3. Compensation &amp; Timeline
+                3. Project Timeline
               </h2>
               <p className="text-xs text-muted-foreground">
-                Set estimated compensation guidance and project deadline.
+                Set target project deliverable deadline.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {/* Budget */}
-              <div>
-                <label className="block text-xs font-medium text-foreground">
-                  Compensation / Budget (Optional)
-                </label>
-                <Input
-                  type="text"
-                  value={budget}
-                  onChange={(e) => setBudget(e.target.value)}
-                  placeholder="e.g. $45/hr or $650 Fixed"
-                  className="mt-1.5 font-mono text-sm"
-                />
-                <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-                  Fixed deliverable amount or estimated hourly rate.
+            <div>
+              <label className="block text-xs font-medium text-foreground">
+                Target Deadline (Optional)
+              </label>
+              <Input
+                type="date"
+                min={todayDateString}
+                value={deadline}
+                onChange={(e) => {
+                  setDeadline(e.target.value);
+                  if (formErrors.deadline) {
+                    setFormErrors((prev) => {
+                      const next = { ...prev };
+                      delete next.deadline;
+                      return next;
+                    });
+                  }
+                }}
+                className="mt-1.5 font-mono text-sm max-w-sm"
+              />
+              {formErrors.deadline ? (
+                <p className="mt-1 font-mono text-xs text-pastel-redText">
+                  {formErrors.deadline}
                 </p>
-              </div>
-
-              {/* Deadline */}
-              <div>
-                <label className="block text-xs font-medium text-foreground">
-                  Target Deadline (Optional)
-                </label>
-                <Input
-                  type="date"
-                  min={todayDateString}
-                  value={deadline}
-                  onChange={(e) => {
-                    setDeadline(e.target.value);
-                    if (formErrors.deadline) {
-                      setFormErrors((prev) => {
-                        const next = { ...prev };
-                        delete next.deadline;
-                        return next;
-                      });
-                    }
-                  }}
-                  className="mt-1.5 font-mono text-sm"
-                />
-                {formErrors.deadline ? (
-                  <p className="mt-1 font-mono text-xs text-pastel-redText">
-                    {formErrors.deadline}
-                  </p>
-                ) : (
-                  <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-                    Estimated completion date for applicants.
-                  </p>
-                )}
-              </div>
+              ) : (
+                <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                  Estimated completion date for applicants.
+                </p>
+              )}
             </div>
           </div>
 

@@ -2,6 +2,8 @@ package job
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/cache"
+	"github.com/lynk/backend/internal/sanitizer"
 )
 
 var (
@@ -21,12 +25,23 @@ var (
 
 // Service provides business logic and validation for jobs.
 type Service struct {
-	repo JobRepository
+	repo  JobRepository
+	cache cache.Cacher
 }
 
 // NewService creates a new job service.
-func NewService(repo JobRepository) *Service {
-	return &Service{repo: repo}
+func NewService(repo JobRepository, cacher ...cache.Cacher) *Service {
+	var c cache.Cacher
+	if len(cacher) > 0 {
+		c = cacher[0]
+	}
+	return &Service{repo: repo, cache: c}
+}
+
+// WithCache sets the optional cache on the Service.
+func (s *Service) WithCache(c cache.Cacher) *Service {
+	s.cache = c
+	return s
 }
 
 // CreateJob validates and creates a new job posting.
@@ -36,7 +51,7 @@ func (s *Service) CreateJob(ctx context.Context, claims *auth.UserClaims, req Cr
 	}
 	createdBy := claims.UserID
 
-	title := strings.TrimSpace(req.Title)
+	title := sanitizer.SanitizeSingleLine(req.Title)
 	if title == "" {
 		return nil, fmt.Errorf("%w: title is required", ErrInvalidInput)
 	}
@@ -44,7 +59,7 @@ func (s *Service) CreateJob(ctx context.Context, claims *auth.UserClaims, req Cr
 		return nil, fmt.Errorf("%w: title cannot exceed 200 characters", ErrInvalidInput)
 	}
 
-	desc := strings.TrimSpace(req.Description)
+	desc := sanitizer.SanitizeStrict(req.Description)
 	if desc == "" {
 		return nil, fmt.Errorf("%w: description is required", ErrInvalidInput)
 	}
@@ -52,7 +67,7 @@ func (s *Service) CreateJob(ctx context.Context, claims *auth.UserClaims, req Cr
 		return nil, fmt.Errorf("%w: description cannot exceed 5000 characters", ErrInvalidInput)
 	}
 
-	dept := strings.TrimSpace(req.Department)
+	dept := sanitizer.SanitizeSingleLine(req.Department)
 	if len(dept) > 100 {
 		return nil, fmt.Errorf("%w: department cannot exceed 100 characters", ErrInvalidInput)
 	}
@@ -78,6 +93,10 @@ func (s *Service) CreateJob(ctx context.Context, claims *auth.UserClaims, req Cr
 		return nil, err
 	}
 
+	if s.cache != nil {
+		_ = s.cache.DeletePattern(ctx, "jobs:search:*")
+	}
+
 	return job, nil
 }
 
@@ -99,7 +118,25 @@ func (s *Service) GetJobByID(ctx context.Context, id uuid.UUID) (*Job, error) {
 
 // ListJobs retrieves jobs matching the provided filter criteria.
 func (s *Service) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, error) {
-	return s.repo.ListJobs(ctx, filter)
+	cacheKey := jobFilterCacheKey(filter)
+	if s.cache != nil {
+		var cached []*Job
+		found, err := s.cache.Get(ctx, cacheKey, &cached)
+		if err == nil && found {
+			return cached, nil
+		}
+	}
+
+	jobs, err := s.repo.ListJobs(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.cache != nil {
+		_ = s.cache.Set(ctx, cacheKey, jobs, 60*time.Second)
+	}
+
+	return jobs, nil
 }
 
 // GetMyJobs retrieves all jobs posted by the specified creator.
@@ -227,7 +264,16 @@ func (s *Service) UpdateJob(ctx context.Context, claims *auth.UserClaims, id uui
 		return nil, err
 	}
 
+	if s.cache != nil {
+		_ = s.cache.DeletePattern(ctx, "jobs:search:*")
+	}
+
 	return job, nil
+}
+
+// UpdateJobStatus updates the status of a job and invalidates search caches.
+func (s *Service) UpdateJobStatus(ctx context.Context, claims *auth.UserClaims, id uuid.UUID, status string) (*Job, error) {
+	return s.UpdateJob(ctx, claims, id, UpdateJobRequest{Status: &status})
 }
 
 // DeleteJob removes a job posting if caller owns the job.
@@ -262,7 +308,34 @@ func (s *Service) DeleteJob(ctx context.Context, claims *auth.UserClaims, id uui
 		return ErrJobHasDependents
 	}
 
-	return s.repo.DeleteJob(ctx, id)
+	if err := s.repo.DeleteJob(ctx, id); err != nil {
+		return err
+	}
+
+	if s.cache != nil {
+		_ = s.cache.DeletePattern(ctx, "jobs:search:*")
+	}
+
+	return nil
+}
+
+func jobFilterCacheKey(filter JobFilter) string {
+	cb := ""
+	if filter.CreatedBy != nil {
+		cb = *filter.CreatedBy
+	}
+	raw := fmt.Sprintf("st=%s;dp=%s;sk=%s;sks=%s;sr=%s;cb=%s;lim=%d;off=%d",
+		filter.Status,
+		filter.Department,
+		filter.Skill,
+		strings.Join(filter.Skills, ","),
+		filter.Search,
+		cb,
+		filter.Limit,
+		filter.Offset,
+	)
+	h := sha256.Sum256([]byte(raw))
+	return fmt.Sprintf("jobs:search:%s", hex.EncodeToString(h[:16]))
 }
 
 func cleanSkills(skills []string) []string {

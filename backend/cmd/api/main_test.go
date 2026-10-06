@@ -149,12 +149,15 @@ func (stubUserRepo) ProvisionUser(context.Context, *user.User, *user.Profile) er
 func (stubUserRepo) WithProfileLock(ctx context.Context, userID string, fn func(context.Context) error) error {
 	return fn(ctx)
 }
+func (stubUserRepo) IsResumeReferenced(context.Context, string) (bool, error) {
+	return false, nil
+}
 
 var _ user.UserRepository = stubUserRepo{}
 
 func TestBuildRouter_HealthNilPoolIsServiceUnavailable(t *testing.T) {
 	cfg := LoadConfig()
-	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -165,7 +168,7 @@ func TestBuildRouter_HealthNilPoolIsServiceUnavailable(t *testing.T) {
 
 func TestHealthEndpoint(t *testing.T) {
 	cfg := DefaultTestConfig()
-	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	t.Run("GET /health returns 503 when db pool is nil", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -229,6 +232,7 @@ func TestBuildRouter_MarketplaceWritesRequireVerifiedEmail(t *testing.T) {
 		nil,
 		middleware.AuthMiddleware(unverified),
 		nil,
+		nil,
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(`{"title":"x","description":"yyyyyyyyyy"}`))
@@ -250,7 +254,7 @@ func TestBuildRouter_ResumeGetRequiresVerifiedEmail(t *testing.T) {
 	unverified := &auth.UserClaims{UserID: "u1", Email: "a@stanford.edu", EmailVerified: false, Roles: []string{"member"}}
 	authMW := middleware.AuthMiddleware(&mockValidator{validToken: "tok", claims: unverified})
 	userHandler := user.NewHandler(user.NewService(nil), nil)
-	router := BuildRouter(cfg, nil, userHandler, nil, nil, nil, nil, authMW, stubStore{})
+	router := BuildRouter(cfg, nil, userHandler, nil, nil, nil, nil, authMW, stubStore{}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/profile/resume", nil)
 	req.Header.Set("Authorization", "Bearer tok")
 	rec := httptest.NewRecorder()
@@ -276,7 +280,7 @@ func TestBuildRouter_AuthMatrix(t *testing.T) {
 	userRepo := stubUserRepo{}
 	userHandler := user.NewHandler(user.NewService(userRepo), userRepo)
 
-	router := BuildRouter(cfg, nil, userHandler, jobHandler, nil, nil, nil, authMW, stubStore{})
+	router := BuildRouter(cfg, nil, userHandler, jobHandler, nil, nil, nil, authMW, stubStore{}, nil)
 
 	jobBody := `{"title":"x","description":"yyyyyyyyyy"}`
 
@@ -391,6 +395,7 @@ func TestRouteAssembly_PublicAndProtected(t *testing.T) {
 		contractHandler,
 		reviewHandler,
 		middleware.AuthMiddleware(validator),
+		nil,
 		nil,
 	)
 
@@ -540,7 +545,7 @@ func TestLoadConfig_MinioPublicEndpoint(t *testing.T) {
 
 func TestTimeoutMiddleware(t *testing.T) {
 	cfg := DefaultTestConfig()
-	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	t.Run("fast handler returns 503 when db pool is nil", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -578,7 +583,7 @@ func TestTimeoutMiddleware(t *testing.T) {
 
 func TestRequestBodyLimiter(t *testing.T) {
 	cfg := DefaultTestConfig()
-	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	// Add a test endpoint that reads the request body
 	router.Post("/test-body", func(w http.ResponseWriter, r *http.Request) {
@@ -624,7 +629,7 @@ func TestRequestBodyLimiter(t *testing.T) {
 		jobRepo := &mockJobRepo{}
 		jobSvc := job.NewService(jobRepo)
 		jobHandler := job.NewHandler(jobSvc, jobRepo)
-		router := BuildRouter(cfg, nil, nil, jobHandler, nil, nil, nil, nil, nil)
+		router := BuildRouter(cfg, nil, nil, jobHandler, nil, nil, nil, nil, nil, nil)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(`{"title":"x","description":"y"}`))
 		req.Header.Set("Content-Type", "application/json")
@@ -666,7 +671,7 @@ func TestRequestTimeout_ResumeUploadIsLonger(t *testing.T) {
 
 func TestBuildRouter_RequestTimeoutAppliedToContext(t *testing.T) {
 	cfg := DefaultTestConfig()
-	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	var resumeDeadline time.Time
 	var resumeDeadlineSet bool
@@ -700,6 +705,35 @@ func TestBuildRouter_RequestTimeoutAppliedToContext(t *testing.T) {
 	remainingDefault := time.Until(defaultDeadline)
 	if remainingDefault < 25*time.Second || remainingDefault > 31*time.Second {
 		t.Fatalf("expected default deadline ~30s, got remaining %v", remainingDefault)
+	}
+
+	var sseDeadlineSet bool
+	router.Get("/events/stream", func(w http.ResponseWriter, r *http.Request) {
+		_, sseDeadlineSet = r.Context().Deadline()
+		w.WriteHeader(http.StatusOK)
+	})
+
+	reqSSE := httptest.NewRequest(http.MethodGet, "/events/stream", nil)
+	router.ServeHTTP(httptest.NewRecorder(), reqSSE)
+	if sseDeadlineSet {
+		t.Fatal("expected no deadline to be set on events stream context")
+	}
+}
+
+func TestRequestTimeout_EventsStreamHasNoTimeout(t *testing.T) {
+	reqStream := httptest.NewRequest(http.MethodGet, "/api/v1/events/stream", nil)
+	if timeout := requestTimeout(reqStream); timeout != 0 {
+		t.Fatalf("expected 0 timeout for /api/v1/events/stream, got %v", timeout)
+	}
+
+	reqStreamTrailing := httptest.NewRequest(http.MethodGet, "/api/v1/events/stream/", nil)
+	if timeout := requestTimeout(reqStreamTrailing); timeout != 0 {
+		t.Fatalf("expected 0 timeout for /api/v1/events/stream/, got %v", timeout)
+	}
+
+	reqStreamRoot := httptest.NewRequest(http.MethodGet, "/events/stream", nil)
+	if timeout := requestTimeout(reqStreamRoot); timeout != 0 {
+		t.Fatalf("expected 0 timeout for /events/stream, got %v", timeout)
 	}
 }
 
@@ -817,3 +851,32 @@ func TestWarnIfDefaultSecrets_AISecret(t *testing.T) {
 		t.Fatalf("expected no warning for custom AI secret, got %q", cleanMsg)
 	}
 }
+
+func TestBuildRouter_RateLimitHeaders(t *testing.T) {
+	cfg := Config{
+		Port:          "8080",
+		DatabaseURL:   "postgres://localhost:5432/db",
+		MigrationsDir: "migrations",
+		MinioBucket:   "resumes",
+		RedisURL:      "redis://localhost:6379",
+	}
+
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
+	req.RemoteAddr = "192.168.1.100:12345"
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	limitHeader := rec.Header().Get("X-RateLimit-Limit")
+	if limitHeader != "120" {
+		t.Fatalf("expected X-RateLimit-Limit 120, got %q", limitHeader)
+	}
+
+	remHeader := rec.Header().Get("X-RateLimit-Remaining")
+	if remHeader == "" {
+		t.Fatalf("expected non-empty X-RateLimit-Remaining header")
+	}
+}
+

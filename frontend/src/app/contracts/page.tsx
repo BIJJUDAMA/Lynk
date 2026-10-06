@@ -16,7 +16,7 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { listContracts } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
-import { formatJobDate, formatJobBudget, getContractStatusBadgeClasses } from "@/lib/formatters";
+import { formatJobDate, getContractStatusBadgeClasses } from "@/lib/formatters";
 import type { ContractStatus, ContractWithDetails } from "@/types/api";
 
 type FilterStatus = "all" | ContractStatus;
@@ -293,7 +293,7 @@ export default function ContractsPage() {
               >
                 {/* Left: metadata */}
                 <div className="flex-1 min-w-0">
-                  {/* Contract ID + status pill + budget */}
+                  {/* Contract ID + status pill */}
                   <div className="flex flex-wrap items-center gap-2 mb-2">
                     <span className="font-mono text-xs text-muted-foreground">
                       #{contract.id.slice(0, 8)}
@@ -304,11 +304,6 @@ export default function ContractsPage() {
                       <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
                       {badge.label}
                     </span>
-                    {contract.job && (
-                      <span className="font-mono text-xs font-semibold text-foreground ml-auto sm:ml-2">
-                        {formatJobBudget(contract.job)}
-                      </span>
-                    )}
                   </div>
 
                   {/* Job title */}

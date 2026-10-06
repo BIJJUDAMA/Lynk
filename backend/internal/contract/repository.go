@@ -237,9 +237,10 @@ func (r *Repository) UpdateContractStatus(ctx context.Context, id uuid.UUID, tar
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Standardize lock order: always lock parent job before mutating contracts
-	if targetStatus == StatusCancelled {
+	// for both StatusCancelled and StatusCompleted to avoid lock order inversion deadlocks.
+	if targetStatus == StatusCancelled || targetStatus == StatusCompleted {
 		if _, err := tx.Exec(ctx, queryLockJobOnContractCancellation, id); err != nil {
-			return nil, fmt.Errorf("lock job on contract cancellation: %w", err)
+			return nil, fmt.Errorf("lock job on contract status update: %w", err)
 		}
 	}
 

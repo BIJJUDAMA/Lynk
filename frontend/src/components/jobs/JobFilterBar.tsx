@@ -9,14 +9,11 @@ import { COMMON_DEPARTMENTS, POPULAR_SKILLS } from "@/lib/formatters";
 
 export { COMMON_DEPARTMENTS, POPULAR_SKILLS };
 
-export type BudgetSort = "" | "high" | "low";
-
 export interface JobFilterValues {
   search: string;
   department: string;
   skill: string;
   status: "" | JobStatus;
-  budgetSort?: BudgetSort;
 }
 
 export interface JobFilterBarProps {
@@ -68,7 +65,6 @@ export function JobFilterBar({
     filters.search ||
     filters.department ||
     filters.skill ||
-    filters.budgetSort ||
     (filters.status && filters.status !== "open")
   );
 
@@ -93,7 +89,7 @@ export function JobFilterBar({
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 sm:p-5 shadow-none">
-      {/* Top Row: Search, Department Dropdown, Budget Sort, and Reset */}
+      {/* Top Row: Search, Department Dropdown, and Reset */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
         {/* Search Field */}
         <div className="relative flex-1">
@@ -140,36 +136,8 @@ export function JobFilterBar({
           </div>
         </div>
 
-        {/* Budget Sort & Reset Controls */}
+        {/* Reset Controls */}
         <div className="flex items-center gap-2 self-start md:self-auto">
-          {/* Budget Sort Controls */}
-          <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
-            <button
-              type="button"
-              onClick={() => updateField("budgetSort", filters.budgetSort === "high" ? "" : "high")}
-              className={cn(
-                "rounded-md px-2.5 py-1.5 text-xs font-mono transition-colors",
-                filters.budgetSort === "high"
-                  ? "bg-background text-foreground font-medium shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              High to Low
-            </button>
-            <button
-              type="button"
-              onClick={() => updateField("budgetSort", filters.budgetSort === "low" ? "" : "low")}
-              className={cn(
-                "rounded-md px-2.5 py-1.5 text-xs font-mono transition-colors",
-                filters.budgetSort === "low"
-                  ? "bg-background text-foreground font-medium shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Low to High
-            </button>
-          </div>
-
           {/* Reset Filters Button */}
           {hasActiveFilters && (
             <button
@@ -263,20 +231,6 @@ export function JobFilterBar({
                   type="button"
                   onClick={() => updateField("skill", "")}
                   aria-label="Remove skill filter"
-                  className="hover:text-muted-foreground"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            )}
-
-            {filters.budgetSort && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-mono text-foreground">
-                Sort: {filters.budgetSort === "high" ? "High to Low" : "Low to High"}
-                <button
-                  type="button"
-                  onClick={() => updateField("budgetSort", "")}
-                  aria-label="Remove budget sort"
                   className="hover:text-muted-foreground"
                 >
                   <X className="h-3 w-3" />

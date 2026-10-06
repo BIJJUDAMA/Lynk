@@ -3,15 +3,18 @@ package contract
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/outbox"
 )
 
 // Service coordinates business logic, participant authorization, and state transitions for contracts.
 type Service struct {
-	repo ContractRepository
+	repo   ContractRepository
+	outbox outbox.Publisher
 }
 
 func clampPage(limit, offset int) (int, int) {
@@ -30,6 +33,12 @@ func clampPage(limit, offset int) (int, int) {
 // NewService creates a new contract service.
 func NewService(repo ContractRepository) *Service {
 	return &Service{repo: repo}
+}
+
+// WithOutbox wires an outbox.Publisher to emit domain events on state transitions.
+func (s *Service) WithOutbox(r outbox.Publisher) *Service {
+	s.outbox = r
+	return s
 }
 
 // ListContracts retrieves contracts where the authenticated caller is the client or freelancer.
@@ -128,5 +137,28 @@ func (s *Service) UpdateContractStatus(
 		return nil, err
 	}
 
-	return s.repo.UpdateContractStatus(ctx, contractID, targetStatus)
+	updated, err := s.repo.UpdateContractStatus(ctx, contractID, targetStatus)
+	if err != nil {
+		return nil, err
+	}
+
+	// Publish domain event — best-effort; log and continue on failure
+	if s.outbox != nil {
+		if err2 := s.outbox.Publish(ctx, outbox.Event{
+			EventType:     "contract_status_changed",
+			AggregateType: "contract",
+			AggregateID:   contractID.String(),
+			Payload: map[string]any{
+				"contract_id":    contractID.String(),
+				"previous_status": existing.Status,
+				"new_status":     targetStatus,
+				"client_id":      existing.ClientID,
+				"freelancer_id":  existing.FreelancerID,
+			},
+		}); err2 != nil {
+			slog.Warn("outbox: failed to record contract_status_changed", "error", err2)
+		}
+	}
+
+	return updated, nil
 }

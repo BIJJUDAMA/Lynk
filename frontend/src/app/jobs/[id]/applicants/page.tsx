@@ -32,7 +32,6 @@ import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   formatJobDate,
-  formatJobBudget,
   getStatusBadgeClasses,
   getApplicationStatusBadgeClasses,
 } from "@/lib/formatters";
@@ -292,7 +291,11 @@ export default function JobApplicantsPage() {
           <span className={cn("h-1.5 w-1.5 rounded-full", jobStatusStyles.dot)} />
           {job.status.replace("_", " ")}
         </span>
-        <span className="font-mono text-xs text-muted-foreground">{formatJobBudget(job)}</span>
+        {job.deadline && (
+          <span className="font-mono text-xs text-muted-foreground">
+            Due {formatJobDate(job.deadline)}
+          </span>
+        )}
         <span className="ml-auto flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
           <Users className="h-3.5 w-3.5" />
           {totalCount} {totalCount === 1 ? "applicant" : "applicants"}

@@ -28,7 +28,7 @@ import {
 } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { formatJobDate, getStatusBadgeClasses, formatJobBudget } from "@/lib/formatters";
+import { formatJobDate, getStatusBadgeClasses } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -203,7 +203,6 @@ export default function JobDetailPage() {
         job.employer?.company_or_org ||
         job.employer?.contact_name ||
         "Campus Member";
-  const budgetDisplay = formatJobBudget(job);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
@@ -341,12 +340,14 @@ export default function JobDetailPage() {
 
         {/* Sidebar Metadata Card */}
         <div className="rounded-xl border border-border bg-card p-6 shadow-none space-y-6">
-          {/* Budget */}
+          {/* Opportunity Status */}
           <div>
             <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
-              Budget / Compensation
+              Opportunity Status
             </div>
-            <div className="mt-1 font-mono text-2xl font-bold text-foreground">{budgetDisplay}</div>
+            <div className="mt-1 font-mono text-xl font-bold text-foreground capitalize">
+              {job.status.replace("_", " ")}
+            </div>
           </div>
 
           {/* Submission Deadline */}

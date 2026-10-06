@@ -33,21 +33,22 @@ const GRADUATION_YEARS = Array.from({ length: 9 }, (_, i) => CURRENT_YEAR - 2 + 
 export default function ProfilePage() {
   const { user, isVerified, isAuthenticated, isLoading: isAuthLoading, login } = useAuth();
 
-  // Query unified campus profile
+  // Query unified campus profile strictly from the backend database
   const {
     data: profile,
     isLoading: isProfileLoading,
+    error: profileError,
     refetch: refetchProfile,
   } = useQuery(getMyProfile, {
     enabled: isAuthenticated,
   });
 
-  // Form State
+  // Form State - strictly blank by default until populated by database
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [department, setDepartment] = useState(COMMON_DEPARTMENTS[0]);
+  const [department, setDepartment] = useState("");
   const [customDepartment, setCustomDepartment] = useState("");
-  const [graduationYear, setGraduationYear] = useState<number | undefined>(CURRENT_YEAR + 2);
+  const [graduationYear, setGraduationYear] = useState<number | undefined>(undefined);
   const [bio, setBio] = useState("");
   const [organization, setOrganization] = useState("");
   const [orgWebsite, setOrgWebsite] = useState("");
@@ -61,7 +62,7 @@ export default function ProfilePage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Sync loaded profile into form state
+  // Sync loaded database profile into form state. If no profile in DB, leave blank.
   useEffect(() => {
     if (profile) {
       setFirstName(profile.first_name || "");
@@ -72,23 +73,32 @@ export default function ProfilePage() {
       } else if (profile.department) {
         setDepartment("Other");
         setCustomDepartment(profile.department);
+      } else {
+        setDepartment("");
+        setCustomDepartment("");
       }
-      setGraduationYear(profile.graduation_year || undefined);
+      setGraduationYear(profile.graduation_year && profile.graduation_year > 0 ? profile.graduation_year : undefined);
       setBio(profile.bio || profile.description || "");
       setOrganization(profile.organization || profile.company_or_org || "");
       setOrgWebsite(profile.organization_website || profile.website || "");
       setSkills(Array.isArray(profile.skills) ? profile.skills : []);
       setPortfolioLinks(Array.isArray(profile.portfolio_links) ? profile.portfolio_links : []);
-    } else if (user) {
-      if (user.name) {
-        const parts = user.name.split(" ");
-        setFirstName(parts[0] || "");
-        setLastName(parts.slice(1).join(" ") || "");
-      }
+    } else {
+      // No DB data or DB unreachable -> all fields remain blank
+      setFirstName("");
+      setLastName("");
+      setDepartment("");
+      setCustomDepartment("");
+      setGraduationYear(undefined);
+      setBio("");
+      setOrganization("");
+      setOrgWebsite("");
+      setSkills([]);
+      setPortfolioLinks([]);
     }
-  }, [profile, user]);
+  }, [profile]);
 
-  // Mutation for updating profile
+  // Mutation for updating profile in database
   const { mutate: mutateProfile, isLoading: isSaving } = useMutation(
     async (payload: UpdateProfileRequest) => {
       return await updateMyProfile(payload);
@@ -221,7 +231,7 @@ export default function ProfilePage() {
     return (
       <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="flex min-h-[40vh] items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <Loader2 className="h-6 w-6 animate-spin text-ink-secondary" />
         </div>
       </div>
     );
@@ -230,18 +240,18 @@ export default function ProfilePage() {
   if (!isAuthenticated || !user) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-        <div className="rounded-xl border border-border bg-card p-8 shadow-none">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+        <div className="rounded-xl border border-line bg-surface-elevated p-8 shadow-none">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-surface text-ink-secondary">
             <Lock className="h-6 w-6" />
           </div>
-          <h2 className="mt-4 font-serif text-2xl font-normal tracking-tight text-foreground">
+          <h2 className="mt-4 font-display text-2xl font-normal tracking-tight text-ink">
             Campus Sign In Required
           </h2>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="mt-2 text-sm text-ink-secondary">
             Please sign in with your campus credentials to view and manage your profile.
           </p>
           <div className="mt-6">
-            <Button onClick={() => login({ redirectPath: "/profile" })} className="rounded-md">
+            <Button onClick={() => login({ redirectPath: "/profile" })} className="rounded-md bg-ink text-canvas hover:bg-ink/90">
               <UserIcon className="h-4 w-4 mr-2" />
               Sign In with Campus Account
             </Button>
@@ -251,21 +261,25 @@ export default function ProfilePage() {
     );
   }
 
-  const displayName = firstName || lastName ? `${firstName} ${lastName}`.trim() : "Campus Member";
+  // Display name purely from database fields or user account
+  const displayName = firstName || lastName ? `${firstName} ${lastName}`.trim() : (user.name || user.email || "");
+
+  // Avatar initials purely from database name or email
+  const initialChar = firstName ? firstName[0].toUpperCase() : (user.email ? user.email[0].toUpperCase() : "");
+  const secondInitial = lastName ? lastName[0].toUpperCase() : "";
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       {/* Header Profile Identity Banner */}
-      <div className="mb-8 rounded-xl border border-border bg-card p-6 shadow-none sm:p-8">
+      <div className="mb-8 rounded-xl border border-line bg-surface-elevated p-6 shadow-none sm:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-muted text-lg font-mono font-semibold text-foreground">
-              {firstName ? firstName[0].toUpperCase() : user.email[0].toUpperCase()}
-              {lastName ? lastName[0].toUpperCase() : ""}
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-surface text-lg font-mono font-semibold text-ink border border-line">
+              {initialChar}{secondInitial}
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="font-serif text-2xl sm:text-3xl font-normal tracking-tight text-foreground">
+                <h1 className="font-display text-2xl sm:text-3xl font-normal tracking-tight text-ink">
                   {displayName}
                 </h1>
                 {isVerified ? (
@@ -274,13 +288,15 @@ export default function ProfilePage() {
                   <Badge variant="warning">VERIFICATION PENDING</Badge>
                 )}
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-1">
-                  <Mail className="h-3 w-3" />
-                  {user.email}
-                </span>
-                {profile?.department && <span>- {profile.department}</span>}
-                {profile?.organization && <span>- {profile.organization}</span>}
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs text-ink-secondary">
+                {user.email && (
+                  <span className="inline-flex items-center gap-1">
+                    <Mail className="h-3 w-3" />
+                    {user.email}
+                  </span>
+                )}
+                {profile?.department && <span>// {profile.department}</span>}
+                {profile?.organization && <span>// {profile.organization}</span>}
               </div>
             </div>
           </div>
@@ -311,41 +327,49 @@ export default function ProfilePage() {
         </div>
       )}
 
+      {/* Notice if database profile could not be loaded */}
+      {profileError && (
+        <div className="mb-6 flex items-center gap-2.5 rounded-lg border border-line bg-surface px-4 py-3 text-xs text-ink-secondary">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>No stored profile data found in database. Fill out the fields below to create your campus profile.</span>
+        </div>
+      )}
+
       {/* Two-Column Workspace Layout */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px]">
         {/* Left Column: Unified Profile Form */}
         <div className="space-y-6">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Section 1: Identity & Bio */}
-            <div className="rounded-xl border border-border bg-card p-6 shadow-none space-y-4">
+            <div className="rounded-xl border border-line bg-surface-elevated p-6 shadow-none space-y-4">
               <div>
-                <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                <h2 className="text-sm font-semibold tracking-tight text-ink font-display text-base">
                   1. Campus Identity &amp; Bio
                 </h2>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-ink-secondary">
                   Your public display name and professional background.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-xs font-medium text-foreground">First Name</label>
+                  <label className="block text-xs font-medium text-ink">First Name</label>
                   <Input
                     type="text"
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="e.g. Sarah"
+                    placeholder=""
                     className="mt-1.5 text-sm"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-foreground">Last Name</label>
+                  <label className="block text-xs font-medium text-ink">Last Name</label>
                   <Input
                     type="text"
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
-                    placeholder="e.g. Chen"
+                    placeholder=""
                     className="mt-1.5 text-sm"
                   />
                 </div>
@@ -353,8 +377,8 @@ export default function ProfilePage() {
 
               <div>
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-medium text-foreground">About / Bio</label>
-                  <span className="font-mono text-[11px] text-muted-foreground">
+                  <label className="block text-xs font-medium text-ink">About / Bio</label>
+                  <span className="font-mono text-[11px] text-ink-secondary">
                     {bio.length} / 1000 chars
                   </span>
                 </div>
@@ -363,33 +387,34 @@ export default function ProfilePage() {
                   maxLength={1000}
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
-                  placeholder="Share your focus, project experience, research background, or campus initiatives..."
+                  placeholder=""
                   className="mt-1.5 min-h-[100px] text-sm"
                 />
               </div>
             </div>
 
             {/* Section 2: Department & Academic Year */}
-            <div className="rounded-xl border border-border bg-card p-6 shadow-none space-y-4">
+            <div className="rounded-xl border border-line bg-surface-elevated p-6 shadow-none space-y-4">
               <div>
-                <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                <h2 className="text-sm font-semibold tracking-tight text-ink font-display text-base">
                   2. Academic Department &amp; Year
                 </h2>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-ink-secondary">
                   Your academic focus area and expected graduation date.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-xs font-medium text-foreground">
+                  <label className="block text-xs font-medium text-ink">
                     Department / Discipline
                   </label>
                   <select
                     value={department}
                     onChange={(e) => setDepartment(e.target.value)}
-                    className="mt-1.5 flex h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground transition-colors"
+                    className="mt-1.5 flex h-10 w-full rounded-md border border-line bg-card px-3 py-2 text-sm text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors"
                   >
+                    <option value="">Select Department / Discipline</option>
                     {COMMON_DEPARTMENTS.map((dept) => (
                       <option key={dept} value={dept}>
                         {dept}
@@ -409,7 +434,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-foreground">
+                  <label className="block text-xs font-medium text-ink">
                     Graduation Year (Optional)
                   </label>
                   <select
@@ -417,9 +442,9 @@ export default function ProfilePage() {
                     onChange={(e) =>
                       setGraduationYear(e.target.value ? Number(e.target.value) : undefined)
                     }
-                    className="mt-1.5 flex h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground transition-colors font-mono"
+                    className="mt-1.5 flex h-10 w-full rounded-md border border-line bg-card px-3 py-2 text-sm text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-colors font-mono"
                   >
-                    <option value="">Not Applicable / Staff</option>
+                    <option value="">Not Specified</option>
                     {GRADUATION_YEARS.map((yr) => (
                       <option key={yr} value={yr}>
                         Class of {yr}
@@ -431,12 +456,12 @@ export default function ProfilePage() {
             </div>
 
             {/* Section 3: Skills Tag Selector */}
-            <div className="rounded-xl border border-border bg-card p-6 shadow-none space-y-4">
+            <div className="rounded-xl border border-line bg-surface-elevated p-6 shadow-none space-y-4">
               <div>
-                <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                <h2 className="text-sm font-semibold tracking-tight text-ink font-display text-base">
                   3. Skills &amp; Technical Competencies
                 </h2>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-ink-secondary">
                   Highlight skills for gig proposals or project collaborations.
                 </p>
               </div>
@@ -452,7 +477,7 @@ export default function ProfilePage() {
                       handleAddSkill();
                     }
                   }}
-                  placeholder="e.g. Python, Next.js, Figma, PyTorch..."
+                  placeholder="Enter a skill..."
                   className="flex-1 text-sm"
                 />
                 <Button
@@ -467,7 +492,7 @@ export default function ProfilePage() {
                 </Button>
               </div>
 
-              {/* Current skill tags */}
+              {/* Current skill tags from database */}
               {skills.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {skills.map((skill) => (
@@ -480,7 +505,7 @@ export default function ProfilePage() {
                       <button
                         type="button"
                         onClick={() => handleRemoveSkill(skill)}
-                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        className="text-ink-secondary hover:text-ink transition-colors"
                         aria-label={`Remove ${skill}`}
                       >
                         <X className="h-3 w-3" />
@@ -490,10 +515,10 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              {/* Popular skill presets */}
-              <div className="pt-3 border-t border-border">
-                <span className="font-mono text-[11px] text-muted-foreground">
-                  Suggested Skills:
+              {/* Skill quick selectors */}
+              <div className="pt-3 border-t border-line">
+                <span className="font-mono text-[11px] text-ink-secondary">
+                  Presets:
                 </span>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {POPULAR_SKILLS.map((preset) => (
@@ -502,7 +527,7 @@ export default function ProfilePage() {
                       type="button"
                       disabled={skills.includes(preset)}
                       onClick={() => handleAddSkill(preset)}
-                      className="rounded-md border border-border bg-card px-2 py-0.5 font-mono text-xs text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="rounded-md border border-line bg-card px-2 py-0.5 font-mono text-xs text-ink-secondary hover:border-ink hover:text-ink transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       + {preset}
                     </button>
@@ -512,46 +537,46 @@ export default function ProfilePage() {
             </div>
 
             {/* Section 4: External Links & Affiliation */}
-            <div className="rounded-xl border border-border bg-card p-6 shadow-none space-y-4">
+            <div className="rounded-xl border border-line bg-surface-elevated p-6 shadow-none space-y-4">
               <div>
-                <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                <h2 className="text-sm font-semibold tracking-tight text-ink font-display text-base">
                   4. Affiliation &amp; External Links
                 </h2>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-ink-secondary">
                   Lab affiliation, GitHub, portfolio, or publications.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-xs font-medium text-foreground">
+                  <label className="block text-xs font-medium text-ink">
                     Affiliation / Lab / Club (Optional)
                   </label>
                   <Input
                     type="text"
                     value={organization}
                     onChange={(e) => setOrganization(e.target.value)}
-                    placeholder="e.g. AI Robotics Lab, CS Club"
+                    placeholder=""
                     className="mt-1.5 text-sm"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-foreground">
+                  <label className="block text-xs font-medium text-ink">
                     Affiliation Website (Optional)
                   </label>
                   <Input
                     type="text"
                     value={orgWebsite}
                     onChange={(e) => setOrgWebsite(e.target.value)}
-                    placeholder="https://lab.university.edu"
+                    placeholder=""
                     className="mt-1.5 text-sm"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-foreground mb-1.5">
+                <label className="block text-xs font-medium text-ink mb-1.5">
                   Portfolio &amp; External URLs
                 </label>
                 <div className="flex gap-2">
@@ -568,7 +593,7 @@ export default function ProfilePage() {
                         handleAddLink();
                       }
                     }}
-                    placeholder="https://github.com/username"
+                    placeholder="https://"
                     className="flex-1 text-sm"
                   />
                   <Button
@@ -592,23 +617,23 @@ export default function ProfilePage() {
                     {portfolioLinks.map((link) => (
                       <div
                         key={link}
-                        className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2 text-xs"
+                        className="flex items-center justify-between rounded-md border border-line bg-card px-3 py-2 text-xs"
                       >
                         <a
                           href={isValidUrl(link) ? link : "#"}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 font-mono text-foreground hover:underline truncate max-w-[85%]"
+                          className="inline-flex items-center gap-1.5 font-mono text-ink hover:underline truncate max-w-[85%]"
                         >
-                          <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <Globe className="h-3.5 w-3.5 shrink-0 text-ink-secondary" />
                           <span className="truncate">{link}</span>
-                          <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          <ExternalLink className="h-3 w-3 shrink-0 text-ink-secondary" />
                         </a>
                         <button
                           type="button"
                           onClick={() => handleRemoveLink(link)}
-                          className="text-muted-foreground hover:text-foreground transition-colors"
-                          aria-label="Remove link"
+                          className="text-ink-secondary hover:text-ink transition-colors"
+                          aria-label={`Remove link ${link}`}
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -624,7 +649,7 @@ export default function ProfilePage() {
               <button
                 type="submit"
                 disabled={isSaving}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-[#111111] px-5 py-2.5 text-xs font-medium text-white shadow-none hover:bg-[#222222] transition-colors active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-ink px-5 py-2.5 text-xs font-medium text-canvas shadow-none hover:bg-ink/90 transition-colors active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
               >
                 {isSaving ? (
                   <>
@@ -642,12 +667,12 @@ export default function ProfilePage() {
         {/* Right Column: Resume Vault & Account Trust */}
         <div className="space-y-6">
           {/* Resume Vault Bento Card */}
-          <div className="rounded-xl border border-border bg-card p-6 shadow-none space-y-3">
+          <div className="rounded-xl border border-line bg-surface-elevated p-6 shadow-none space-y-3">
             <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-foreground" />
-              <h2 className="font-serif text-xl font-medium text-foreground">Resume Vault</h2>
+              <FileText className="h-4 w-4 text-ink" />
+              <h2 className="font-display text-xl font-normal text-ink">Resume Vault</h2>
             </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">
+            <p className="text-xs text-ink-secondary leading-relaxed">
               Your resume is stored securely in your private MinIO vault. Share it with gig
               applications.
             </p>
@@ -667,23 +692,23 @@ export default function ProfilePage() {
           </div>
 
           {/* Account Trust Bento Card */}
-          <div className="rounded-xl border border-border bg-card p-6 shadow-none space-y-4">
+          <div className="rounded-xl border border-line bg-surface-elevated p-6 shadow-none space-y-4">
             <div>
-              <h3 className="font-serif text-lg font-medium text-foreground">Campus Trust</h3>
-              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+              <h3 className="font-display text-lg font-normal text-ink">Campus Trust</h3>
+              <p className="mt-1 text-xs text-ink-secondary leading-relaxed">
                 Authenticity guaranteed through institutional .edu credentials.
               </p>
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="flex items-center justify-between border-b border-border pb-2.5">
-                <span className="text-muted-foreground">Institutional Email</span>
-                <span className="font-mono text-foreground truncate max-w-[170px]">
-                  {user.email}
+              <div className="flex items-center justify-between border-b border-line pb-2.5">
+                <span className="text-ink-secondary">Institutional Email</span>
+                <span className="font-mono text-ink truncate max-w-[170px]">
+                  {user.email || ""}
                 </span>
               </div>
-              <div className="flex items-center justify-between border-b border-border pb-2.5">
-                <span className="text-muted-foreground">Verification</span>
+              <div className="flex items-center justify-between border-b border-line pb-2.5">
+                <span className="text-ink-secondary">Verification</span>
                 <span>
                   {isVerified ? (
                     <Badge variant="default" className="text-[10px]">
@@ -697,8 +722,14 @@ export default function ProfilePage() {
                 </span>
               </div>
               <div className="flex items-center justify-between pt-0.5">
-                <span className="text-muted-foreground">Status</span>
-                <span className="font-mono text-foreground">Active Campus Member</span>
+                <span className="text-ink-secondary">Status</span>
+                <span className="font-mono text-ink">
+                  {user.role === "admin"
+                    ? "Administrator"
+                    : isVerified
+                      ? "Verified Campus Member"
+                      : "Unverified Member"}
+                </span>
               </div>
             </div>
           </div>

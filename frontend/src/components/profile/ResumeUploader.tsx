@@ -317,7 +317,7 @@ export function ResumeUploader({
             </div>
             <div className="min-w-0 flex-1">
               <h4 className="font-serif text-base font-medium text-foreground truncate">
-                {currentResume.filename || "Student_Resume.pdf"}
+                {currentResume.filename || (currentResume.key ? currentResume.key.split("/").pop() : "Resume Document")}
               </h4>
               <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-muted-foreground font-mono">
                 <span>{formatFileSize(currentResume.byteSize)}</span>

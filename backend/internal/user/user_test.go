@@ -7,13 +7,16 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/cache"
 	"github.com/lynk/backend/internal/user"
 )
 
@@ -33,12 +36,16 @@ type mockUserRepository struct {
 	errUpsertProfile  error
 	errUpdateResume   error
 	errProvisionUser  error
+
+	referencedResumes     map[string]bool
+	errIsResumeReferenced error
 }
 
 func newMockUserRepository() *mockUserRepository {
 	return &mockUserRepository{
-		users:    make(map[string]*user.User),
-		profiles: make(map[string]*user.Profile),
+		users:             make(map[string]*user.User),
+		profiles:          make(map[string]*user.Profile),
+		referencedResumes: make(map[string]bool),
 	}
 }
 
@@ -184,6 +191,15 @@ func (m *mockUserRepository) WithProfileLock(ctx context.Context, userID string,
 		return err
 	}
 	return fn(ctx)
+}
+
+func (m *mockUserRepository) IsResumeReferenced(ctx context.Context, resumeKey string) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.errIsResumeReferenced != nil {
+		return false, m.errIsResumeReferenced
+	}
+	return m.referencedResumes[resumeKey], nil
 }
 
 func TestService_SyncUser_SurfacesProfileProvisionError(t *testing.T) {
@@ -602,3 +618,328 @@ func TestRepository_GetProfileByID_SARGableQueryBranching(t *testing.T) {
 func ptr[T any](v T) *T {
 	return &v
 }
+
+func TestService_GetProfile_CacheAside(t *testing.T) {
+	repo := newMockUserRepository()
+	memCache := cache.NewMemoryCache()
+	svc := user.NewService(repo).WithCache(memCache)
+
+	profile := &user.Profile{
+		UserID:    "user-cache-1",
+		FirstName: "Alice",
+		LastName:  "Smith",
+		Bio:       "Original Bio",
+	}
+	if err := repo.UpsertProfile(context.Background(), profile); err != nil {
+		t.Fatalf("failed to insert profile: %v", err)
+	}
+
+	// 1. Initial read populates cache
+	p1, err := svc.GetProfile(context.Background(), "user-cache-1")
+	if err != nil {
+		t.Fatalf("failed to get profile: %v", err)
+	}
+	if p1.Bio != "Original Bio" {
+		t.Fatalf("expected 'Original Bio', got %q", p1.Bio)
+	}
+
+	// 2. Direct repo modification bypasses service/cache
+	repo.profiles["user-cache-1"].Bio = "Directly Modified Bio"
+
+	// 3. Second read should return cached profile with original bio
+	p2, err := svc.GetProfile(context.Background(), "user-cache-1")
+	if err != nil {
+		t.Fatalf("failed to get profile: %v", err)
+	}
+	if p2.Bio != "Original Bio" {
+		t.Fatalf("expected cached 'Original Bio', got %q", p2.Bio)
+	}
+
+	// 4. UpdateProfile via service invalidates the cache
+	newBio := "Updated via Service"
+	_, err = svc.UpdateProfile(context.Background(), "user-cache-1", user.UpdateProfileRequest{
+		Bio: &newBio,
+	})
+	if err != nil {
+		t.Fatalf("failed to update profile: %v", err)
+	}
+
+	// 5. Subsequent read returns fresh profile
+	p3, err := svc.GetProfile(context.Background(), "user-cache-1")
+	if err != nil {
+		t.Fatalf("failed to get profile: %v", err)
+	}
+	if p3.Bio != "Updated via Service" {
+		t.Fatalf("expected 'Updated via Service', got %q", p3.Bio)
+	}
+}
+
+func TestWithProfileLock_MockBehavior(t *testing.T) {
+	repo := newMockUserRepository()
+	ctx := context.Background()
+	userID := "test-user-lock"
+
+	// 1. Success case
+	executed := false
+	err := repo.WithProfileLock(ctx, userID, func(lockCtx context.Context) error {
+		executed = true
+		if lockCtx != ctx {
+			t.Errorf("expected lockCtx to match passed ctx")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !executed {
+		t.Fatalf("expected fn to be executed")
+	}
+	if repo.lockCalls != 1 {
+		t.Fatalf("expected 1 lock call, got %d", repo.lockCalls)
+	}
+
+	// 2. Error propagation from fn
+	expectedErr := errors.New("fn failed")
+	err = repo.WithProfileLock(ctx, userID, func(lockCtx context.Context) error {
+		return expectedErr
+	})
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("expected %v, got %v", expectedErr, err)
+	}
+	if repo.lockCalls != 2 {
+		t.Fatalf("expected 2 lock calls, got %d", repo.lockCalls)
+	}
+
+	// 3. Error in WithProfileLock itself
+	lockErr := errors.New("lock acquisition failed")
+	repo.errWithProfileLock = lockErr
+	fnExecuted := false
+	err = repo.WithProfileLock(ctx, userID, func(lockCtx context.Context) error {
+		fnExecuted = true
+		return nil
+	})
+	if !errors.Is(err, lockErr) {
+		t.Fatalf("expected %v, got %v", lockErr, err)
+	}
+	if fnExecuted {
+		t.Fatalf("expected fn not to execute when lock acquisition fails")
+	}
+}
+
+func TestRepository_WithProfileLock_Structure(t *testing.T) {
+	content, err := os.ReadFile("repository.go")
+	if err != nil {
+		t.Fatalf("failed to read repository.go: %v", err)
+	}
+	src := string(content)
+
+	fnStart := strings.Index(src, "func (r *Repository) WithProfileLock(")
+	if fnStart == -1 {
+		t.Fatalf("WithProfileLock function not found in repository.go")
+	}
+	fnBody := src[fnStart:]
+	fnEnd := strings.Index(fnBody, "\nfunc ")
+	if fnEnd != -1 {
+		fnBody = fnBody[:fnEnd]
+	}
+
+	// 1. Verifies connection acquisition from pool
+	if !strings.Contains(fnBody, "r.db.Acquire(ctx)") {
+		t.Errorf("expected WithProfileLock to acquire dedicated conn with r.db.Acquire(ctx)")
+	}
+
+	// 2. Verifies connection release deferral
+	if !strings.Contains(fnBody, "defer conn.Release()") {
+		t.Errorf("expected WithProfileLock to defer conn.Release()")
+	}
+
+	// 3. Verifies session-level advisory lock
+	if !strings.Contains(fnBody, "pg_advisory_lock(hashtext('profile_lock:' || $1))") {
+		t.Errorf("expected WithProfileLock to acquire session-level advisory lock pg_advisory_lock")
+	}
+
+	// 4. Verifies deferred unlock
+	if !strings.Contains(fnBody, "pg_advisory_unlock(hashtext('profile_lock:' || $1))") {
+		t.Errorf("expected WithProfileLock to defer pg_advisory_unlock")
+	}
+
+	// 5. Verifies context.Background() used for cleanup to prevent lock leaks on cancelled ctx
+	if !strings.Contains(fnBody, "conn.Exec(context.Background()") {
+		t.Errorf("expected WithProfileLock to unlock using context.Background() to prevent lock leaks on cancelled context")
+	}
+
+	// 6. Verifies no transaction is opened (which caused connection starvation)
+	if strings.Contains(fnBody, "r.db.Begin") || strings.Contains(fnBody, "pg_advisory_xact_lock") {
+		t.Errorf("WithProfileLock must not use transaction-based advisory lock to prevent pool starvation")
+	}
+}
+
+func TestRepository_WithProfileLock_Integration(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping user repository integration test")
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("failed to connect to database: %v", err)
+	}
+	defer pool.Close()
+
+	repo := user.NewRepository(pool)
+	userID := "test-user-lock-" + uuid.New().String()
+
+	executed := false
+	err = repo.WithProfileLock(ctx, userID, func(lockCtx context.Context) error {
+		executed = true
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithProfileLock failed: %v", err)
+	}
+	if !executed {
+		t.Fatalf("expected fn to execute under lock")
+	}
+}
+
+func TestUploadResume_RetainsReferencedResume(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	svc := user.NewService(repo, s3Client)
+
+	userUUID := uuid.New().String()
+	oldKey := "resumes/" + userUUID + "/old_cv.pdf"
+	s3Client.uploads[oldKey] = []byte("%PDF-1.4 old resume")
+	if err := repo.UpdateResume(context.Background(), userUUID, oldKey, "old_cv.pdf", 500); err != nil {
+		t.Fatalf("failed to seed initial resume: %v", err)
+	}
+
+	// Mark the old resume as referenced by a submitted application
+	repo.referencedResumes[oldKey] = true
+
+	claims := &auth.UserClaims{
+		UserID:        userUUID,
+		Email:         "student@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	newPDF := bytes.NewReader([]byte("%PDF-1.7 new resume content"))
+	updated, err := svc.UploadResume(context.Background(), claims, "new_cv.pdf", int64(newPDF.Len()), "application/pdf", newPDF)
+	if err != nil {
+		t.Fatalf("unexpected upload error: %v", err)
+	}
+
+	if updated.ResumeKey == nil || *updated.ResumeKey == oldKey {
+		t.Fatalf("expected resume key to be updated")
+	}
+
+	// Verify oldKey was NOT deleted from storage because it is referenced in an application
+	for _, k := range s3Client.deletedKeys {
+		if k == oldKey {
+			t.Fatalf("referenced resume key %q should NOT have been deleted from storage", oldKey)
+		}
+	}
+	if _, ok := s3Client.uploads[oldKey]; !ok {
+		t.Fatalf("referenced resume key %q must remain present in storage", oldKey)
+	}
+}
+
+func TestConfirmDirectResumeUpload_RetainsReferencedResume(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	svc := user.NewService(repo, s3Client)
+
+	userUUID := uuid.New().String()
+	oldKey := "resumes/" + userUUID + "/old_cv.pdf"
+	s3Client.uploads[oldKey] = []byte("%PDF-1.4 old resume")
+	if err := repo.UpdateResume(context.Background(), userUUID, oldKey, "old_cv.pdf", 500); err != nil {
+		t.Fatalf("failed to seed initial resume: %v", err)
+	}
+
+	// Mark the old resume as referenced by a submitted application
+	repo.referencedResumes[oldKey] = true
+
+	claims := &auth.UserClaims{
+		UserID:        userUUID,
+		Email:         "student@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	newKey := "resumes/" + userUUID + "/new_cv.pdf"
+	updated, err := svc.ConfirmDirectResumeUpload(context.Background(), claims, newKey)
+	if err != nil {
+		t.Fatalf("unexpected confirm error: %v", err)
+	}
+
+	if updated.ResumeKey == nil || *updated.ResumeKey != newKey {
+		t.Fatalf("expected resume key to be updated to %s", newKey)
+	}
+
+	// Verify oldKey was NOT deleted from storage because it is referenced
+	for _, k := range s3Client.deletedKeys {
+		if k == oldKey {
+			t.Fatalf("referenced resume key %q should NOT have been deleted from storage", oldKey)
+		}
+	}
+	if _, ok := s3Client.uploads[oldKey]; !ok {
+		t.Fatalf("referenced resume key %q must remain present in storage", oldKey)
+	}
+}
+
+func TestUploadResume_DeletesUnreferencedResume(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	svc := user.NewService(repo, s3Client)
+
+	userUUID := uuid.New().String()
+	oldKey := "resumes/" + userUUID + "/old_cv.pdf"
+	s3Client.uploads[oldKey] = []byte("%PDF-1.4 old resume")
+	if err := repo.UpdateResume(context.Background(), userUUID, oldKey, "old_cv.pdf", 500); err != nil {
+		t.Fatalf("failed to seed initial resume: %v", err)
+	}
+
+	// Explicitly unreferenced
+	repo.referencedResumes[oldKey] = false
+
+	claims := &auth.UserClaims{
+		UserID:        userUUID,
+		Email:         "student@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	newPDF := bytes.NewReader([]byte("%PDF-1.7 new resume content"))
+	_, err := svc.UploadResume(context.Background(), claims, "new_cv.pdf", int64(newPDF.Len()), "application/pdf", newPDF)
+	if err != nil {
+		t.Fatalf("unexpected upload error: %v", err)
+	}
+
+	// Verify oldKey WAS deleted
+	found := false
+	for _, k := range s3Client.deletedKeys {
+		if k == oldKey {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("unreferenced resume key %q should have been deleted from storage", oldKey)
+	}
+}
+
+func TestRepository_IsResumeReferenced_EmptyKey(t *testing.T) {
+	repo := &user.Repository{}
+	referenced, err := repo.IsResumeReferenced(context.Background(), "")
+	if err != nil {
+		t.Fatalf("unexpected error for empty key: %v", err)
+	}
+	if referenced {
+		t.Fatalf("expected empty key not to be referenced")
+	}
+}
+
+
+

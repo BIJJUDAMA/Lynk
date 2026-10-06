@@ -8,6 +8,7 @@ import { emailVerifiedFromAccessPayload } from "@/lib/auth-bootstrap";
 import { DEFAULT_API_BASE_URL } from "@/lib/api";
 import { syncStaleEmailVerification } from "@/lib/verify-session";
 import { Profile, User } from "@/types/api";
+import { useRealtimeEvents } from "@/hooks/useRealtimeEvents";
 
 // ==========================================
 // Context Interface
@@ -396,7 +397,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ]
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      <RealtimeEventsSubscriber />
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+function RealtimeEventsSubscriber() {
+  useRealtimeEvents();
+  return null;
 }
 
 // ==========================================

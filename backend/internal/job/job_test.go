@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/cache"
 	"github.com/lynk/backend/internal/job"
 )
 
@@ -731,3 +732,112 @@ func TestService_JobDescriptionAndSkillBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestService_CacheAside(t *testing.T) {
+	repo := newMockJobRepository()
+	memCache := cache.NewMemoryCache()
+	svc := job.NewService(repo).WithCache(memCache)
+
+	claims := verifiedJobClaims("poster-1")
+	created, err := svc.CreateJob(context.Background(), claims, job.CreateJobRequest{
+		Title:       "Cached Job 1",
+		Description: "Description 1",
+	})
+	if err != nil {
+		t.Fatalf("failed to create job: %v", err)
+	}
+
+	filter := job.JobFilter{}
+	// First call populates cache
+	jobs1, err := svc.ListJobs(context.Background(), filter)
+	if err != nil || len(jobs1) != 1 {
+		t.Fatalf("expected 1 job, got %d, err=%v", len(jobs1), err)
+	}
+
+	// Direct repo modification that bypasses service/cache
+	directJob := &job.Job{
+		ID:          uuid.New(),
+		CreatedBy:   "poster-2",
+		Title:       "Direct Job",
+		Description: "Direct Description",
+		Status:      job.StatusOpen,
+	}
+	_ = repo.CreateJob(context.Background(), directJob)
+
+	// Second call should return cached result (1 job) because cache wasn't invalidated
+	jobsCached, err := svc.ListJobs(context.Background(), filter)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(jobsCached) != 1 {
+		t.Fatalf("expected cached result of length 1, got %d", len(jobsCached))
+	}
+
+	// Now create a job via service, which invalidates cache
+	_, err = svc.CreateJob(context.Background(), claims, job.CreateJobRequest{
+		Title:       "Cached Job 2",
+		Description: "Description 2",
+	})
+	if err != nil {
+		t.Fatalf("failed to create job: %v", err)
+	}
+
+	// Third call should now see the fresh list from repository (3 jobs: created, directJob, created2)
+	jobsFresh, err := svc.ListJobs(context.Background(), filter)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(jobsFresh) != 3 {
+		t.Fatalf("expected 3 jobs after cache invalidation, got %d", len(jobsFresh))
+	}
+
+	// Updating a job via service should also invalidate cache
+	newTitle := "Updated Title"
+	_, err = svc.UpdateJob(context.Background(), claims, created.ID, job.UpdateJobRequest{
+		Title: &newTitle,
+	})
+	if err != nil {
+		t.Fatalf("failed to update job: %v", err)
+	}
+
+	// Verify fresh read after update
+	jobsAfterUpdate, err := svc.ListJobs(context.Background(), filter)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(jobsAfterUpdate) != 3 {
+		t.Fatalf("expected 3 jobs after update invalidation, got %d", len(jobsAfterUpdate))
+	}
+}
+
+func TestJob_CreateJob_SanitizesInputs(t *testing.T) {
+	repo := newMockJobRepository()
+	svc := job.NewService(repo)
+
+	claims := &auth.UserClaims{
+		UserID:        uuid.New().String(),
+		Email:         "creator@stanford.edu",
+		EmailVerified: true,
+	}
+
+	created, err := svc.CreateJob(context.Background(), claims, job.CreateJobRequest{
+		Title:          "<b>Research Assistant</b> <script>alert(1)</script>",
+		Description:    "<p>Assisting with <i>data analysis</i>.</p><script>evil()</script>",
+		Department:     "Computer <b>Science</b>",
+		RequiredSkills: []string{"Go", "Python"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating job: %v", err)
+	}
+
+	if created.Title != "Research Assistant" {
+		t.Errorf("expected sanitized title 'Research Assistant', got %q", created.Title)
+	}
+	if created.Description != "Assisting with data analysis." {
+		t.Errorf("expected sanitized description 'Assisting with data analysis.', got %q", created.Description)
+	}
+	if created.Department != "Computer Science" {
+		t.Errorf("expected sanitized department 'Computer Science', got %q", created.Department)
+	}
+}
+

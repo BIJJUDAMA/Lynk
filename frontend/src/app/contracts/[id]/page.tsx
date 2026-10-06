@@ -29,7 +29,7 @@ import {
   ApiClientError,
 } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
-import { formatJobDate, formatJobBudget, getContractStatusBadgeClasses } from "@/lib/formatters";
+import { formatJobDate, getContractStatusBadgeClasses } from "@/lib/formatters";
 import { ReviewModal } from "@/components/reviews/ReviewModal";
 import type { ContractWithDetails, Review } from "@/types/api";
 
@@ -338,11 +338,6 @@ export default function ContractDetailPage() {
                 {contract.job?.department && (
                   <span className="inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-mono text-muted-foreground">
                     {contract.job.department}
-                  </span>
-                )}
-                {contract.job && (
-                  <span className="font-mono text-xs font-semibold text-foreground ml-auto sm:ml-2">
-                    {formatJobBudget(contract.job)}
                   </span>
                 )}
               </div>
@@ -676,28 +671,30 @@ export default function ContractDetailPage() {
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Name</span>
                 <span className="font-medium text-foreground">
-                  {contract.student
-                    ? `${contract.student.first_name} ${contract.student.last_name}`
+                  {(contract.freelancer ?? contract.student)
+                    ? `${(contract.freelancer ?? contract.student)!.first_name} ${(contract.freelancer ?? contract.student)!.last_name}`
                     : "Student"}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Email</span>
                 <span className="font-mono text-foreground">
-                  {contract.student?.email || "N/A"}
+                  {(contract.freelancer ?? contract.student)?.email || "N/A"}
                 </span>
               </div>
-              {contract.student?.department && (
+              {(contract.freelancer ?? contract.student)?.department && (
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Department</span>
-                  <span className="text-foreground">{contract.student.department}</span>
+                  <span className="text-foreground">
+                    {(contract.freelancer ?? contract.student)!.department}
+                  </span>
                 </div>
               )}
-              {contract.student?.graduation_year && (
+              {(contract.freelancer ?? contract.student)?.graduation_year && (
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Class of</span>
                   <span className="font-mono text-foreground">
-                    {contract.student.graduation_year}
+                    {(contract.freelancer ?? contract.student)!.graduation_year}
                   </span>
                 </div>
               )}
@@ -728,19 +725,26 @@ export default function ContractDetailPage() {
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Company</span>
                 <span className="font-medium text-foreground">
-                  {contract.employer?.company_or_org || "Employer"}
+                  {(contract.client ?? contract.employer)?.company_or_org ||
+                    `${(contract.client ?? contract.employer)?.first_name ?? ""} ${(contract.client ?? contract.employer)?.last_name ?? ""}`.trim() ||
+                    "Employer"}
                 </span>
               </div>
-              {contract.employer?.contact_name && (
+              {((contract.client ?? contract.employer)?.contact_name ||
+                ((contract.client ?? contract.employer)?.first_name &&
+                  (contract.client ?? contract.employer)?.company_or_org)) && (
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Contact</span>
-                  <span className="text-foreground">{contract.employer.contact_name}</span>
+                  <span className="text-foreground">
+                    {(contract.client ?? contract.employer)?.contact_name ||
+                      `${(contract.client ?? contract.employer)?.first_name ?? ""} ${(contract.client ?? contract.employer)?.last_name ?? ""}`.trim()}
+                  </span>
                 </div>
               )}
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Email</span>
                 <span className="font-mono text-foreground">
-                  {contract.employer?.email || "N/A"}
+                  {(contract.client ?? contract.employer)?.email || "N/A"}
                 </span>
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-border">

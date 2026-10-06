@@ -19,6 +19,7 @@ func TestConfig_Validate_Valid(t *testing.T) {
 		MinioSecretKey:           "minioadmin",
 		MinioBucket:              "resumes",
 		CORSAllowedOrigins:       "http://localhost:3000",
+		RedisURL:                 "redis://localhost:6379",
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -98,6 +99,38 @@ func TestConfig_Validate_MissingMinioBucket(t *testing.T) {
 	}
 }
 
+func TestConfig_Validate_RedisURL(t *testing.T) {
+	cfg := Config{
+		Port:                     "8080",
+		DatabaseURL:              "postgres://user:pass@localhost:5432/db",
+		MigrationsDir:            "migrations",
+		SuperTokensConnectionURI: "http://localhost:3567",
+		SuperTokensAPIKey:        "test-key",
+		APIDomain:                "http://localhost:8080",
+		WebsiteDomain:            "http://localhost:3000",
+		MinioEndpoint:            "localhost:9000",
+		MinioPublicEndpoint:      "http://localhost:9000",
+		MinioAccessKey:           "minioadmin",
+		MinioSecretKey:           "minioadmin",
+		MinioBucket:              "resumes",
+		CORSAllowedOrigins:       "http://localhost:3000",
+		RedisURL:                 "", // Should fail
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected error for empty RedisURL, got nil")
+	}
+
+	cfg.RedisURL = "invalid-url"
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected error for invalid RedisURL scheme, got nil")
+	}
+
+	cfg.RedisURL = "redis://localhost:6379"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid RedisURL, got: %v", err)
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("PORT", "")
 	t.Setenv("DATABASE_URL", "")
@@ -115,6 +148,7 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("CORS_ALLOWED_ORIGINS", "")
 	t.Setenv("AI_SERVICE_URL", "")
 	t.Setenv("INTERNAL_AI_SECRET", "")
+	t.Setenv("REDIS_URL", "")
 
 	cfg := Load()
 
@@ -132,6 +166,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.MinioUseSSL != false {
 		t.Errorf("expected default MinioUseSSL false, got %v", cfg.MinioUseSSL)
+	}
+	if cfg.RedisURL != "redis://localhost:6379" {
+		t.Errorf("expected default RedisURL redis://localhost:6379, got %s", cfg.RedisURL)
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -156,6 +193,7 @@ func TestLoad_CustomEnv(t *testing.T) {
 	t.Setenv("CORS_ALLOWED_ORIGINS", "http://frontend.example.com")
 	t.Setenv("AI_SERVICE_URL", "http://ai.example.com")
 	t.Setenv("INTERNAL_AI_SECRET", "custom_ai_secret")
+	t.Setenv("REDIS_URL", "redis://custom:6379")
 
 	cfg := Load()
 
@@ -173,6 +211,9 @@ func TestLoad_CustomEnv(t *testing.T) {
 	}
 	if cfg.InternalAISecret != "custom_ai_secret" {
 		t.Errorf("expected InternalAISecret custom_ai_secret, got %s", cfg.InternalAISecret)
+	}
+	if cfg.RedisURL != "redis://custom:6379" {
+		t.Errorf("expected RedisURL redis://custom:6379, got %s", cfg.RedisURL)
 	}
 
 	if err := cfg.Validate(); err != nil {

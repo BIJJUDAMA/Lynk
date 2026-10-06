@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -19,6 +20,7 @@ type UserRepository interface {
 	UpdateResume(ctx context.Context, userID string, key, filename string, size int64) error
 	ProvisionUser(ctx context.Context, u *User, profile *Profile) error
 	WithProfileLock(ctx context.Context, userID string, fn func(context.Context) error) error
+	IsResumeReferenced(ctx context.Context, resumeKey string) (bool, error)
 }
 
 // Repository implements UserRepository using pgxpool.Pool against PostgreSQL.
@@ -212,6 +214,16 @@ func (r *Repository) UpdateResume(ctx context.Context, userID string, key, filen
 	return nil
 }
 
+// IsResumeReferenced checks if a resume key is referenced by any job application.
+func (r *Repository) IsResumeReferenced(ctx context.Context, resumeKey string) (bool, error) {
+	if resumeKey == "" {
+		return false, nil
+	}
+	var exists bool
+	err := r.db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM applications WHERE resume_key = $1)", resumeKey).Scan(&exists)
+	return exists, err
+}
+
 // ProvisionUser idempotently upserts the user row and an optional profile row within a single database transaction.
 func (r *Repository) ProvisionUser(ctx context.Context, u *User, profile *Profile) error {
 	tx, err := r.db.Begin(ctx)
@@ -280,21 +292,22 @@ func (r *Repository) ProvisionUser(ctx context.Context, u *User, profile *Profil
 	return tx.Commit(ctx)
 }
 
+// WithProfileLock acquires a dedicated connection from the pool, holds an advisory lock for the duration of fn, and releases both safely.
 func (r *Repository) WithProfileLock(ctx context.Context, userID string, fn func(context.Context) error) error {
-	tx, err := r.db.Begin(ctx)
+	conn, err := r.db.Acquire(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("acquire conn for profile lock: %w", err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer conn.Release()
 
-	// Advisory lock serializes execution per user without locking the profiles table row
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('profile_lock:' || $1))`, userID); err != nil {
-		return err
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(hashtext('profile_lock:' || $1))`, userID); err != nil {
+		return fmt.Errorf("acquire advisory lock: %w", err)
 	}
-	if err := fn(ctx); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	defer func() {
+		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock(hashtext('profile_lock:' || $1))`, userID)
+	}()
+
+	return fn(ctx)
 }
 
 func populateProfileAliases(p *Profile) {
