@@ -6,7 +6,10 @@ import { motion, useScroll, useTransform, useReducedMotion } from "framer-motion
 
 const STAGES = [
   { label: "Idea", desc: "A problem worth solving, a project worth building." },
-  { label: "Opportunity", desc: "Post a gig or discover one. Verified campus talent, clear scope." },
+  {
+    label: "Opportunity",
+    desc: "Post a gig or discover one. Verified campus talent, clear scope.",
+  },
   { label: "Application", desc: "Propose your approach. Cover letter, portfolio, resume on file." },
   { label: "Contract", desc: "Accepted. A structured agreement, activated when you are ready." },
   { label: "Delivery", desc: "Build it. Ship it. The contract tracks progress and sign-off." },

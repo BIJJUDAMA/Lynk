@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from typing import Any, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ def compute_content_hash(text: str) -> str:
 
 async def get_cached_embedding(
     pool, content_hash: str, model_name: str
-) -> Optional[List[float]]:
+) -> list[float] | None:
     """Retrieve a cached embedding from the embedding_cache table.
 
     Returns a list of floats if found, or None on cache miss.
@@ -106,4 +106,3 @@ async def set_cached_embedding(
         dimensions,
         vec_str,
     )
-

@@ -83,7 +83,8 @@ export default function IntelligenceSection() {
             viewport={{ once: true }}
             className="mt-6 text-base text-ink-secondary leading-relaxed"
           >
-            Semantic search, skill extraction, and recommendations built into the interface. Not announced. Just present.
+            Semantic search, skill extraction, and recommendations built into the interface. Not
+            announced. Just present.
           </motion.p>
 
           {/* Quiet search UI demo */}

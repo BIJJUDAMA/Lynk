@@ -97,8 +97,8 @@ export default function ProductShowcase() {
                 Distributed Consensus Test Harness
               </h3>
               <p className="mt-2 text-xs text-ink-secondary leading-relaxed line-clamp-3">
-                Build an automated failure injection harness for evaluating Raft consensus edge cases
-                under network partitions.
+                Build an automated failure injection harness for evaluating Raft consensus edge
+                cases under network partitions.
               </p>
               <div className="mt-4 flex flex-wrap gap-1.5 font-mono text-[10px]">
                 <span className="px-2 py-0.5 bg-surface border border-line text-ink-secondary">

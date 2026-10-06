@@ -8,16 +8,10 @@ import { cn } from "@/lib/utils";
  *   // Match the exact height and width of the real element:
  *   <Skeleton className="h-48 w-full rounded-xl" />
  */
-export function Skeleton({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
+export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn(
-        "animate-pulse rounded bg-surface border border-line/40",
-        className
-      )}
+      className={cn("animate-pulse rounded bg-surface border border-line/40", className)}
       aria-hidden="true"
       {...props}
     />

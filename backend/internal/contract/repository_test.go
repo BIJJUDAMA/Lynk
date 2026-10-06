@@ -347,4 +347,3 @@ func TestUpdateContractStatus_LockHierarchy(t *testing.T) {
 		t.Fatalf("expected UpdateContractStatus to lock job for both StatusCancelled and StatusCompleted")
 	}
 }
-

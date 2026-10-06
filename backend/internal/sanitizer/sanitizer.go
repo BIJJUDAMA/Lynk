@@ -45,7 +45,7 @@ func SanitizeStrict(input string) string {
 			continue
 		}
 		tagContent := input[i+1 : i+end] // content between < and >
-		i += end + 1                      // advance past '>'
+		i += end + 1                     // advance past '>'
 
 		// Determine tag name (strip leading slash for closing tags, attributes etc.)
 		tagName := strings.ToLower(strings.TrimSpace(tagContent))
@@ -81,7 +81,6 @@ func SanitizeStrict(input string) string {
 	}
 	return result
 }
-
 
 // SanitizeSingleLine strips HTML and normalizes to a single line (no newlines).
 func SanitizeSingleLine(input string) string {

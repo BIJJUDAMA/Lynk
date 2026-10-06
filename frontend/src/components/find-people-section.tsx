@@ -26,11 +26,7 @@ export default function FindPeopleSection() {
   const ref = useRef<HTMLElement>(null);
   const prefersReduced = useReducedMotion();
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "end start"] });
-  const imgY = useTransform(
-    scrollYProgress,
-    [0, 1],
-    ["-5%", prefersReduced ? "0%" : "8%"]
-  );
+  const imgY = useTransform(scrollYProgress, [0, 1], ["-5%", prefersReduced ? "0%" : "8%"]);
 
   return (
     <section

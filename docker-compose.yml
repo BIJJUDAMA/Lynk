@@ -81,7 +81,7 @@ services:
       retries: 5
 
   pgbouncer:
-    image: edoburu/pgbouncer:v1.22.1
+    image: edoburu/pgbouncer:latest
     container_name: lynk-pgbouncer
     restart: unless-stopped
     volumes:

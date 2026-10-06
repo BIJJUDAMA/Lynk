@@ -1,6 +1,5 @@
 import numpy as np
-import pytest
-from ai.pipelines.onnx_embeddings import normalize_vector, mean_pooling
+from ai.pipelines.onnx_embeddings import mean_pooling, normalize_vector
 
 
 def test_normalize_vector():
@@ -28,6 +27,7 @@ def test_mean_pooling_shape():
 def test_embed_onnx_dynamic_padding():
     """_embed_onnx must call tokenizer with padding=True instead of max_length."""
     from unittest.mock import MagicMock
+
     from ai.pipelines.onnx_embeddings import ONNXEmbedder
 
     embedder = ONNXEmbedder.__new__(ONNXEmbedder)
@@ -54,4 +54,3 @@ def test_embed_onnx_dynamic_padding():
         max_length=256,
         padding=True,
     )
-

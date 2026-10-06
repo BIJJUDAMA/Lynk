@@ -940,6 +940,3 @@ func TestRepository_IsResumeReferenced_EmptyKey(t *testing.T) {
 		t.Fatalf("expected empty key not to be referenced")
 	}
 }
-
-
-

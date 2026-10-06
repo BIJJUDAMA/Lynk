@@ -4,52 +4,52 @@
 
 @layer base {
   :root {
-    --canvas: #F4F1EA;
-    --surface: #EAE6DD;
-    --surface-elevated: #FAF9F5;
-    --ink: #20211F;
-    --ink-secondary: #6D6B64;
-    --line: #D8D4CA;
-    --accent-muted: #607D83;
-    --accent-deep: #3F5C63;
-    --accent-soft: #A8BEC0;
-    --accent-warm: #C7A982;
+    --canvas: #f4f1ea;
+    --surface: #eae6dd;
+    --surface-elevated: #faf9f5;
+    --ink: #20211f;
+    --ink-secondary: #6d6b64;
+    --line: #d8d4ca;
+    --accent-muted: #607d83;
+    --accent-deep: #3f5c63;
+    --accent-soft: #a8bec0;
+    --accent-warm: #c7a982;
 
-    --background: #F4F1EA;
-    --foreground: #20211F;
-    --card: #FAF9F5;
-    --card-foreground: #20211F;
-    --popover: #FAF9F5;
-    --popover-foreground: #20211F;
-    --primary: #20211F;
-    --primary-foreground: #F4F1EA;
-    --secondary: #EAE6DD;
-    --secondary-foreground: #20211F;
-    --muted: #EAE6DD;
-    --muted-foreground: #6D6B64;
-    --accent: #EAE6DD;
-    --accent-foreground: #20211F;
-    --destructive: #C0392B;
-    --destructive-foreground: #FAF9F5;
-    --border: #D8D4CA;
-    --input: #D8D4CA;
-    --ring: #607D83;
+    --background: #f4f1ea;
+    --foreground: #20211f;
+    --card: #faf9f5;
+    --card-foreground: #20211f;
+    --popover: #faf9f5;
+    --popover-foreground: #20211f;
+    --primary: #20211f;
+    --primary-foreground: #f4f1ea;
+    --secondary: #eae6dd;
+    --secondary-foreground: #20211f;
+    --muted: #eae6dd;
+    --muted-foreground: #6d6b64;
+    --accent: #eae6dd;
+    --accent-foreground: #20211f;
+    --destructive: #c0392b;
+    --destructive-foreground: #faf9f5;
+    --border: #d8d4ca;
+    --input: #d8d4ca;
+    --ring: #607d83;
     --radius: 4px;
 
-    --info: #E1F3FE;
-    --info-foreground: #1F6C9F;
-    --success: #EDF3EC;
+    --info: #e1f3fe;
+    --info-foreground: #1f6c9f;
+    --success: #edf3ec;
     --success-foreground: #346538;
-    --warning: #FBF3DB;
+    --warning: #fbf3db;
     --warning-foreground: #956400;
 
-    --pastel-red: #FDEBEC;
-    --pastel-red-text: #9F2F2D;
-    --pastel-blue: #E1F3FE;
-    --pastel-blue-text: #1F6C9F;
-    --pastel-green: #EDF3EC;
+    --pastel-red: #fdebec;
+    --pastel-red-text: #9f2f2d;
+    --pastel-blue: #e1f3fe;
+    --pastel-blue-text: #1f6c9f;
+    --pastel-green: #edf3ec;
     --pastel-green-text: #346538;
-    --pastel-yellow: #FBF3DB;
+    --pastel-yellow: #fbf3db;
     --pastel-yellow-text: #956400;
   }
 
@@ -60,10 +60,15 @@
   body {
     background-color: var(--canvas);
     color: var(--ink);
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
   }
 
-  h1, h2, h3, h4 {
+  h1,
+  h2,
+  h3,
+  h4 {
     letter-spacing: -0.02em;
   }
 

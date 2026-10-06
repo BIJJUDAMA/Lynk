@@ -36,7 +36,7 @@ func TestBreaker_SuccessResets(t *testing.T) {
 	ef := errors.New("err")
 	_ = b.Do(func() error { return ef })
 	_ = b.Do(func() error { return nil }) // success resets
-	_ = b.Do(func() error { return ef }) // now only 1 failure (below threshold)
+	_ = b.Do(func() error { return ef })  // now only 1 failure (below threshold)
 
 	if err := b.Allow(); err != nil {
 		t.Fatalf("expected circuit to be closed, got %v", err)

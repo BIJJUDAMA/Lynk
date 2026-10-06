@@ -142,18 +142,18 @@ func (s *Service) UpdateContractStatus(
 		return nil, err
 	}
 
-	// Publish domain event — best-effort; log and continue on failure
+	// Publish domain event - best-effort; log and continue on failure
 	if s.outbox != nil {
 		if err2 := s.outbox.Publish(ctx, outbox.Event{
 			EventType:     "contract_status_changed",
 			AggregateType: "contract",
 			AggregateID:   contractID.String(),
 			Payload: map[string]any{
-				"contract_id":    contractID.String(),
+				"contract_id":     contractID.String(),
 				"previous_status": existing.Status,
-				"new_status":     targetStatus,
-				"client_id":      existing.ClientID,
-				"freelancer_id":  existing.FreelancerID,
+				"new_status":      targetStatus,
+				"client_id":       existing.ClientID,
+				"freelancer_id":   existing.FreelancerID,
 			},
 		}); err2 != nil {
 			slog.Warn("outbox: failed to record contract_status_changed", "error", err2)

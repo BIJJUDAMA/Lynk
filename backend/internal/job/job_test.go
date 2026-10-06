@@ -840,4 +840,3 @@ func TestJob_CreateJob_SanitizesInputs(t *testing.T) {
 		t.Errorf("expected sanitized department 'Computer Science', got %q", created.Department)
 	}
 }
-

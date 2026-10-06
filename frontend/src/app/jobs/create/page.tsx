@@ -570,9 +570,7 @@ export default function CreateJobPage() {
                 className="mt-1.5 font-mono text-sm max-w-sm"
               />
               {formErrors.deadline ? (
-                <p className="mt-1 font-mono text-xs text-pastel-redText">
-                  {formErrors.deadline}
-                </p>
+                <p className="mt-1 font-mono text-xs text-pastel-redText">{formErrors.deadline}</p>
               ) : (
                 <p className="mt-1 font-mono text-[11px] text-muted-foreground">
                   Estimated completion date for applicants.

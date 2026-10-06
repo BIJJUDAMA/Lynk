@@ -31,9 +31,7 @@ export const metadata: Metadata = {
     "Find opportunities, discover people, and turn ideas into something real. Verified university students, structured contracts, peer reviews.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html
       lang="en"

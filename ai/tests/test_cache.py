@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
-
 from ai.pipelines.cache import (
     compute_content_hash,
     get_cached_embedding,
@@ -180,4 +179,3 @@ async def test_set_cached_embedding_numpy_array():
 
     call_args = mock_pool.execute.call_args[0]
     assert call_args[4] == "[0.5,0.6]"
-

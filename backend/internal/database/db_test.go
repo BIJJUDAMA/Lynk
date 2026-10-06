@@ -230,7 +230,6 @@ func TestMigration_000015_SchemaObjects(t *testing.T) {
 	TestMigration000015_FilesExistAndSyntaxValid(t)
 }
 
-
 func TestNewPool_InvalidURL(t *testing.T) {
 	ctx := context.Background()
 	_, err := database.NewPool(ctx, "postgres://invalid uri with spaces")

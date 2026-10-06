@@ -45,11 +45,7 @@ export default function SkillsSection() {
 
       {/* Horizontal scroll track driven by vertical scroll */}
       <div className="overflow-hidden">
-        <motion.ul
-          style={{ x }}
-          className="flex gap-6 pl-6 lg:pl-12 pr-24"
-          role="list"
-        >
+        <motion.ul style={{ x }} className="flex gap-6 pl-6 lg:pl-12 pr-24" role="list">
           {SKILLS.map((skill) => (
             <li
               key={skill.name}

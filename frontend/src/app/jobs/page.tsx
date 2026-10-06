@@ -218,14 +218,16 @@ function JobSearchContent() {
 
 export default function JobsPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="mx-auto max-w-7xl px-4 py-12 text-center font-mono text-xs text-muted-foreground">
-          Loading campus opportunities...
-        </div>
-      }
-    >
-      <JobSearchContent />
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense
+        fallback={
+          <div className="mx-auto max-w-7xl px-4 py-12 text-center font-mono text-xs text-muted-foreground">
+            Loading campus opportunities...
+          </div>
+        }
+      >
+        <JobSearchContent />
+      </Suspense>
+    </ErrorBoundary>
   );
 }

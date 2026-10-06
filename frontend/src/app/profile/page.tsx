@@ -77,7 +77,9 @@ export default function ProfilePage() {
         setDepartment("");
         setCustomDepartment("");
       }
-      setGraduationYear(profile.graduation_year && profile.graduation_year > 0 ? profile.graduation_year : undefined);
+      setGraduationYear(
+        profile.graduation_year && profile.graduation_year > 0 ? profile.graduation_year : undefined
+      );
       setBio(profile.bio || profile.description || "");
       setOrganization(profile.organization || profile.company_or_org || "");
       setOrgWebsite(profile.organization_website || profile.website || "");
@@ -251,7 +253,10 @@ export default function ProfilePage() {
             Please sign in with your campus credentials to view and manage your profile.
           </p>
           <div className="mt-6">
-            <Button onClick={() => login({ redirectPath: "/profile" })} className="rounded-md bg-ink text-canvas hover:bg-ink/90">
+            <Button
+              onClick={() => login({ redirectPath: "/profile" })}
+              className="rounded-md bg-ink text-canvas hover:bg-ink/90"
+            >
               <UserIcon className="h-4 w-4 mr-2" />
               Sign In with Campus Account
             </Button>
@@ -262,10 +267,15 @@ export default function ProfilePage() {
   }
 
   // Display name purely from database fields or user account
-  const displayName = firstName || lastName ? `${firstName} ${lastName}`.trim() : (user.name || user.email || "");
+  const displayName =
+    firstName || lastName ? `${firstName} ${lastName}`.trim() : user.name || user.email || "";
 
   // Avatar initials purely from database name or email
-  const initialChar = firstName ? firstName[0].toUpperCase() : (user.email ? user.email[0].toUpperCase() : "");
+  const initialChar = firstName
+    ? firstName[0].toUpperCase()
+    : user.email
+      ? user.email[0].toUpperCase()
+      : "";
   const secondInitial = lastName ? lastName[0].toUpperCase() : "";
 
   return (
@@ -275,7 +285,8 @@ export default function ProfilePage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-surface text-lg font-mono font-semibold text-ink border border-line">
-              {initialChar}{secondInitial}
+              {initialChar}
+              {secondInitial}
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2.5">
@@ -331,7 +342,10 @@ export default function ProfilePage() {
       {profileError && (
         <div className="mb-6 flex items-center gap-2.5 rounded-lg border border-line bg-surface px-4 py-3 text-xs text-ink-secondary">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>No stored profile data found in database. Fill out the fields below to create your campus profile.</span>
+          <span>
+            No stored profile data found in database. Fill out the fields below to create your
+            campus profile.
+          </span>
         </div>
       )}
 
@@ -517,9 +531,7 @@ export default function ProfilePage() {
 
               {/* Skill quick selectors */}
               <div className="pt-3 border-t border-line">
-                <span className="font-mono text-[11px] text-ink-secondary">
-                  Presets:
-                </span>
+                <span className="font-mono text-[11px] text-ink-secondary">Presets:</span>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {POPULAR_SKILLS.map((preset) => (
                     <button
