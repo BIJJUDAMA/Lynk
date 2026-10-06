@@ -133,4 +133,3 @@ class ONNXEmbedder:
         except Exception as exc:
             logger.error("sentence-transformers inference failed: %s", exc)
             return None
-

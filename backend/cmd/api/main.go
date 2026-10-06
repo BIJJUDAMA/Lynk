@@ -480,6 +480,14 @@ func main() {
 	// Initialize cache layer (Redis with MemoryCache fallback)
 	appCache := cache.New(cfg.RedisURL)
 
+	// 6. Initialize Outbox Writer & SSE Broker
+	// Create SSE broker first so outbox handlers can close over it.
+	sseBroker := sse.NewBroker()
+
+	// The outbox writer is injected into services that emit domain events.
+	// The worker polls outbox_events and dispatches to registered handlers.
+	outboxWriter := outbox.NewWriter(outbox.NewDBRecorder(pool))
+
 	userRepo := user.NewRepository(pool)
 	userService := user.NewService(userRepo, s3Client).
 		WithResumeAccessChecker(user.NewPGResumeAccessChecker(pool)).
@@ -491,11 +499,13 @@ func main() {
 	jobHandler := job.NewHandler(jobService, jobRepo)
 
 	appRepo := application.NewRepository(pool)
-	appService := application.NewService(appRepo, jobRepo, &profileReaderAdapter{repo: userRepo})
+	appService := application.NewService(appRepo, jobRepo, &profileReaderAdapter{repo: userRepo}).
+		WithOutbox(outboxWriter)
 	appHandler := application.NewHandler(appService, appRepo)
 
 	contractRepo := contract.NewRepository(pool)
-	contractService := contract.NewService(contractRepo)
+	contractService := contract.NewService(contractRepo).
+		WithOutbox(outboxWriter)
 	contractHandler := contract.NewHandler(contractService)
 
 	reviewRepo := review.NewRepository(pool)
@@ -510,16 +520,6 @@ func main() {
 	})
 	aiOrch := orchestrator.NewOrchestrator(aiClient, orchestrator.NewFeatureFlagsFromEnv(), slog.Default())
 	aiHandler := ai.NewHandler(aiOrch, pool, jobRepo, userRepo, appRepo).WithReviewRepo(reviewRepo)
-
-	// 6. Initialize Outbox Writer & SSE Broker
-	// Create SSE broker first so outbox handlers can close over it.
-	sseBroker := sse.NewBroker()
-
-	// The outbox writer is injected into services that emit domain events.
-	// The worker polls outbox_events and dispatches to registered handlers.
-	outboxWriter := outbox.NewWriter(outbox.NewDBRecorder(pool))
-	appService = appService.WithOutbox(outboxWriter)
-	contractService = contractService.WithOutbox(outboxWriter)
 
 	outboxWorker := outbox.NewWorkerPool(pool)
 	outboxWorker.RegisterHandler("application_submitted", func(ctx context.Context, evt outbox.Event) error {
