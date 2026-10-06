@@ -3,7 +3,7 @@
 > **Authoritative Database Specification**  
 > **Database Engine:** PostgreSQL 16 Alpine (`lynk-postgres` on port `5432`)  
 > **Databases:** `lynk_db` (application data) & `supertokens_db` (IAM data)  
-> **Schema Migrations:** Raw SQL (`backend/migrations/000001` through `000012`)  
+> **Schema Migrations:** Raw SQL (`backend/migrations/000001` through `000015`)  
 > **User Identity Type:** `VARCHAR(64)` (SuperTokens Core user identity format)
 
 ---
@@ -275,6 +275,36 @@ erDiagram
         TIMESTAMPTZ created_at "Queue enqueue timestamp"
         TIMESTAMPTZ started_at "Worker lock timestamp"
         TIMESTAMPTZ completed_at "Worker termination timestamp"
+    }
+```
+
+### 1.3 Phase 1.5 Production Hardening Model (Migration 000015)
+
+Migration `000015_phase1_5_hardening.up.sql` adds content-hash deduplication storage for embedding vectors and a transactional outbox table for resilient domain event streaming:
+
+```mermaid
+erDiagram
+    embedding_cache {
+        VARCHAR(64) content_hash PK "SHA-256 hash of normalized text"
+        VARCHAR(64) model_name PK "Embedding model identifier"
+        INTEGER dimensions "Vector dimensions: 384"
+        vector(384) embedding "Cached dense embedding vector"
+        TIMESTAMPTZ created_at "Creation timestamp"
+    }
+
+    outbox_events {
+        UUID id PK "Unique event identifier"
+        VARCHAR(128) event_type "Event: application_submitted, contract_status_changed"
+        VARCHAR(64) aggregate_type "Aggregate domain: application, contract, review"
+        VARCHAR(64) aggregate_id "Primary key of target entity"
+        JSONB payload "Event envelope payload"
+        VARCHAR(32) status "Status: pending, failed, processed"
+        INTEGER retry_count "Current dispatch retry count"
+        INTEGER max_retries "Max retry attempts (default: 5)"
+        TEXT last_error "Error message on last dispatch attempt"
+        TIMESTAMPTZ next_retry_at "Next scheduled dispatch timestamp"
+        TIMESTAMPTZ created_at "Event creation timestamp"
+        TIMESTAMPTZ processed_at "Successful dispatch timestamp"
     }
 ```
 
@@ -587,6 +617,38 @@ CREATE TABLE ai_jobs (
 );
 ```
 
+### 2.19 `embedding_cache` (Migration 000015)
+Deduplication cache storing dense embedding vectors keyed by SHA-256 content hash and model name.
+```sql
+CREATE TABLE embedding_cache (
+    content_hash VARCHAR(64) NOT NULL,
+    model_name VARCHAR(64) NOT NULL,
+    dimensions INTEGER NOT NULL,
+    embedding vector(384) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (content_hash, model_name)
+);
+```
+
+### 2.20 `outbox_events` (Migration 000015)
+Transactional outbox table for reliable asynchronous domain event dispatching.
+```sql
+CREATE TABLE outbox_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_type VARCHAR(128) NOT NULL,
+    aggregate_type VARCHAR(64) NOT NULL,
+    aggregate_id VARCHAR(64) NOT NULL,
+    payload JSONB NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    max_retries INTEGER NOT NULL DEFAULT 5,
+    last_error TEXT,
+    next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ
+);
+```
+
 ---
 
 ## 3. Foreign Key Deletion Discipline
@@ -679,6 +741,16 @@ CREATE INDEX idx_skill_demand_snapshots_period ON skill_demand_snapshots(period)
 CREATE INDEX idx_ai_jobs_status_created_at ON ai_jobs(status, created_at);
 CREATE INDEX idx_ai_jobs_entity ON ai_jobs(entity_type, entity_id);
 CREATE INDEX idx_ai_jobs_job_type ON ai_jobs(job_type);
+
+-- Phase 1.5 Hardening: Partial Performance Indexes (Migration 000014)
+CREATE INDEX idx_jobs_active_created_at ON jobs (created_at DESC) WHERE status = 'open';
+CREATE INDEX idx_applications_pending_job ON applications (job_id, created_at DESC) WHERE status = 'pending';
+CREATE INDEX idx_contracts_active_status ON contracts (status, updated_at DESC) WHERE status IN ('active', 'draft');
+CREATE INDEX idx_recommendations_active_user ON ai_recommendations (user_id, confidence DESC) WHERE status = 'active';
+
+-- Phase 1.5 Hardening: Embedding Cache & Outbox Event Indexes (Migration 000015)
+CREATE INDEX idx_embedding_cache_created ON embedding_cache (model_name, created_at DESC);
+CREATE INDEX idx_outbox_pending_events ON outbox_events (next_retry_at, created_at) WHERE status IN ('pending', 'failed');
 ```
 
 ---
@@ -726,7 +798,7 @@ When an employer cancels an active contract:
 
 ---
 
-## 6. Raw SQL Migration Registry (000001-000012)
+## 6. Raw SQL Migration Registry (000001-000015)
 
 | Migration File | Purpose & Changes | Breaking? | Reversible? | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -742,3 +814,6 @@ When an employer cancels an active contract:
 | `000010_seed_test_campus_members` | Seeds initial campus member test accounts and unified profiles in `lynk_db` and synchronizes credentials and roles to `supertokens_db` via `dblink`. | No | Yes | Provisions poster, applicant, and unverified test accounts for local development and CI testing. |
 | `000011_remove_monetary_fields` | Drops monetary columns: `budget` and `pay_type` from `jobs`, and `agreed_budget` from `contracts`. | Yes | Yes | Fully decouples platform from monetary handling into pure campus discovery and deliverable collaboration. |
 | `000012_ai_subsystem_init` | Installs `pgvector` extension and creates 12 tables (`skills`, `skill_aliases`, `profile_skills`, `job_skills`, `ai_embeddings`, `ai_runs`, `ai_recommendations`, `application_ai_scores`, `moderation_events`, `review_insights`, `skill_demand_snapshots`, `ai_jobs`) with HNSW cosine similarity index. | No | Yes | Establishes storage and queueing for First-Class AI Subsystem. |
+| `000013_ai_subsystem_constraints` | Adds domain check constraints on AI scores, review insights, job attempts, moderation risk scores, and recommendations uniqueness (`uq_ai_recommendations_user_type_title`). | No | Yes | Hardens AI data integrity and prevents duplicate recommendations. |
+| `000014_active_partial_indexes` | Adds partial indexes for active open jobs, pending applications, active contracts, and active recommendations. | No | Yes | Accelerates hot path marketplace queries while minimizing index disk size. |
+| `000015_phase1_5_hardening` | Creates `embedding_cache` (composite PK `content_hash, model_name`) for INT8 CPU ONNX deduplication and `outbox_events` table with partial retry index for transactional event streaming. | No | Yes | Core data structures for Phase 1.5 outbox dispatcher and AI inference deduplication. |

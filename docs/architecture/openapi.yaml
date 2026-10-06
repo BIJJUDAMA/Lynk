@@ -214,6 +214,66 @@ paths:
                 type: string
                 format: binary
 
+  /profile/resume/presign:
+    post:
+      summary: Generate direct-to-MinIO presigned upload URL
+      description: Generates short-lived S3 PUT URL with size and MIME bounds for browser-direct upload.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignResumeRequest'
+      responses:
+        '200':
+          description: Presigned upload URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignResumeResponse'
+        '400':
+          description: Invalid MIME type or payload size
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Campus verification pending
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /profile/resume/confirm:
+    post:
+      summary: Confirm direct resume upload
+      description: Confirms MinIO direct upload and persists resume object key to profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmResumeRequest'
+      responses:
+        '200':
+          description: Profile updated with confirmed resume
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '400':
+          description: Invalid confirmation metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Campus verification pending
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /jobs:
     get:
       summary: Search and list campus opportunities
@@ -622,6 +682,37 @@ paths:
                 items:
                   $ref: '#/components/schemas/Review'
 
+  /events/stream:
+    get:
+      summary: Real-time Server-Sent Events stream
+      description: Persistent HTTP event stream delivering live application updates, contract status changes, and review notifications.
+      responses:
+        '200':
+          description: Continuous text/event-stream event feed
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          description: Unauthenticated session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /metrics:
+    get:
+      summary: Prometheus observability metrics
+      description: Real-time HTTP request counts, latency histograms, and connection pool saturation metrics.
+      security: []
+      responses:
+        '200':
+          description: Prometheus metrics plaintext payload
+          content:
+            text/plain:
+              schema:
+                type: string
+
 components:
   securitySchemes:
     cookieAuth:
@@ -1002,3 +1093,58 @@ components:
         comment:
           type: string
           minLength: 5
+
+    PresignResumeRequest:
+      type: object
+      required:
+        - file_name
+        - mime_type
+        - file_size
+      properties:
+        file_name:
+          type: string
+          example: resume_2026.pdf
+        mime_type:
+          type: string
+          enum: [application/pdf, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document]
+          example: application/pdf
+        file_size:
+          type: integer
+          maximum: 10485760
+          example: 245760
+
+    PresignResumeResponse:
+      type: object
+      properties:
+        upload_url:
+          type: string
+          example: http://localhost:9000/resumes/resumes/st_usr_9a4f21e0/7c9b.pdf?X-Amz-...
+        object_key:
+          type: string
+          example: resumes/st_usr_9a4f21e0/7c9b21f0.pdf
+        expires_in:
+          type: integer
+          example: 900
+
+    ConfirmResumeRequest:
+      type: object
+      required:
+        - object_key
+        - file_name
+        - file_size
+        - mime_type
+      properties:
+        object_key:
+          type: string
+          example: resumes/st_usr_9a4f21e0/7c9b21f0.pdf
+        file_name:
+          type: string
+          example: resume_2026.pdf
+        file_size:
+          type: integer
+          maximum: 10485760
+          example: 245760
+        mime_type:
+          type: string
+          example: application/pdf
+

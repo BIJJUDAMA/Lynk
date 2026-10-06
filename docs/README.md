@@ -57,16 +57,18 @@ Lynk completely replaces the fragmented dual-account paradigm with the **Unified
 | Dimension | Specification | Notes & Invariants |
 | :--- | :--- | :--- |
 | **Monorepo Topology** | Polyglot monorepo (`frontend/`, `backend/`, `ai/`, `docs/`) | Co-located frontend, authoritative backend, and internal AI subsystems. |
-| **Frontend Stack** | Next.js 14.2 (App Router), React 18.3, TypeScript 5.6, Tailwind CSS 3.4 | **Runs on host (`npm run dev`) at `http://localhost:3000`**. NOT dockerised for instant HMR. |
+| **Frontend Stack** | Next.js 14.2 (App Router), React 18.3, TypeScript 5.6, Tailwind CSS 3.4, TanStack Query 5 | **Runs on host (`npm run dev`) at `http://localhost:3000`**. NOT dockerised for instant HMR. |
 | **Frontend Auth Client** | `supertokens-web-js` 0.16.0 | Handles session tokens (`sAccessToken`, `sRefreshToken`), direct login, and email verification. |
 | **Authoritative Backend** | Go 1.25, Chi Router v5.3, `pgx/v5` 5.5, AWS SDK Go v2 (S3) | **Dockerised (`lynk-api`) at `http://localhost:8080`**. Layered architecture: Handler -> Service -> Repository. |
-| **AI Backend (Internal)** | Python 3.11, FastAPI, PyTorch, sentence-transformers, scikit-learn | **Dockerised (`ai-api`) at `http://ai-api:8000`**. Protected via `X-Internal-AI-Secret`. |
+| **Caching & Rate Limiting** | Redis 7+ (`lynk-redis` on port `6379`) | Sliding-window rate limiter & cache-aside read layer with in-memory fallback. |
+| **Connection Pooling** | PgBouncer (`lynk-pgbouncer` on port `6432`) | Transaction connection pooling for high-concurrency database throughput. |
+| **AI Backend (Internal)** | Python 3.11, FastAPI, CPU ONNX INT8, sentence-transformers, scikit-learn | **Dockerised (`ai-api`) at `http://ai-api:8000`**. Protected via `X-Internal-AI-Secret`. |
 | **AI Worker Daemon** | Python 3.11 (`ai-worker`) | Background worker consuming `ai_jobs` using PostgreSQL `FOR UPDATE SKIP LOCKED`. |
 | **Database** | PostgreSQL 16 (`pgvector/pgvector:pg16` on port `5432`) | Two logical databases: `lynk_db` (relational schema + `vector(384)`) and `supertokens_db`. |
-| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000013`) | Forward and rollback migrations. Migration 000013 installs domain check constraints. |
+| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000015`) | Forward and rollback migrations. Migration 000015 establishes embedding cache and outbox events. |
 | **Identity & Access (IAM)** | Self-hosted SuperTokens Core 9.3 (`lynk-supertokens` on port `3567`) | Recipes: `EmailPassword`, `Session`, `EmailVerification`. Direct HTTP integration with Go API. |
-| **Object Storage** | MinIO S3 (`lynk-minio` on port `9000` API, `9001` Web Console) | Dedicated exclusively to the `resumes` bucket. Stores PDF/DOCX resumes with pre-signed retrieval URLs. |
-| **Local Network** | Docker Compose bridge network (`lynk-net`) | Internal container DNS: `postgres:5432`, `supertokens:3567`, `minio:9000`, `api:8080`, `ai-api:8000`. |
+| **Object Storage** | MinIO S3 (`lynk-minio` on port `9000` API, `9001` Web Console) | Dedicated exclusively to the `resumes` bucket. Direct pre-signed upload URLs and streaming. |
+| **Local Network** | Docker Compose bridge network (`lynk-net`) | Internal container DNS: `postgres:5432`, `pgbouncer:6432`, `redis:6379`, `supertokens:3567`, `minio:9000`, `api:8080`, `ai-api:8000`. |
 | **Scope & Boundaries** | Go backend is authoritative; AI is enhancement | Full graceful degradation: Go handlers fall back to SQL if the AI backend is unreachable. |
 
 ---
@@ -78,7 +80,7 @@ The platform strictly isolates containerized backend infrastructure from the hos
 ```mermaid
 flowchart TB
     subgraph HostEnvironment["HOST ENVIRONMENT (Local Developer Workstation)"]
-        FE["Next.js 14 App Router<br/>(Port: 3000)<br/>Host Process (npm run dev)"]
+        FE["Next.js 14 App Router<br/>(Port: 3000)<br/>Host Process (npm run dev)<br/>TanStack Query + SSE"]
         Browser["Developer Web Browser<br/>(http://localhost:3000)"]
         Browser <-->|HMR & UI Navigation| FE
     end
@@ -86,15 +88,19 @@ flowchart TB
     subgraph DockerBridge["DOCKER COMPOSE BRIDGE NETWORK (lynk-net)"]
         subgraph APIContainer["Authoritative API Container (lynk-api)"]
             Router["Chi Router v5.3<br/>(Port: 8080)"]
-            Middlewares["Middlewares: CORS, RequestID, Logger, 1MB Body Limit,<br/>Supertokens Middleware, Verified Email Gate"]
-            Handlers["Layered Core:<br/>Handler -> Service -> Repository"]
+            Middlewares["Middlewares: CORS, RequestID, Logger, RateLimiter,<br/>Metrics, 1MB Body Limit, Supertokens Middleware, Verified Email Gate"]
+            Handlers["Layered Core:<br/>Handler -> Service -> Repository<br/>Outbox Worker + SSE Broker"]
             Orchestrator["AI Orchestrator<br/>(Feature Flags + Graceful SQL Fallback)"]
             Router --> Middlewares --> Handlers
             Handlers --> Orchestrator
         end
 
+        subgraph RedisContainer["Redis 7 (lynk-redis)"]
+            Redis["Redis 7 (Port: 6379)<br/>Sliding-Window Rate Limiting & Cache-Aside"]
+        end
+
         subgraph AIContainer["Internal AI Backend (ai-api)"]
-            FastAPI["FastAPI 0.115 (Port: 8000)<br/>Embeddings, Ranking, Search, LLM Drafts"]
+            FastAPI["FastAPI 0.115 (Port: 8000)<br/>CPU ONNX INT8 Embeddings, Ranking, Search, LLM Drafts"]
         end
 
         subgraph WorkerContainer["Asynchronous AI Worker (ai-worker)"]
@@ -103,6 +109,10 @@ flowchart TB
 
         subgraph IAMContainer["SuperTokens Container (lynk-supertokens)"]
             STCore["SuperTokens Core 9.3<br/>(Port: 3567)<br/>Recipes: EmailPassword, Session, EmailVerification"]
+        end
+
+        subgraph PoolContainer["PgBouncer Container (lynk-pgbouncer)"]
+            PGB["PgBouncer (Port: 6432)<br/>Transaction Mode Pooling"]
         end
 
         subgraph DBContainer["PostgreSQL Container (lynk-postgres)"]
@@ -115,18 +125,20 @@ flowchart TB
 
         subgraph S3Container["MinIO Object Storage (lynk-minio)"]
             MinIO["MinIO S3 Engine<br/>(Port: 9000 API / 9001 Console)"]
-            ResumeBucket[("Bucket: resumes<br/>(Encrypted PDF/DOCX Resumes)")]
+            ResumeBucket[("Bucket: resumes<br/>(Presigned Uploads & Resumes)")]
             MinIO --> ResumeBucket
         end
     end
 
     %% Network Connections
     FE -->|HTTP / Credentials & Session Handshake| Router
-    FE -->|Direct SuperTokens SDK Handshake| Router
+    FE -->|SSE Realtime Stream /events/stream| Router
+    Handlers -->|Rate Limiting & Cache-Aside| Redis
     Handlers -->|Go SDK Session Verification| STCore
     STCore -->|Internal SQL Connection| AuthDB
-    Handlers -->|pgx Connection Pool| AppDB
-    Handlers -->|AWS SDK S3 PutObject / Presigned URLs| MinIO
+    Handlers -->|Pooled Queries :6432| PGB
+    PGB -->|PostgreSQL Connection Pool| AppDB
+    Handlers -->|AWS SDK S3 Presigned URLs| MinIO
     Orchestrator -->|X-Internal-AI-Secret + Correlation ID| FastAPI
     FastAPI -->|pgvector Cosine Queries| AppDB
     AIWorker -->|SKIP LOCKED Queue Processing| AppDB

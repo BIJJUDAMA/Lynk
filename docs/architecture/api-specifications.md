@@ -224,6 +224,47 @@ Streams the caller's resume directly or generates a short-lived pre-signed downl
 - **Auth Required:** Yes
 - **Response `200 OK`:** Binary stream with `Content-Type: application/pdf` and `Content-Disposition: inline; filename="..."`.
 
+### 3.6 Generate Direct-to-MinIO Presigned Upload URL
+`POST /profile/resume/presign`
+Generates a short-lived S3 pre-signed PUT URL with strict bounds, allowing browsers to upload resumes directly to MinIO without loading file bytes into Go API memory.
+
+- **Auth Required:** Yes (Must have `email_verified: true`)
+- **Request Body:**
+  ```json
+  {
+    "file_name": "jane_stanford_resume.pdf",
+    "mime_type": "application/pdf",
+    "file_size": 245760
+  }
+  ```
+- **Validation Rules:**
+  - `mime_type`: Must be `application/pdf`, `application/msword`, or `application/vnd.openxmlformats-officedocument.wordprocessingml.document`.
+  - `file_size`: Maximum 10MB (`10485760` bytes).
+- **Response `200 OK`:**
+  ```json
+  {
+    "upload_url": "http://localhost:9000/resumes/resumes/st_usr_9a4f21e0/7c9b21f0.pdf?X-Amz-Algorithm=...",
+    "object_key": "resumes/st_usr_9a4f21e0/7c9b21f0.pdf",
+    "expires_in": 900
+  }
+  ```
+
+### 3.7 Confirm Direct Resume Upload
+`POST /profile/resume/confirm`
+Confirms a completed direct MinIO upload, updating the campus member profile record while retaining previously referenced resumes.
+
+- **Auth Required:** Yes (Must have `email_verified: true`)
+- **Request Body:**
+  ```json
+  {
+    "object_key": "resumes/st_usr_9a4f21e0/7c9b21f0.pdf",
+    "file_name": "jane_stanford_resume.pdf",
+    "file_size": 245760,
+    "mime_type": "application/pdf"
+  }
+  ```
+- **Response `200 OK`:** Returns updated Profile JSON object.
+
 ---
 
 ## 4. Jobs & Opportunities Domain (`/jobs`)
@@ -641,4 +682,46 @@ Decomposes qualitative peer reviews into aspect-based ratings (Technical Ability
   }
   ```
 - **Error Codes:** `404 Not Found` (user does not exist).
+
+---
+
+## 9. Real-Time Events & Observability Domain
+
+### 9.1 Server-Sent Events (SSE) Stream
+`GET /events/stream`
+Establishes a persistent, unidirectionally streaming HTTP connection (Server-Sent Events) delivering real-time notifications and state updates to authenticated members.
+
+- **Auth Required:** Yes (Active session cookie or Bearer token)
+- **Headers:**
+  - `Accept: text/event-stream`
+  - `Cache-Control: no-cache`
+  - `Connection: keep-alive`
+- **Response `200 OK`:** Continuous text/event-stream payload.
+  ```text
+  event: connected
+  data: {"message": "connected", "user_id": "st_usr_student123"}
+
+  event: application_updated
+  data: {"application_id": "8a1b2c3d-...", "job_id": "7b6f284e-...", "status": "accepted"}
+
+  event: contract_status_changed
+  data: {"contract_id": "3c4d5e6f-...", "status": "active"}
+  ```
+- **Error Codes:** `401 Unauthorized`.
+
+### 9.2 Prometheus Metrics Endpoint
+`GET /metrics`
+Exposes real-time Prometheus telemetry metrics for latency histograms, request counters, error rates, and connection pool saturation.
+
+- **Auth Required:** No (Internal monitoring / Prometheus scraper)
+- **Response `200 OK`:** Standard Prometheus text exposition format (`text/plain; version=0.0.4`).
+  ```text
+  # HELP http_requests_total Total number of HTTP requests processed
+  # TYPE http_requests_total counter
+  http_requests_total{code="200",method="GET",path="/api/v1/jobs"} 142
+  # HELP http_request_duration_seconds HTTP request latency distributions
+  # TYPE http_request_duration_seconds histogram
+  http_request_duration_seconds_bucket{le="0.05",method="GET",path="/api/v1/jobs"} 128
+  ```
+
 
