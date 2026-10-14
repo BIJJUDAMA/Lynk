@@ -1304,7 +1304,8 @@ func TestResume_ConfirmSuccess(t *testing.T) {
 	key := storage.GenerateResumeKey(userUUID.String(), "alex_cv.pdf")
 
 	payload := user.ConfirmResumeRequest{
-		Key: key,
+		Key:  key,
+		Size: 2048,
 	}
 	bodyBytes, _ := json.Marshal(payload)
 	req := httptest.NewRequest("POST", "/profile/resume/confirm", bytes.NewReader(bodyBytes))
@@ -1327,6 +1328,9 @@ func TestResume_ConfirmSuccess(t *testing.T) {
 	}
 	if profile.ResumeFilename == nil || *profile.ResumeFilename != "alex_cv.pdf" {
 		t.Errorf("expected resume filename alex_cv.pdf, got %v", profile.ResumeFilename)
+	}
+	if profile.ResumeByteSize != 2048 {
+		t.Errorf("expected resume byte size 2048, got %d", profile.ResumeByteSize)
 	}
 }
 
@@ -1448,6 +1452,20 @@ func TestResume_Confirm_ValidationErrors(t *testing.T) {
 			},
 		},
 		{
+			name: "negative size",
+			payload: map[string]interface{}{
+				"key":  "resumes/" + userUUID.String() + "/test.pdf",
+				"size": -1,
+			},
+		},
+		{
+			name: "excessive size",
+			payload: map[string]interface{}{
+				"key":  "resumes/" + userUUID.String() + "/test.pdf",
+				"size": 15 << 20,
+			},
+		},
+		{
 			name:    "invalid json body",
 			rawBody: "{invalid-json",
 		},
@@ -1488,7 +1506,7 @@ func TestService_ConfirmDirectResumeUpload_UnitTests(t *testing.T) {
 	}
 
 	// 1. Nil claims returns ErrUnauthorized
-	_, err := svc.ConfirmDirectResumeUpload(context.Background(), nil, "resumes/test/cv.pdf")
+	_, err := svc.ConfirmDirectResumeUpload(context.Background(), nil, "resumes/test/cv.pdf", 1024)
 	if !errors.Is(err, user.ErrUnauthorized) {
 		t.Errorf("expected ErrUnauthorized for nil claims, got: %v", err)
 	}
@@ -1499,24 +1517,71 @@ func TestService_ConfirmDirectResumeUpload_UnitTests(t *testing.T) {
 		Email:         "test@stanford.edu",
 		EmailVerified: false,
 	}
-	_, err = svc.ConfirmDirectResumeUpload(context.Background(), unverifiedClaims, "resumes/"+userID+"/cv.pdf")
+	_, err = svc.ConfirmDirectResumeUpload(context.Background(), unverifiedClaims, "resumes/"+userID+"/cv.pdf", 1024)
 	if !errors.Is(err, auth.ErrEmailNotVerified) {
 		t.Errorf("expected ErrEmailNotVerified, got: %v", err)
 	}
 
 	// 3. Empty key returns ErrInvalidInput
-	_, err = svc.ConfirmDirectResumeUpload(context.Background(), verifiedClaims, "   ")
+	_, err = svc.ConfirmDirectResumeUpload(context.Background(), verifiedClaims, "   ", 1024)
 	if !errors.Is(err, user.ErrInvalidInput) {
 		t.Errorf("expected ErrInvalidInput for empty key, got: %v", err)
 	}
 
 	// 4. Valid docx key
 	docxKey := storage.GenerateResumeKey(userID, "portfolio.docx")
-	p, err := svc.ConfirmDirectResumeUpload(context.Background(), verifiedClaims, docxKey)
+	p, err := svc.ConfirmDirectResumeUpload(context.Background(), verifiedClaims, docxKey, 1024)
 	if err != nil {
 		t.Fatalf("expected success for valid docx key, got: %v", err)
 	}
 	if p.ResumeFilename == nil || *p.ResumeFilename != "portfolio.docx" {
 		t.Errorf("expected extracted filename portfolio.docx, got: %v", p.ResumeFilename)
 	}
+
+	// 5. Negative size returns ErrInvalidInput
+	_, err = svc.ConfirmDirectResumeUpload(context.Background(), verifiedClaims, docxKey, -1)
+	if !errors.Is(err, user.ErrInvalidInput) {
+		t.Errorf("expected ErrInvalidInput for negative size, got: %v", err)
+	}
+
+	// 6. Excessive size returns ErrInvalidInput
+	_, err = svc.ConfirmDirectResumeUpload(context.Background(), verifiedClaims, docxKey, user.MaxResumeSize+1)
+	if !errors.Is(err, user.ErrInvalidInput) {
+		t.Errorf("expected ErrInvalidInput for size > MaxResumeSize, got: %v", err)
+	}
 }
+
+func TestConfirmDirectResumeUpload_PersistsByteSize(t *testing.T) {
+	repo := newMockUserRepository()
+	s3Client := newMockStorageClient()
+	svc := user.NewService(repo, s3Client)
+
+	userUUID := uuid.New().String()
+	claims := &auth.UserClaims{
+		UserID:        userUUID,
+		Email:         "alex@stanford.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	key := storage.GenerateResumeKey(userUUID, "alex_cv.pdf")
+	expectedSize := int64(1048576) // 1MB
+
+	profile, err := svc.ConfirmDirectResumeUpload(context.Background(), claims, key, expectedSize)
+	if err != nil {
+		t.Fatalf("unexpected confirm error: %v", err)
+	}
+
+	if profile.ResumeByteSize != expectedSize {
+		t.Fatalf("expected ResumeByteSize %d, got %d", expectedSize, profile.ResumeByteSize)
+	}
+
+	persisted, err := repo.GetProfile(context.Background(), userUUID)
+	if err != nil {
+		t.Fatalf("failed to retrieve profile: %v", err)
+	}
+	if persisted.ResumeByteSize != expectedSize {
+		t.Fatalf("expected persisted ResumeByteSize %d, got %d", expectedSize, persisted.ResumeByteSize)
+	}
+}
+

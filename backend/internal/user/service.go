@@ -445,7 +445,7 @@ func (s *Service) UploadResume(ctx context.Context, claims *auth.UserClaims, fil
 // 2. Validates that the provided S3 key matches the expected format for this user ("resumes/<userID>/...").
 // 3. Updates resume metadata in PostgreSQL under profile advisory lock.
 // 4. On success, if user had a previous ResumeKey, cleans up the old S3 object.
-func (s *Service) ConfirmDirectResumeUpload(ctx context.Context, claims *auth.UserClaims, key string) (*Profile, error) {
+func (s *Service) ConfirmDirectResumeUpload(ctx context.Context, claims *auth.UserClaims, key string, size int64) (*Profile, error) {
 	if claims == nil || claims.UserID == "" {
 		return nil, ErrUnauthorized
 	}
@@ -456,6 +456,10 @@ func (s *Service) ConfirmDirectResumeUpload(ctx context.Context, claims *auth.Us
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return nil, fmt.Errorf("%w: resume key is required", ErrInvalidInput)
+	}
+
+	if size < 0 || size > MaxResumeSize {
+		return nil, fmt.Errorf("%w: resume size must be between 0 and 5MB", ErrInvalidInput)
 	}
 
 	expectedPrefix := fmt.Sprintf("resumes/%s/", claims.UserID)
@@ -487,7 +491,7 @@ func (s *Service) ConfirmDirectResumeUpload(ctx context.Context, claims *auth.Us
 			oldResumeKey = *existingProfile.ResumeKey
 		}
 
-		if err := s.repo.UpdateResume(lockCtx, claims.UserID, key, filename, 0); err != nil {
+		if err := s.repo.UpdateResume(lockCtx, claims.UserID, key, filename, size); err != nil {
 			return err
 		}
 

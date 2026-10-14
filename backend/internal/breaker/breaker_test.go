@@ -42,3 +42,59 @@ func TestBreaker_SuccessResets(t *testing.T) {
 		t.Fatalf("expected circuit to be closed, got %v", err)
 	}
 }
+
+func TestBreaker_HalfOpenSingleFailureReopens(t *testing.T) {
+	// Breaker with threshold=3, recoveryTime=10ms
+	b := New(3, 10*time.Millisecond)
+
+	// Cause 3 failures to open circuit
+	b.RecordFailure()
+	b.RecordFailure()
+	b.RecordFailure()
+	if err := b.Allow(); !errors.Is(err, ErrOpen) {
+		t.Fatalf("expected ErrOpen, got %v", err)
+	}
+
+	// Wait for recovery time to elapse
+	time.Sleep(15 * time.Millisecond)
+
+	// Probe request transitions to half-open
+	if err := b.Allow(); err != nil {
+		t.Fatalf("expected nil in half-open, got %v", err)
+	}
+
+	// A single failure in half-open state must immediately trip back to open
+	b.RecordFailure()
+
+	if err := b.Allow(); !errors.Is(err, ErrOpen) {
+		t.Fatalf("expected ErrOpen immediately after 1 failure in half-open, got %v", err)
+	}
+}
+
+func TestBreaker_HalfOpenZeroFailuresReopensOnSingleFailure(t *testing.T) {
+	b := New(3, 10*time.Millisecond)
+	b.RecordFailure()
+	b.RecordFailure()
+	b.RecordFailure()
+
+	time.Sleep(15 * time.Millisecond)
+	if err := b.Allow(); err != nil {
+		t.Fatalf("expected nil in half-open, got %v", err)
+	}
+
+	// Explicitly clear failures while in half-open
+	b.failures = 0
+
+	// A single failure must immediately trip back to open
+	b.RecordFailure()
+
+	if err := b.Allow(); !errors.Is(err, ErrOpen) {
+		t.Fatalf("expected ErrOpen immediately after 1 failure in half-open, got %v", err)
+	}
+	if b.failures != b.threshold {
+		t.Fatalf("expected failures to be set to threshold %d, got %d", b.threshold, b.failures)
+	}
+}
+
+
+

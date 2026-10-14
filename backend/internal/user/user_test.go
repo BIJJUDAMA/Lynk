@@ -869,7 +869,7 @@ func TestConfirmDirectResumeUpload_RetainsReferencedResume(t *testing.T) {
 	}
 
 	newKey := "resumes/" + userUUID + "/new_cv.pdf"
-	updated, err := svc.ConfirmDirectResumeUpload(context.Background(), claims, newKey)
+	updated, err := svc.ConfirmDirectResumeUpload(context.Background(), claims, newKey, 1024)
 	if err != nil {
 		t.Fatalf("unexpected confirm error: %v", err)
 	}

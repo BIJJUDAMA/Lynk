@@ -14,15 +14,10 @@ import { DEFAULT_API_BASE_URL } from "@/lib/api";
  */
 export function useRealtimeEvents() {
   const { isAuthenticated } = useAuth();
-  let queryClient: ReturnType<typeof useQueryClient> | null = null;
-  try {
-    queryClient = useQueryClient();
-  } catch {
-    queryClient = null;
-  }
+  const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!isAuthenticated || !queryClient) return;
+    if (!isAuthenticated) return;
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
 
     const streamUrl = `${DEFAULT_API_BASE_URL}/events/stream`;
@@ -31,10 +26,10 @@ export function useRealtimeEvents() {
     });
 
     const invalidateCaches = () => {
-      queryClient?.invalidateQueries({ queryKey: ["activity"] });
-      queryClient?.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient?.invalidateQueries({ queryKey: ["applications"] });
-      queryClient?.invalidateQueries({ queryKey: ["contracts"] });
+      queryClient.invalidateQueries({ queryKey: ["activity"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["applications"] });
+      queryClient.invalidateQueries({ queryKey: ["contracts"] });
     };
 
     eventSource.addEventListener("application_updated", invalidateCaches);

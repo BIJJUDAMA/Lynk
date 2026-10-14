@@ -26,45 +26,51 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger("lynk-ai.ranking")
 
-STEM_KEYWORDS = {
-    "computer science",
-    "software engineering",
-    "data science",
-    "information technology",
-    "computer engineering",
-    "electrical engineering",
-    "mathematics",
-    "statistics",
-    "physics",
-    "engineering",
-    "mechanical engineering",
-    "cybersecurity",
-}
+STEM_KEYWORDS = frozenset(
+    {
+        "computer science",
+        "software engineering",
+        "data science",
+        "information technology",
+        "computer engineering",
+        "electrical engineering",
+        "mathematics",
+        "statistics",
+        "physics",
+        "engineering",
+        "mechanical engineering",
+        "cybersecurity",
+    }
+)
 
-BUSINESS_KEYWORDS = {
-    "business",
-    "business administration",
-    "finance",
-    "marketing",
-    "accounting",
-    "management",
-    "economics",
-    "entrepreneurship",
-}
+BUSINESS_KEYWORDS = frozenset(
+    {
+        "business",
+        "business administration",
+        "finance",
+        "marketing",
+        "accounting",
+        "management",
+        "economics",
+        "entrepreneurship",
+    }
+)
 
-DESIGN_ARTS_KEYWORDS = {
-    "design",
-    "graphic design",
-    "digital media",
-    "fine arts",
-    "art",
-    "ui/ux",
-    "communications",
-    "media",
-    "journalism",
-    "english",
-    "humanities",
-}
+DESIGN_ARTS_KEYWORDS = frozenset(
+    {
+        "design",
+        "graphic design",
+        "digital media",
+        "fine arts",
+        "art",
+        "ui/ux",
+        "communications",
+        "media",
+        "journalism",
+        "english",
+        "humanities",
+    }
+)
 
 
 class CandidateRankInput(BaseModel):

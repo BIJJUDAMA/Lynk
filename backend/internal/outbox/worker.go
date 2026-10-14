@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -50,44 +51,48 @@ func (wp *WorkerPool) Start(ctx context.Context) {
 	}
 }
 
-func (wp *WorkerPool) processBatch(ctx context.Context) {
+type rawRow struct {
+	ID            string
+	EventType     string
+	AggregateType string
+	AggregateID   string
+	PayloadJSON   []byte
+	RetryCount    int
+	MaxRetries    int
+}
+
+func (wp *WorkerPool) claimBatch(ctx context.Context) ([]rawRow, error) {
 	conn, err := wp.pool.Acquire(ctx)
 	if err != nil {
-		slog.Warn("outbox: failed to acquire connection", "error", err)
-		return
+		return nil, fmt.Errorf("acquire connection: %w", err)
 	}
 	defer conn.Release()
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		slog.Warn("outbox: failed to begin transaction", "error", err)
-		return
+		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	rows, err := tx.Query(ctx, `
-		SELECT id, event_type, aggregate_type, aggregate_id, payload, retry_count, max_retries
-		FROM outbox_events
-		WHERE status IN ('pending', 'failed') AND next_retry_at <= NOW()
-		ORDER BY created_at ASC
-		LIMIT $1
-		FOR UPDATE SKIP LOCKED
+		WITH claimed AS (
+			SELECT id
+			FROM outbox_events
+			WHERE status IN ('pending', 'failed') AND next_retry_at <= NOW()
+			ORDER BY created_at ASC
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE outbox_events e
+		SET status = 'processing'
+		FROM claimed
+		WHERE e.id = claimed.id
+		RETURNING e.id, e.event_type, e.aggregate_type, e.aggregate_id, e.payload, e.retry_count, e.max_retries;
 	`, wp.batchSize)
 	if err != nil {
-		slog.Warn("outbox: query failed", "error", err)
-		return
+		return nil, fmt.Errorf("query claimed events: %w", err)
 	}
 	defer rows.Close()
-
-	type rawRow struct {
-		ID            string
-		EventType     string
-		AggregateType string
-		AggregateID   string
-		PayloadJSON   []byte
-		RetryCount    int
-		MaxRetries    int
-	}
 
 	var batch []rawRow
 	for rows.Next() {
@@ -99,7 +104,24 @@ func (wp *WorkerPool) processBatch(ctx context.Context) {
 		batch = append(batch, r)
 	}
 	if err := rows.Err(); err != nil {
-		slog.Warn("outbox: rows error", "error", err)
+		return nil, fmt.Errorf("rows iteration: %w", err)
+	}
+	rows.Close()
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit claim transaction: %w", err)
+	}
+
+	return batch, nil
+}
+
+func (wp *WorkerPool) processBatch(ctx context.Context) {
+	batch, err := wp.claimBatch(ctx)
+	if err != nil {
+		slog.Warn("outbox: claim batch failed", "error", err)
+		return
+	}
+	if len(batch) == 0 {
 		return
 	}
 
@@ -107,6 +129,11 @@ func (wp *WorkerPool) processBatch(ctx context.Context) {
 		var payload map[string]any
 		if err := json.Unmarshal(r.PayloadJSON, &payload); err != nil {
 			slog.Warn("outbox: payload unmarshal failed", "id", r.ID, "error", err)
+			_, _ = wp.pool.Exec(ctx, `
+				UPDATE outbox_events
+				SET status = 'dead', last_error = $1
+				WHERE id = $2
+			`, "unmarshal payload: "+err.Error(), r.ID)
 			continue
 		}
 
@@ -131,28 +158,23 @@ func (wp *WorkerPool) processBatch(ctx context.Context) {
 
 		if dispatchErr != nil {
 			newRetry := r.RetryCount + 1
-			backoff := time.Duration(1<<min(newRetry, 6)) * 5 * time.Second
+			backoff := CalculateBackoff(newRetry)
 			newStatus := "failed"
 			if newRetry >= r.MaxRetries {
 				newStatus = "dead"
 			}
-			_, _ = tx.Exec(ctx, `
+			_, _ = wp.pool.Exec(ctx, `
 				UPDATE outbox_events
 				SET retry_count = $1, status = $2, next_retry_at = NOW() + ($3 * INTERVAL '1 second'), last_error = $4
 				WHERE id = $5
 			`, newRetry, newStatus, int64(backoff.Seconds()), dispatchErr.Error(), r.ID)
 		} else {
-			now := time.Now().UTC()
-			_, _ = tx.Exec(ctx, `
+			_, _ = wp.pool.Exec(ctx, `
 				UPDATE outbox_events
-				SET status = 'processed', processed_at = $1
-				WHERE id = $2
-			`, now, r.ID)
+				SET status = 'processed', processed_at = NOW()
+				WHERE id = $1
+			`, r.ID)
 		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		slog.Warn("outbox: commit failed", "error", err)
 	}
 }
 

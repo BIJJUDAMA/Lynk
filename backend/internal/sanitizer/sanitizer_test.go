@@ -52,3 +52,53 @@ func TestSanitizeStrict_UnclosedDangerousTag(t *testing.T) {
 		t.Fatalf("expected 'Safe text', got %q", got)
 	}
 }
+
+func TestSanitizeStrict_UnclosedDangerousTagWithoutClosingBracket(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "unclosed script",
+			input:    "Hello <script alert('xss')",
+			expected: "Hello",
+		},
+		{
+			name:     "unclosed style",
+			input:    "Text <style body { color: red; }",
+			expected: "Text",
+		},
+		{
+			name:     "unclosed iframe",
+			input:    "Prefix <iframe src='http://evil.com'",
+			expected: "Prefix",
+		},
+		{
+			name:     "unclosed object",
+			input:    "Content <object data='evil.swf'",
+			expected: "Content",
+		},
+		{
+			name:     "unclosed embed",
+			input:    "Audio <embed src='evil.mp3'",
+			expected: "Audio",
+		},
+		{
+			name:     "non-dangerous unclosed tag",
+			input:    "Hello <b unclosed",
+			expected: "Hello b unclosed",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			clean := SanitizeStrict(tc.input)
+			if clean != tc.expected {
+				t.Fatalf("expected %q, got %q", tc.expected, clean)
+			}
+		})
+	}
+}
+
+

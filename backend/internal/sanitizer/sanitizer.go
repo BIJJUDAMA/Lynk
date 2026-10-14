@@ -40,7 +40,21 @@ func SanitizeStrict(input string) string {
 		// We are at '<' - extract the tag name.
 		end := strings.IndexByte(input[i:], '>')
 		if end == -1 {
-			// Unclosed tag: skip the '<' and continue.
+			// Check if unclosed tag starts with a dangerous tag name
+			rest := strings.ToLower(strings.TrimSpace(input[i+1:]))
+			rest = strings.TrimPrefix(rest, "/")
+			isDangerous := false
+			for tag := range dangerousBlockTags {
+				if strings.HasPrefix(rest, tag) {
+					isDangerous = true
+					break
+				}
+			}
+			if isDangerous {
+				i = len(input)
+				break
+			}
+			// Otherwise skip the '<' and continue
 			i++
 			continue
 		}

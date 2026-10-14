@@ -284,7 +284,7 @@ func (h *Handler) ConfirmResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.service.ConfirmDirectResumeUpload(r.Context(), claims, req.Key)
+	profile, err := h.service.ConfirmDirectResumeUpload(r.Context(), claims, req.Key, req.Size)
 	if err != nil {
 		if errors.Is(err, ErrUnauthorized) {
 			httputil.WriteUnauthorized(w, r, "UNAUTHORIZED", "Missing credentials")

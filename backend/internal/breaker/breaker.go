@@ -64,9 +64,18 @@ func (b *Breaker) RecordSuccess() {
 }
 
 // RecordFailure increments failure count; opens the circuit at threshold.
+// When in StateHalfOpen, a single failure immediately trips back to StateOpen.
 func (b *Breaker) RecordFailure() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	if b.state == StateHalfOpen {
+		b.state = StateOpen
+		b.failures = b.threshold
+		b.openUntil = time.Now().Add(b.recoveryTime)
+		return
+	}
+
 	b.failures++
 	if b.failures >= b.threshold {
 		b.state = StateOpen
