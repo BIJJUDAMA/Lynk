@@ -51,7 +51,6 @@ func SanitizeStrict(input string) string {
 				}
 			}
 			if isDangerous {
-				i = len(input)
 				break
 			}
 			// Otherwise skip the '<' and continue
