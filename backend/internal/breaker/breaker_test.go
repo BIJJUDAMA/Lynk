@@ -95,6 +95,3 @@ func TestBreaker_HalfOpenZeroFailuresReopensOnSingleFailure(t *testing.T) {
 		t.Fatalf("expected failures to be set to threshold %d, got %d", b.threshold, b.failures)
 	}
 }
-
-
-

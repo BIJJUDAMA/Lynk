@@ -100,5 +100,3 @@ func TestSanitizeStrict_UnclosedDangerousTagWithoutClosingBracket(t *testing.T) 
 		})
 	}
 }
-
-

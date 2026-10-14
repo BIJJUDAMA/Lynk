@@ -1584,4 +1584,3 @@ func TestConfirmDirectResumeUpload_PersistsByteSize(t *testing.T) {
 		t.Fatalf("expected persisted ResumeByteSize %d, got %d", expectedSize, persisted.ResumeByteSize)
 	}
 }
-
