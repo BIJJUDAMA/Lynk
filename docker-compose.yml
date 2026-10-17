@@ -84,6 +84,9 @@ services:
     image: edoburu/pgbouncer:latest
     container_name: lynk-pgbouncer
     restart: unless-stopped
+    profiles:
+      - pooler
+      - full
     volumes:
       - ./.docker/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
       - ./.docker/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
@@ -174,6 +177,9 @@ services:
       dockerfile: Dockerfile
     container_name: lynk-ai-worker
     restart: unless-stopped
+    profiles:
+      - workers
+      - full
     command: python -m ai.workers.worker
     environment:
       INTERNAL_AI_SECRET: "${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}"
@@ -184,6 +190,33 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "http://localhost:8080"
+        NEXT_PUBLIC_WEBSITE_URL: "http://localhost:3000"
+    container_name: lynk-frontend
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      NEXT_PUBLIC_API_URL: "http://localhost:8080"
+      NEXT_PUBLIC_WEBSITE_URL: "http://localhost:3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - lynk-net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3000/', (r) => {if (r.statusCode >= 200 && r.statusCode < 400) process.exit(0); else process.exit(1);}).on('error', () => process.exit(1));\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   vllm:
     image: vllm/vllm-openai:latest
