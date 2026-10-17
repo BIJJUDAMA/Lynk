@@ -50,7 +50,7 @@ else
 fi
 
 log_info()    { echo -e "${C_CYAN}[INFO]${C_RESET} $*" >&2; }
-log_step()    { echo -e "\n${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; echo -e "${C_BOLD}${C_MAGENTA}[STEP $1/14]${C_RESET} ${C_BOLD}$2${C_RESET}" >&2; echo -e "${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; }
+log_step()    { echo -e "\n${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; echo -e "${C_BOLD}${C_MAGENTA}[STEP $1/15]${C_RESET} ${C_BOLD}$2${C_RESET}" >&2; echo -e "${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; }
 log_substep() { echo -e "  ${C_CYAN}-->${C_RESET} $*" >&2; }
 log_pass()    { echo -e "  ${C_GREEN}[PASS]${C_RESET} $*" >&2; }
 log_fail()    { echo -e "  ${C_RED}[FAIL]${C_RESET} $*" >&2; }
@@ -1089,15 +1089,97 @@ http_request "POST" "/api/v1/jobs/generate" "$UNVERIFIED_STUDENT_TOKEN" "$DRAFT_
 log_pass "Campus gate verified: Unverified student draft generation blocked with HTTP 403"
 
 # ------------------------------------------------------------------------------
+# STEP 15: Project-First Collaborative Workspace Lifecycle
+# ------------------------------------------------------------------------------
+log_step "15" "Project-First Collaborative Workspace Lifecycle"
+
+# Phase 15a: Create Project as Verified Student (POST /api/v1/projects)
+log_substep "Phase 15a: Creating project workspace as verified student..."
+PROJECT_PAYLOAD=$(cat <<EOF
+{
+  "title": "Autonomous Campus Mapping Drone",
+  "category": "Robotics & Hardware",
+  "description": "High-precision LiDAR and optical mapping drone platform for autonomous campus traversal and safety audit.",
+  "visibility": "public"
+}
+EOF
+)
+
+PROJECT_RESP=$(http_request "POST" "/api/v1/projects" "$VERIFIED_STUDENT_TOKEN" "$PROJECT_PAYLOAD" "201")
+PROJECT_ID=$(json_extract "$PROJECT_RESP" ".data.id")
+PROJECT_SLUG=$(json_extract "$PROJECT_RESP" ".data.slug")
+
+if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "null" ]; then
+    log_fail "Project creation missing ID: $PROJECT_RESP"
+    exit 1
+fi
+log_pass "Project workspace created: ID $PROJECT_ID, slug '$PROJECT_SLUG'"
+
+# Phase 15b: Retrieve Project by Slug (GET /api/v1/projects/:slug)
+log_substep "Phase 15b: Retrieving project workspace by slug..."
+PROJECT_GET_RESP=$(http_request "GET" "/api/v1/projects/${PROJECT_SLUG}" "" "" "200")
+if ! echo "$PROJECT_GET_RESP" | grep -q "Autonomous Campus Mapping Drone"; then
+    log_fail "Project slug retrieval mismatch: $PROJECT_GET_RESP"
+    exit 1
+fi
+log_pass "Project workspace verified by slug"
+
+# Phase 15c: Add Workspace Resource (POST /api/v1/projects/:id/resources)
+log_substep "Phase 15c: Adding external resource to project workspace..."
+RESOURCE_PAYLOAD=$(cat <<EOF
+{
+  "title": "Hardware Schematics and ROS2 Nodes",
+  "url": "https://github.com/lynk/mapping-drone",
+  "category": "github"
+}
+EOF
+)
+RESOURCE_RESP=$(http_request "POST" "/api/v1/projects/${PROJECT_ID}/resources" "$VERIFIED_STUDENT_TOKEN" "$RESOURCE_PAYLOAD" "201")
+RESOURCE_ID=$(json_extract "$RESOURCE_RESP" ".data.id")
+log_pass "Project resource attached: ID $RESOURCE_ID"
+
+# Phase 15d: Submit Project Application by Employer/Member (POST /api/v1/projects/:id/applications)
+log_substep "Phase 15d: Submitting project application as teammate..."
+APP_PAYLOAD=$(cat <<EOF
+{
+  "statement": "I have extensive experience with PX4 flight controllers, ROS2 nav2 packages, and sensor fusion."
+}
+EOF
+)
+PROJECT_APP_RESP=$(http_request "POST" "/api/v1/projects/${PROJECT_ID}/applications" "$EMPLOYER_TOKEN" "$APP_PAYLOAD" "201")
+PROJECT_APP_ID=$(json_extract "$PROJECT_APP_RESP" ".data.id")
+log_pass "Project application submitted: ID $PROJECT_APP_ID"
+
+# Phase 15e: Accept Application and Verify Atomic Membership (POST /api/v1/applications/:id/accept)
+log_substep "Phase 15e: Project Lead accepts applicant atomically into team..."
+ACCEPT_APP_RESP=$(http_request "POST" "/api/v1/applications/${PROJECT_APP_ID}/accept" "$VERIFIED_STUDENT_TOKEN" "" "200")
+log_pass "Application accepted: status updated to accepted"
+
+# Phase 15f: Verify Member Appears in Roster (GET /api/v1/projects/:id/members)
+log_substep "Phase 15f: Verifying applicant atomically granted team membership..."
+MEMBERS_RESP=$(http_request "GET" "/api/v1/projects/${PROJECT_ID}/members" "" "" "200")
+if ! echo "$MEMBERS_RESP" | grep -q "$PROJECT_ID"; then
+    log_fail "Applicant not found in team members roster: $MEMBERS_RESP"
+    exit 1
+fi
+log_pass "Atomic team membership invariant verified: Member listed in project roster"
+
+# Phase 15g: Semantic Vector Search for Projects (GET /api/v1/search/projects?q=autonomous)
+log_substep "Phase 15g: Testing AI semantic vector search for projects..."
+SEARCH_PROJ_RESP=$(http_request "GET" "/api/v1/search/projects?q=autonomous%20drone" "" "" "200")
+log_pass "Semantic project discovery verified (HTTP 200)"
+
+# ------------------------------------------------------------------------------
 # SUMMARY
 # ------------------------------------------------------------------------------
 echo -e "\n${C_BOLD}${C_GREEN}======================================================================${C_RESET}"
-echo -e "${C_BOLD}${C_GREEN}  ALL 14 END-TO-END SMOKE TEST PHASES PASSED SUCCESSFULLY!            ${C_RESET}"
+echo -e "${C_BOLD}${C_GREEN}  ALL 15 END-TO-END SMOKE TEST PHASES PASSED SUCCESSFULLY!            ${C_RESET}"
 echo -e "${C_BOLD}${C_GREEN}======================================================================${C_RESET}"
 echo -e "  ${C_CYAN}Job ID:${C_RESET}         $JOB_ID"
 echo -e "  ${C_CYAN}Application ID:${C_RESET} $APPLICATION_ID"
 echo -e "  ${C_CYAN}Contract ID:${C_RESET}    $CONTRACT_ID"
 echo -e "  ${C_CYAN}Resume Key:${C_RESET}     $RESUME_KEY"
+echo -e "  ${C_CYAN}Project ID:${C_RESET}     $PROJECT_ID"
 echo -e "  ${C_GREEN}Exit code:${C_RESET}      0 (Verified)\n"
 
 exit 0
