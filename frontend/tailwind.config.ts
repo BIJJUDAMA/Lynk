@@ -77,10 +77,10 @@ const config: Config = {
         },
       },
       fontFamily: {
-        display: ["var(--font-display)", "Georgia", "serif"],
+        display: ['"Times New Roman"', "Times", "Baskerville", "Georgia", "serif"],
         sans: ["var(--font-sans)", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
         mono: ["var(--font-mono)", "\"SF Mono\"", "monospace"],
-        serif: ["var(--font-display)", "Georgia", "serif"],
+        serif: ['"Times New Roman"', "Times", "Baskerville", "Georgia", "serif"],
       },
       borderRadius: {
         none: "0px",

@@ -9,6 +9,11 @@ import {
   getApplicationStatusBadgeClasses,
   getContractStatusBadgeClasses,
   isValidUrl,
+  formatProjectDate,
+  getRecruitmentStatusBadgeClasses,
+  getLifecycleBadgeClasses,
+  PROJECT_CATEGORIES,
+  slugifyProjectTitle,
 } from "./formatters.ts";
 
 test("formatJobDate formats ISO date strings and handles null/undefined", () => {
@@ -99,4 +104,81 @@ test("getContractStatusBadgeClasses returns styling for all contract statuses", 
   const cancelled = getContractStatusBadgeClasses("cancelled");
   assert.ok(cancelled.bg.includes("pastel-red"));
   assert.equal(cancelled.label, "Cancelled");
+});
+
+test("formatProjectDate formats timestamps to human-readable strings", () => {
+  assert.equal(formatProjectDate(null), "Updated recently");
+  assert.equal(formatProjectDate(undefined, "Created"), "Created recently");
+
+  const nowIso = new Date().toISOString();
+  assert.equal(formatProjectDate(nowIso), "Updated just now");
+
+  const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+  assert.equal(formatProjectDate(tenDaysAgo), "Updated 10 days ago");
+
+  const oneDayAgo = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+  assert.equal(formatProjectDate(oneDayAgo), "Updated 1 day ago");
+
+  const oldDate = "2024-01-15T00:00:00Z";
+  const formatted = formatProjectDate(oldDate, "Created");
+  assert.ok(formatted.includes("Created"));
+  assert.ok(formatted.includes("2024"));
+});
+
+test("getRecruitmentStatusBadgeClasses returns specified badge tokens", () => {
+  const open = getRecruitmentStatusBadgeClasses("open");
+  assert.ok(open.bg.includes("emerald-500"));
+  assert.ok(open.text.includes("emerald-600"));
+  assert.ok(open.dot.includes("animate-pulse"));
+  assert.equal(open.label, "Recruiting");
+
+  const paused = getRecruitmentStatusBadgeClasses("paused");
+  assert.ok(paused.bg.includes("amber-500"));
+  assert.ok(paused.text.includes("amber-600"));
+  assert.equal(paused.label, "Paused");
+
+  const closed = getRecruitmentStatusBadgeClasses("closed");
+  assert.ok(closed.bg.includes("muted"));
+  assert.equal(closed.label, "Closed");
+});
+
+test("getLifecycleBadgeClasses returns correct labels and styling", () => {
+  const idea = getLifecycleBadgeClasses("idea");
+  assert.equal(idea.label, "Idea Stage");
+
+  const active = getLifecycleBadgeClasses("active");
+  assert.equal(active.label, "Active Build");
+
+  const completed = getLifecycleBadgeClasses("completed");
+  assert.equal(completed.label, "Completed");
+
+  const archived = getLifecycleBadgeClasses("archived");
+  assert.equal(archived.label, "Archived");
+});
+
+test("PROJECT_CATEGORIES includes all canonical campus project tracks", () => {
+  assert.ok(PROJECT_CATEGORIES.length >= 6);
+  const values = PROJECT_CATEGORIES.map((c) => c.value);
+  assert.ok(values.includes("AI / Robotics"));
+  assert.ok(values.includes("Web & Mobile"));
+  assert.ok(values.includes("Research"));
+  assert.ok(values.includes("Design"));
+  assert.ok(values.includes("Hardware"));
+  assert.ok(values.includes("Systems"));
+});
+
+test("slugifyProjectTitle produces sanitized URL slugs matching backend specifications", () => {
+  assert.equal(
+    slugifyProjectTitle("Autonomous Campus Delivery Rover"),
+    "autonomous-campus-delivery-rover"
+  );
+  assert.equal(slugifyProjectTitle("AI & Robotics: Lab 2026! (V2)"), "ai-robotics-lab-2026-v2");
+  assert.equal(slugifyProjectTitle("  ---Hello World---  "), "hello-world");
+  assert.equal(slugifyProjectTitle(""), "");
+  assert.equal(slugifyProjectTitle("   "), "");
+
+  const longTitle = "a".repeat(150);
+  const slugified = slugifyProjectTitle(longTitle);
+  assert.equal(slugified.length, 100);
+  assert.equal(slugified, "a".repeat(100));
 });

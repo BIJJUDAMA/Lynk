@@ -69,11 +69,11 @@
   h2,
   h3,
   h4 {
-    letter-spacing: -0.02em;
+    letter-spacing: -0.005em;
   }
 
   h1 {
-    letter-spacing: -0.03em;
-    line-height: 1.05;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
   }
 }

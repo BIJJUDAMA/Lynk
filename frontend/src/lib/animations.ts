@@ -1,6 +1,25 @@
 import gsap from "gsap";
 
 /**
+ * Premium editorial motion curve: fast response with smooth deceleration.
+ * Apple / Linear style deceleration without lazy float.
+ */
+export const EDITORIAL_EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+
+export const editorialFadeUp = {
+  hidden: { opacity: 0.2, y: 6 },
+  visible: (delay: number = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.4,
+      delay,
+      ease: EDITORIAL_EASE,
+    },
+  }),
+};
+
+/**
  * Checks if the user prefers reduced motion.
  */
 export function prefersReducedMotion(): boolean {
@@ -22,13 +41,13 @@ export function animateHero(container: HTMLElement | null): () => void {
       targets,
       {
         opacity: 0,
-        y: 18,
+        y: 8,
       },
       {
         opacity: 1,
         y: 0,
-        duration: 0.7,
-        stagger: 0.12,
+        duration: 0.5,
+        stagger: 0.06,
         ease: "power3.out",
         clearProps: "transform",
       }
@@ -55,13 +74,13 @@ export function animateStaggerList(
       items,
       {
         opacity: 0,
-        y: 14,
+        y: 6,
       },
       {
         opacity: 1,
         y: 0,
-        duration: 0.5,
-        stagger: 0.08,
+        duration: 0.4,
+        stagger: 0.05,
         ease: "power2.out",
         clearProps: "transform",
       }

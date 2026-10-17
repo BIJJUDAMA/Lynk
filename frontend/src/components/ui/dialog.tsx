@@ -9,9 +9,10 @@ interface DialogProps {
   open: boolean;
   onOpenChange?: (open: boolean) => void;
   children: React.ReactNode;
+  className?: string;
 }
 
-const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) => {
+const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children, className }) => {
   if (!open) return null;
 
   return (
@@ -22,7 +23,7 @@ const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) => {
         onClick={() => onOpenChange?.(false)}
       />
       {/* Container */}
-      <div className="relative z-50 w-full max-w-lg p-4">{children}</div>
+      <div className={cn("relative z-50 w-full max-w-lg p-4", className)}>{children}</div>
     </div>
   );
 };
@@ -88,10 +89,7 @@ const DialogTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HT
   ({ className, ...props }, ref) => (
     <h2
       ref={ref}
-      className={cn(
-        "font-serif text-xl font-medium leading-none tracking-tight text-foreground",
-        className
-      )}
+      className={cn("font-serif text-xl font-normal leading-snug text-foreground", className)}
       {...props}
     />
   )
