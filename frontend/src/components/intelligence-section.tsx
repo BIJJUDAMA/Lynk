@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import Image from "next/image";
 import { motion, useScroll, useTransform, useReducedMotion } from "framer-motion";
+import { EDITORIAL_EASE } from "@/lib/animations";
 
 const EXAMPLE_MATCHES = [
   "Frontend Engineer -- CS",
@@ -51,12 +52,12 @@ export default function IntelligenceSection() {
         />
       </motion.div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-12 py-24 md:py-36">
-        <div className="max-w-lg">
+      <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-12 py-20 md:py-28">
+        <div className="max-w-2xl">
           <motion.p
-            initial={prefersReduced ? {} : { opacity: 0, y: 10 }}
+            initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
             whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7 }}
+            transition={{ duration: 0.45, ease: EDITORIAL_EASE }}
             viewport={{ once: true }}
             className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary mb-4"
           >
@@ -64,24 +65,20 @@ export default function IntelligenceSection() {
           </motion.p>
           <motion.h2
             id="intelligence-heading"
-            initial={prefersReduced ? {} : { opacity: 0, y: 20 }}
+            initial={prefersReduced ? {} : { opacity: 0, y: 8 }}
             whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.9, delay: 0.1 }}
+            transition={{ duration: 0.5, delay: 0.08, ease: EDITORIAL_EASE }}
             viewport={{ once: true }}
-            className="font-display text-[clamp(28px,4vw,56px)] font-normal tracking-[-0.025em] text-ink"
+            className="font-display text-[clamp(28px,4vw,56px)] font-normal leading-[1.1] text-ink [text-wrap:balance]"
           >
-            The platform
-            <br />
-            understands what
-            <br />
-            you are looking for.
+            The platform understands what you are looking&nbsp;for.
           </motion.h2>
           <motion.p
-            initial={prefersReduced ? {} : { opacity: 0, y: 16 }}
+            initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
             whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
+            transition={{ duration: 0.5, delay: 0.16, ease: EDITORIAL_EASE }}
             viewport={{ once: true }}
-            className="mt-6 text-base text-ink-secondary leading-relaxed"
+            className="mt-6 text-base text-ink-secondary leading-relaxed max-w-xl [text-wrap:balance]"
           >
             Semantic search, skill extraction, and recommendations built into the interface. Not
             announced. Just present.
@@ -89,9 +86,9 @@ export default function IntelligenceSection() {
 
           {/* Quiet search UI demo */}
           <motion.div
-            initial={prefersReduced ? {} : { opacity: 0, y: 12 }}
+            initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
             whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.3 }}
+            transition={{ duration: 0.45, delay: 0.24, ease: EDITORIAL_EASE }}
             viewport={{ once: true }}
             className="mt-10 border border-line bg-surface-elevated p-5 max-w-sm"
           >

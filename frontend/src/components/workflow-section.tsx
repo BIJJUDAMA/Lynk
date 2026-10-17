@@ -3,12 +3,13 @@
 import { useRef } from "react";
 import Image from "next/image";
 import { motion, useScroll, useTransform, useReducedMotion } from "framer-motion";
+import { EDITORIAL_EASE } from "@/lib/animations";
 
 const STAGES = [
   { label: "Idea", desc: "A problem worth solving, a project worth building." },
   {
     label: "Opportunity",
-    desc: "Post a gig or discover one. Verified campus talent, clear scope.",
+    desc: "Publish an opportunity or discover one. Verified campus talent, clear scope.",
   },
   { label: "Application", desc: "Propose your approach. Cover letter, portfolio, resume on file." },
   { label: "Contract", desc: "Accepted. A structured agreement, activated when you are ready." },
@@ -51,11 +52,11 @@ export default function WorkflowSection() {
         />
       </motion.div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-12 py-24 md:py-36">
+      <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-12 py-20 md:py-28">
         <motion.p
-          initial={prefersReduced ? {} : { opacity: 0, y: 10 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: "easeOut" }}
+          transition={{ duration: 0.45, ease: EDITORIAL_EASE }}
           viewport={{ once: true }}
           className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary mb-4"
         >
@@ -63,15 +64,13 @@ export default function WorkflowSection() {
         </motion.p>
         <motion.h2
           id="workflow-heading"
-          initial={prefersReduced ? {} : { opacity: 0, y: 20 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 8 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.9, delay: 0.1, ease: "easeOut" }}
+          transition={{ duration: 0.5, delay: 0.08, ease: EDITORIAL_EASE }}
           viewport={{ once: true }}
-          className="font-display text-[clamp(32px,4.5vw,64px)] font-normal tracking-[-0.025em] text-ink mb-20"
+          className="font-display text-[clamp(32px,4.5vw,64px)] font-normal leading-[1.1] text-ink mb-16 [text-wrap:balance]"
         >
-          From idea to
-          <br />
-          delivered.
+          From idea to&nbsp;delivered.
         </motion.h2>
 
         <div className="relative">
@@ -79,7 +78,7 @@ export default function WorkflowSection() {
           <motion.div
             initial={prefersReduced ? {} : { scaleY: 0 }}
             whileInView={{ scaleY: 1 }}
-            transition={{ duration: 1.8, ease: "easeInOut", delay: 0.3 }}
+            transition={{ duration: 0.8, ease: EDITORIAL_EASE, delay: 0.2 }}
             viewport={{ once: true }}
             style={{ transformOrigin: "top" }}
             className="absolute left-[3px] top-0 bottom-0 w-px bg-line hidden md:block"
@@ -90,10 +89,10 @@ export default function WorkflowSection() {
             {STAGES.map((stage, i) => (
               <motion.li
                 key={stage.label}
-                initial={prefersReduced ? {} : { opacity: 0, x: -20 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.7, delay: i * 0.08, ease: "easeOut" }}
-                viewport={{ once: true, margin: "-40px" }}
+                initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45, delay: i * 0.06, ease: EDITORIAL_EASE }}
+                viewport={{ once: true, margin: "0px" }}
                 className="flex gap-8 md:gap-12 items-start"
               >
                 <div

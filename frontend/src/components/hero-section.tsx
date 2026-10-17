@@ -4,6 +4,7 @@ import { useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { motion, useScroll, useTransform, useReducedMotion } from "framer-motion";
+import { EDITORIAL_EASE } from "@/lib/animations";
 
 export default function HeroSection() {
   const ref = useRef<HTMLElement>(null);
@@ -62,52 +63,50 @@ export default function HeroSection() {
       >
         {/* Eyebrow */}
         <motion.p
-          initial={prefersReduced ? {} : { opacity: 0, y: 12 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
+          transition={{ duration: 0.45, ease: EDITORIAL_EASE }}
           className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary mb-6"
         >
-          A campus for people who build
+          Verified Campus Work Platform
         </motion.p>
 
         {/* Main heading */}
         <motion.h1
-          initial={prefersReduced ? {} : { opacity: 0, y: 20 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.0, delay: 0.35, ease: "easeOut" }}
-          className="font-display text-[clamp(42px,7vw,96px)] font-normal leading-[1.0] tracking-[-0.03em] text-ink max-w-4xl"
+          transition={{ duration: 0.55, delay: 0.1, ease: EDITORIAL_EASE }}
+          className="font-display text-[clamp(34px,5.8vw,82px)] font-normal leading-[1.1] text-ink max-w-6xl [text-wrap:balance]"
         >
-          A campus for
-          <br />
-          people who build.
+          A campus for people who&nbsp;build.
         </motion.h1>
 
         {/* Supporting copy */}
         <motion.p
-          initial={prefersReduced ? {} : { opacity: 0, y: 16 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.9, delay: 0.55, ease: "easeOut" }}
-          className="mt-6 text-base sm:text-lg text-ink-secondary max-w-md leading-relaxed"
+          transition={{ duration: 0.5, delay: 0.2, ease: EDITORIAL_EASE }}
+          className="mt-6 text-base sm:text-lg text-ink-secondary max-w-2xl leading-relaxed [text-wrap:balance]"
         >
-          Find opportunities, discover people, and turn ideas into something real.
+          Find opportunities, discover people, and turn ideas into something&nbsp;real.
         </motion.p>
 
         {/* CTAs */}
         <motion.div
-          initial={prefersReduced ? {} : { opacity: 0, y: 12 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.75, ease: "easeOut" }}
+          transition={{ duration: 0.45, delay: 0.28, ease: EDITORIAL_EASE }}
           className="mt-10 flex flex-wrap gap-4"
         >
           <Link
-            href="/jobs"
-            className="inline-block px-6 py-3 bg-ink text-canvas text-sm tracking-wide hover:bg-ink/90 transition-colors"
+            href="/projects"
+            className="inline-block px-6 py-3 bg-ink text-canvas text-sm tracking-wide hover:bg-ink/90 active:scale-[0.98] transition-all duration-150"
           >
-            Explore opportunities
+            Explore projects
           </Link>
           <a
             href="#how-it-works"
-            className="inline-block px-6 py-3 border border-ink text-ink text-sm tracking-wide hover:bg-ink hover:text-canvas transition-colors"
+            className="inline-block px-6 py-3 border border-ink text-ink text-sm tracking-wide hover:bg-ink hover:text-canvas active:scale-[0.98] transition-all duration-150"
           >
             How Lynk works
           </a>

@@ -6,7 +6,6 @@ import WorkflowSection from "@/components/workflow-section";
 import ProductShowcase from "@/components/product-showcase";
 import IntelligenceSection from "@/components/intelligence-section";
 import FinalCta from "@/components/final-cta";
-import SiteFooter from "@/components/site-footer";
 
 export default function HomePage() {
   return (
@@ -19,7 +18,6 @@ export default function HomePage() {
       <ProductShowcase />
       <IntelligenceSection />
       <FinalCta />
-      <SiteFooter />
     </main>
   );
 }

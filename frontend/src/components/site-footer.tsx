@@ -29,7 +29,7 @@ export default function SiteFooter() {
                 href="/jobs/create"
                 className="text-sm text-ink-secondary hover:text-ink transition-colors"
               >
-                Post a gig
+                Post an opportunity
               </Link>
               <Link
                 href="/contracts"
@@ -65,12 +65,7 @@ export default function SiteFooter() {
         </div>
 
         <div className="mt-12 pt-6 border-t border-line flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <p className="font-mono text-[11px] text-ink-secondary">
-            Lynk. Campus work platform. Academic year 2026.
-          </p>
-          <p className="font-mono text-[11px] text-ink-secondary">
-            Verified .edu identity required.
-          </p>
+          <p className="font-mono text-[11px] text-ink-secondary">Lynk</p>
         </div>
       </div>
     </footer>

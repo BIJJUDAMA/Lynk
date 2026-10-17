@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import Image from "next/image";
 import { motion, useScroll, useTransform, useReducedMotion } from "framer-motion";
+import { EDITORIAL_EASE } from "@/lib/animations";
 
 const STEPS = [
   {
@@ -18,7 +19,7 @@ const STEPS = [
   {
     num: "03",
     label: "Build together",
-    body: "Form a team, post a gig, or reach out directly. Campus collaboration, structured.",
+    body: "Form a team, publish an opportunity, or connect directly. Campus collaboration, structured.",
   },
 ];
 
@@ -34,14 +35,14 @@ export default function FindPeopleSection() {
       className="relative w-full bg-surface overflow-hidden"
       aria-labelledby="find-people-heading"
     >
-      <div className="max-w-7xl mx-auto px-6 lg:px-12 py-24 md:py-36 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
+      <div className="max-w-7xl mx-auto px-6 lg:px-12 py-20 md:py-28 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-start">
         {/* Left: sticky narrative text */}
         <div className="lg:sticky lg:top-32 space-y-16">
           <div>
             <motion.p
-              initial={prefersReduced ? {} : { opacity: 0, y: 12 }}
+              initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
               whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
+              transition={{ duration: 0.45, ease: EDITORIAL_EASE }}
               viewport={{ once: true }}
               className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary mb-5"
             >
@@ -49,27 +50,23 @@ export default function FindPeopleSection() {
             </motion.p>
             <motion.h2
               id="find-people-heading"
-              initial={prefersReduced ? {} : { opacity: 0, y: 20 }}
+              initial={prefersReduced ? {} : { opacity: 0, y: 8 }}
               whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 1.0, delay: 0.1, ease: "easeOut" }}
+              transition={{ duration: 0.5, delay: 0.08, ease: EDITORIAL_EASE }}
               viewport={{ once: true }}
-              className="font-display text-[clamp(32px,4.5vw,64px)] font-normal leading-[1.05] tracking-[-0.025em] text-ink"
+              className="font-display text-[clamp(32px,4vw,60px)] font-normal leading-[1.1] text-ink [text-wrap:balance]"
             >
-              The right people
-              <br />
-              are closer than
-              <br />
-              you think.
+              The right people are closer than you&nbsp;think.
             </motion.h2>
           </div>
 
           {STEPS.map((step, i) => (
             <motion.div
               key={step.num}
-              initial={prefersReduced ? {} : { opacity: 0, x: -16 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.7, delay: i * 0.12, ease: "easeOut" }}
-              viewport={{ once: true, margin: "-60px" }}
+              initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, delay: i * 0.06, ease: EDITORIAL_EASE }}
+              viewport={{ once: true, margin: "0px" }}
               className="flex gap-6"
             >
               <span className="font-mono text-[11px] text-ink-secondary pt-1 shrink-0 tracking-widest">

@@ -1,21 +1,45 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, useScroll, useTransform, useReducedMotion } from "framer-motion";
-import { ShieldCheck, ArrowRight, Star, FileText } from "lucide-react";
+import { ArrowRight, PlusCircle, Compass, Sparkles } from "lucide-react";
+import { EDITORIAL_EASE } from "@/lib/animations";
+import { listJobs } from "@/lib/api";
+import type { Job } from "@/types/api";
 
 export default function ProductShowcase() {
   const ref = useRef<HTMLElement>(null);
   const prefersReduced = useReducedMotion();
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "end start"] });
-  const scale = useTransform(
-    scrollYProgress,
-    [0, 0.5, 1],
-    [prefersReduced ? 1 : 0.96, 1, prefersReduced ? 1 : 1.01]
-  );
   const imgOpacity = useTransform(scrollYProgress, [0, 0.2, 0.8, 1], [0.6, 1, 1, 0.7]);
+
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    listJobs({ limit: 3, status: "open" })
+      .then((data) => {
+        if (isMounted && Array.isArray(data)) {
+          setJobs(data);
+        }
+      })
+      .catch((err) => {
+        // Non-blocking fallback if backend is booting
+        console.error("Failed to load showcase opportunities:", err);
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <section
@@ -25,9 +49,9 @@ export default function ProductShowcase() {
     >
       <div className="max-w-7xl mx-auto px-6 lg:px-12 py-24 md:py-36">
         <motion.p
-          initial={prefersReduced ? {} : { opacity: 0, y: 10 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7 }}
+          transition={{ duration: 0.45, ease: EDITORIAL_EASE }}
           viewport={{ once: true }}
           className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary mb-4"
         >
@@ -35,22 +59,20 @@ export default function ProductShowcase() {
         </motion.p>
         <motion.h2
           id="product-heading"
-          initial={prefersReduced ? {} : { opacity: 0, y: 20 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 8 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.9, delay: 0.1 }}
+          transition={{ duration: 0.5, delay: 0.08, ease: EDITORIAL_EASE }}
           viewport={{ once: true }}
-          className="font-display text-[clamp(32px,4.5vw,60px)] font-normal tracking-[-0.025em] text-ink mb-6 max-w-2xl"
+          className="font-display text-[clamp(32px,4.5vw,60px)] font-normal leading-[1.1] text-ink mb-6 max-w-4xl"
         >
-          The product is
-          <br />
-          the experience.
+          The product is the experience.
         </motion.h2>
         <motion.p
-          initial={prefersReduced ? {} : { opacity: 0, y: 16 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
+          transition={{ duration: 0.5, delay: 0.16, ease: EDITORIAL_EASE }}
           viewport={{ once: true }}
-          className="text-base text-ink-secondary leading-relaxed max-w-lg mb-14"
+          className="text-base text-ink-secondary leading-relaxed max-w-2xl mb-14"
         >
           Job discovery, verified campus identities, milestone contracts, and double-blind peer
           reviews. Built for real academic work.
@@ -58,7 +80,7 @@ export default function ProductShowcase() {
 
         {/* Product atmospheric artwork */}
         <motion.div
-          style={{ scale, opacity: imgOpacity }}
+          style={{ opacity: imgOpacity }}
           className="relative w-full aspect-[16/9] max-w-5xl mx-auto rounded-sm overflow-hidden border border-line"
           aria-hidden="true"
         >
@@ -78,133 +100,194 @@ export default function ProductShowcase() {
           />
         </motion.div>
 
-        {/* Real Product UI Components Layered Beneath */}
+        {/* Dynamic Database Opportunities Layered Beneath */}
         <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-          {/* Card 1: Live Opportunity Primitive */}
-          <motion.div
-            initial={prefersReduced ? {} : { opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.1 }}
-            viewport={{ once: true }}
-            className="border border-line bg-surface-elevated p-6 flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between text-[11px] font-mono text-ink-secondary pb-3 border-b border-line/60">
-                <span>OPPORTUNITY #8821</span>
-                <span className="text-accent-deep font-semibold">CAMPUS RESEARCH</span>
+          {isLoading ? (
+            // Skeleton Loading State
+            Array.from({ length: 3 }).map((_, idx) => (
+              <div
+                key={`skeleton-${idx}`}
+                className="border border-line bg-surface-elevated p-6 flex flex-col justify-between animate-pulse"
+                style={{ minHeight: "260px" }}
+              >
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-line/60">
+                    <div className="h-3 w-24 bg-line/60 rounded" />
+                    <div className="h-3 w-16 bg-line/60 rounded" />
+                  </div>
+                  <div className="h-5 w-3/4 bg-line/60 rounded mt-4" />
+                  <div className="h-3 w-full bg-line/40 rounded mt-3" />
+                  <div className="h-3 w-2/3 bg-line/40 rounded mt-1.5" />
+                  <div className="flex gap-2 mt-4">
+                    <div className="h-4 w-12 bg-line/50 rounded" />
+                    <div className="h-4 w-12 bg-line/50 rounded" />
+                  </div>
+                </div>
+                <div className="pt-4 border-t border-line/60 flex items-center justify-between">
+                  <div className="h-3 w-20 bg-line/50 rounded" />
+                  <div className="h-3 w-12 bg-line/50 rounded" />
+                </div>
               </div>
-              <h3 className="font-display text-xl text-ink mt-4 leading-snug">
-                Distributed Consensus Test Harness
-              </h3>
-              <p className="mt-2 text-xs text-ink-secondary leading-relaxed line-clamp-3">
-                Build an automated failure injection harness for evaluating Raft consensus edge
-                cases under network partitions.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-1.5 font-mono text-[10px]">
-                <span className="px-2 py-0.5 bg-surface border border-line text-ink-secondary">
-                  Go
-                </span>
-                <span className="px-2 py-0.5 bg-surface border border-line text-ink-secondary">
-                  Raft
-                </span>
-                <span className="px-2 py-0.5 bg-surface border border-line text-ink-secondary">
-                  Docker
-                </span>
-              </div>
-            </div>
-            <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[11px] font-mono text-ink-secondary">
-              <span>Systems & Networks Lab</span>
-              <span className="text-ink flex items-center gap-1">
-                Apply <ArrowRight className="h-3 w-3" />
-              </span>
-            </div>
-          </motion.div>
+            ))
+          ) : jobs.length > 0 ? (
+            // Live Opportunities from PostgreSQL Database
+            jobs.map((job, index) => {
+              const opportunityNumber = job.id.replace(/-/g, "").slice(0, 6).toUpperCase();
+              const creatorLabel =
+                job.creator?.organization ||
+                (job.creator?.first_name
+                  ? `${job.creator.first_name} ${job.creator.last_name || ""}`.trim()
+                  : job.department || "Campus Lab");
 
-          {/* Card 2: Contract State Machine Primitive */}
-          <motion.div
-            initial={prefersReduced ? {} : { opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            viewport={{ once: true }}
-            className="border border-line bg-surface-elevated p-6 flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between text-[11px] font-mono text-ink-secondary pb-3 border-b border-line/60">
-                <span>CONTRACT #LNK-409</span>
-                <span className="text-accent-deep font-semibold">MILESTONE 2/2</span>
-              </div>
-              <h3 className="font-display text-xl text-ink mt-4 leading-snug">
-                Milestone Deliverable Agreement
-              </h3>
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="text-ink-secondary">Draft</span>
-                  <span className="text-ink-secondary line-through">Signed</span>
+              return (
+                <motion.div
+                  key={job.id}
+                  initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.45, delay: index * 0.06, ease: EDITORIAL_EASE }}
+                  viewport={{ once: true }}
+                  className="border border-line bg-surface-elevated p-6 flex flex-col justify-between hover:border-ink/40 transition-colors"
+                >
+                  <div>
+                    <div className="flex items-center justify-between text-[11px] font-mono text-ink-secondary pb-3 border-b border-line/60">
+                      <span>OPPORTUNITY #{opportunityNumber}</span>
+                      <span className="text-accent-deep font-semibold uppercase">
+                        {job.department || "CAMPUS"}
+                      </span>
+                    </div>
+                    <Link href={`/jobs/${job.id}`}>
+                      <h3 className="font-display text-xl text-ink mt-4 leading-snug hover:text-ink/80 transition-colors line-clamp-2">
+                        {job.title}
+                      </h3>
+                    </Link>
+                    <p className="mt-2 text-xs text-ink-secondary leading-relaxed line-clamp-3">
+                      {job.description}
+                    </p>
+                    {job.required_skills && job.required_skills.length > 0 && (
+                      <div className="mt-4 flex flex-wrap gap-1.5 font-mono text-[10px]">
+                        {job.required_skills.slice(0, 3).map((skill) => (
+                          <span
+                            key={skill}
+                            className="px-2 py-0.5 bg-surface border border-line text-ink-secondary"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[11px] font-mono text-ink-secondary">
+                    <span className="truncate max-w-[150px]">{creatorLabel}</span>
+                    <Link
+                      href={`/jobs/${job.id}`}
+                      className="text-ink flex items-center gap-1 hover:text-accent-deep transition-colors"
+                    >
+                      Apply <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  </div>
+                </motion.div>
+              );
+            })
+          ) : (
+            // Clean Fallback / Empty State when database has no open postings
+            <>
+              <motion.div
+                initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45, delay: 0.06, ease: EDITORIAL_EASE }}
+                viewport={{ once: true }}
+                className="border border-line bg-surface-elevated p-6 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between text-[11px] font-mono text-ink-secondary pb-3 border-b border-line/60">
+                    <span>MARKETPLACE</span>
+                    <span className="text-accent-deep font-semibold">CAMPUS DIRECT</span>
+                  </div>
+                  <h3 className="font-display text-xl text-ink mt-4 leading-snug">
+                    Browse All Opportunities
+                  </h3>
+                  <p className="mt-2 text-xs text-ink-secondary leading-relaxed">
+                    Filter open campus research gigs, software contracts, and design projects by
+                    academic department.
+                  </p>
                 </div>
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="text-ink-secondary">Active</span>
-                  <span className="text-accent-deep font-medium">In Progress</span>
-                </div>
-                <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="text-ink-secondary">Completed</span>
-                  <span className="text-ink-secondary">Pending Sign-off</span>
-                </div>
-              </div>
-            </div>
-            <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[11px] font-mono text-ink-secondary">
-              <span className="flex items-center gap-1">
-                <FileText className="h-3 w-3" /> Milestone Deliverable
-              </span>
-              <span className="text-ink">Mutual Sign-off</span>
-            </div>
-          </motion.div>
-
-          {/* Card 3: Verified Campus Profile & Peer Score */}
-          <motion.div
-            initial={prefersReduced ? {} : { opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.3 }}
-            viewport={{ once: true }}
-            className="border border-line bg-surface-elevated p-6 flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between text-[11px] font-mono text-ink-secondary pb-3 border-b border-line/60">
-                <span className="flex items-center gap-1">
-                  <ShieldCheck className="h-3.5 w-3.5 text-accent-deep" />
-                  VERIFIED .EDU
-                </span>
-                <span>STANFORD</span>
-              </div>
-              <h3 className="font-display text-xl text-ink mt-4 leading-snug">
-                Student Profile & Ledger
-              </h3>
-              <p className="mt-2 text-xs text-ink-secondary leading-relaxed">
-                Computer Science & Bioengineering // Class of 2026. 6 completed contracts with
-                verified faculty laboratories.
-              </p>
-              <div className="mt-4 p-3 bg-surface border border-line text-xs font-mono space-y-1">
-                <div className="flex items-center justify-between text-ink font-semibold">
+                <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[11px] font-mono text-ink-secondary">
                   <span className="flex items-center gap-1">
-                    <Star className="h-3 w-3 fill-accent-warm text-accent-warm" /> 5.0 Rating
+                    <Compass className="h-3 w-3" /> Open Marketplace
                   </span>
-                  <span className="text-ink-secondary text-[10px]">100% ON TIME</span>
+                  <Link href="/jobs" className="text-ink flex items-center gap-1">
+                    Explore <ArrowRight className="h-3 w-3" />
+                  </Link>
                 </div>
-                <p className="text-[11px] text-ink-secondary italic pt-1">
-                  &quot;Production-grade delivery on schedule.&quot;
-                </p>
-              </div>
-            </div>
-            <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[11px] font-mono text-ink-secondary">
-              <span>Resume in MinIO</span>
-              <span className="text-ink">View Profile</span>
-            </div>
-          </motion.div>
+              </motion.div>
+
+              <motion.div
+                initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45, delay: 0.12, ease: EDITORIAL_EASE }}
+                viewport={{ once: true }}
+                className="border border-line bg-surface-elevated p-6 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between text-[11px] font-mono text-ink-secondary pb-3 border-b border-line/60">
+                    <span>CREATION</span>
+                    <span className="text-accent-deep font-semibold">FACULTY & PEERS</span>
+                  </div>
+                  <h3 className="font-display text-xl text-ink mt-4 leading-snug">
+                    Post an Opportunity
+                  </h3>
+                  <p className="mt-2 text-xs text-ink-secondary leading-relaxed">
+                    Looking for student collaborators or lab assistants? Define deliverables and
+                    receive proposals instantly.
+                  </p>
+                </div>
+                <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[11px] font-mono text-ink-secondary">
+                  <span className="flex items-center gap-1">
+                    <PlusCircle className="h-3 w-3" /> Create Posting
+                  </span>
+                  <Link href="/jobs/create" className="text-ink flex items-center gap-1">
+                    Post <ArrowRight className="h-3 w-3" />
+                  </Link>
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45, delay: 0.18, ease: EDITORIAL_EASE }}
+                viewport={{ once: true }}
+                className="border border-line bg-surface-elevated p-6 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between text-[11px] font-mono text-ink-secondary pb-3 border-b border-line/60">
+                    <span>REPUTATION</span>
+                    <span className="text-accent-deep font-semibold">VERIFIED .EDU</span>
+                  </div>
+                  <h3 className="font-display text-xl text-ink mt-4 leading-snug">
+                    Verified Campus Identity
+                  </h3>
+                  <p className="mt-2 text-xs text-ink-secondary leading-relaxed">
+                    Build a tamper-proof portfolio of peer deliverables, lab contracts, and
+                    institutional credentials.
+                  </p>
+                </div>
+                <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[11px] font-mono text-ink-secondary">
+                  <span className="flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" /> Peer Reviews
+                  </span>
+                  <Link href="/login" className="text-ink flex items-center gap-1">
+                    Sign in <ArrowRight className="h-3 w-3" />
+                  </Link>
+                </div>
+              </motion.div>
+            </>
+          )}
         </div>
 
         <motion.div
-          initial={prefersReduced ? {} : { opacity: 0, y: 10 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.4 }}
+          transition={{ duration: 0.45, delay: 0.24, ease: EDITORIAL_EASE }}
           viewport={{ once: true }}
           className="mt-14 flex flex-wrap gap-6 justify-center"
         >

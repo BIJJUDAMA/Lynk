@@ -4,6 +4,7 @@ import { useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, useScroll, useTransform, useReducedMotion } from "framer-motion";
+import { EDITORIAL_EASE } from "@/lib/animations";
 
 export default function FinalCta() {
   const ref = useRef<HTMLElement>(null);
@@ -40,11 +41,11 @@ export default function FinalCta() {
         />
       </motion.div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-12 py-32 md:py-48 text-center w-full">
+      <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-12 py-24 md:py-32 text-center w-full">
         <motion.p
-          initial={prefersReduced ? {} : { opacity: 0, y: 10 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7 }}
+          transition={{ duration: 0.45, ease: EDITORIAL_EASE }}
           viewport={{ once: true }}
           className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary mb-6"
         >
@@ -52,37 +53,41 @@ export default function FinalCta() {
         </motion.p>
         <motion.h2
           id="cta-heading"
-          initial={prefersReduced ? {} : { opacity: 0, y: 28 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 8 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.1, delay: 0.1, ease: "easeOut" }}
+          transition={{ duration: 0.5, delay: 0.08, ease: EDITORIAL_EASE }}
           viewport={{ once: true }}
-          className="font-display text-[clamp(48px,7vw,96px)] font-normal tracking-[-0.03em] text-ink leading-[1.0] max-w-3xl mx-auto"
+          className="font-display text-[clamp(44px,6.5vw,88px)] font-normal text-ink leading-[1.1] max-w-5xl mx-auto [text-wrap:balance]"
         >
-          Build something
-          <br />
-          real.
+          Build something&nbsp;real.
         </motion.h2>
         <motion.p
-          initial={prefersReduced ? {} : { opacity: 0, y: 16 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.9, delay: 0.25 }}
+          transition={{ duration: 0.5, delay: 0.16, ease: EDITORIAL_EASE }}
           viewport={{ once: true }}
-          className="mt-6 text-base sm:text-lg text-ink-secondary max-w-sm mx-auto leading-relaxed"
+          className="mt-6 text-base sm:text-lg text-ink-secondary max-w-xl mx-auto leading-relaxed [text-wrap:balance]"
         >
-          Your campus is full of ideas, skills, and people ready to build.
+          Your campus is full of ideas, skills, and people ready to&nbsp;build.
         </motion.p>
         <motion.div
-          initial={prefersReduced ? {} : { opacity: 0, y: 10 }}
+          initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.4 }}
+          transition={{ duration: 0.45, delay: 0.24, ease: EDITORIAL_EASE }}
           viewport={{ once: true }}
-          className="mt-12"
+          className="mt-12 flex flex-wrap items-center justify-center gap-4"
         >
           <Link
-            href="/login"
-            className="inline-block px-10 py-4 bg-ink text-canvas text-sm tracking-widest uppercase hover:bg-ink/90 transition-colors"
+            href="/jobs"
+            className="inline-block px-8 py-3.5 bg-ink text-canvas text-xs uppercase tracking-widest hover:bg-ink/90 active:scale-[0.98] transition-all duration-150"
           >
-            Join Lynk
+            Explore Opportunities
+          </Link>
+          <Link
+            href="/login"
+            className="inline-block px-8 py-3.5 border border-ink text-ink text-xs uppercase tracking-widest hover:bg-ink hover:text-canvas active:scale-[0.98] transition-all duration-150"
+          >
+            Sign In with .edu
           </Link>
         </motion.div>
       </div>
