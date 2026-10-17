@@ -30,13 +30,25 @@ import (
 	"github.com/lynk/backend/internal/metrics"
 	"github.com/lynk/backend/internal/middleware"
 	"github.com/lynk/backend/internal/outbox"
+	"github.com/lynk/backend/internal/project"
 	"github.com/lynk/backend/internal/ratelimit"
+	"github.com/lynk/backend/internal/recruitment"
 	"github.com/lynk/backend/internal/review"
 	"github.com/lynk/backend/internal/sse"
 	"github.com/lynk/backend/internal/storage"
+	"github.com/lynk/backend/internal/team"
 	"github.com/lynk/backend/internal/user"
+	"github.com/lynk/backend/internal/workspace"
 	"github.com/supertokens/supertokens-golang/supertokens"
 )
+
+// ProjectRouterOptions groups optional handlers for project-first domains.
+type ProjectRouterOptions struct {
+	ProjectHandler     *project.Handler
+	TeamHandler        *team.Handler
+	RecruitmentHandler *recruitment.Handler
+	WorkspaceHandler   *workspace.Handler
+}
 
 // Config aliases config.Config for backward compatibility within cmd/api.
 type Config = config.Config
@@ -117,8 +129,57 @@ func BuildRouter(
 	authMiddleware func(http.Handler) http.Handler,
 	s3Client storage.Client,
 	sseBroker *sse.Broker,
-	aiHandler ...*ai.AIHandler,
+	extras ...any,
 ) *chi.Mux {
+	var aiH *ai.AIHandler
+	var projectH *project.Handler
+	var teamH *team.Handler
+	var recruitmentH *recruitment.Handler
+	var workspaceH *workspace.Handler
+
+	for _, extra := range extras {
+		switch v := extra.(type) {
+		case *ai.AIHandler:
+			aiH = v
+		case *project.Handler:
+			projectH = v
+		case *team.Handler:
+			teamH = v
+		case *recruitment.Handler:
+			recruitmentH = v
+		case *workspace.Handler:
+			workspaceH = v
+		case ProjectRouterOptions:
+			if v.ProjectHandler != nil {
+				projectH = v.ProjectHandler
+			}
+			if v.TeamHandler != nil {
+				teamH = v.TeamHandler
+			}
+			if v.RecruitmentHandler != nil {
+				recruitmentH = v.RecruitmentHandler
+			}
+			if v.WorkspaceHandler != nil {
+				workspaceH = v.WorkspaceHandler
+			}
+		case *ProjectRouterOptions:
+			if v != nil {
+				if v.ProjectHandler != nil {
+					projectH = v.ProjectHandler
+				}
+				if v.TeamHandler != nil {
+					teamH = v.TeamHandler
+				}
+				if v.RecruitmentHandler != nil {
+					recruitmentH = v.RecruitmentHandler
+				}
+				if v.WorkspaceHandler != nil {
+					workspaceH = v.WorkspaceHandler
+				}
+			}
+		}
+	}
+
 	r := chi.NewRouter()
 
 	// Global Middlewares
@@ -237,10 +298,10 @@ func BuildRouter(
 				})
 
 				// AI recommendations (requires verified campus email)
-				if len(aiHandler) > 0 && aiHandler[0] != nil {
+				if aiH != nil {
 					r.Group(func(vr chi.Router) {
 						vr.Use(middleware.RequireVerifiedEmail())
-						vr.Get("/recommendations", aiHandler[0].GetMyRecommendations)
+						vr.Get("/recommendations", aiH.GetMyRecommendations)
 					})
 				}
 
@@ -269,8 +330,8 @@ func BuildRouter(
 					// Literal /mine before /{id}
 					pr.Get("/mine", jobHandler.GetMyJobs)
 					// AI job draft generator (literal /generate before /{id})
-					if len(aiHandler) > 0 && aiHandler[0] != nil {
-						pr.Post("/generate", aiHandler[0].GenerateJobDraft)
+					if aiH != nil {
+						pr.Post("/generate", aiH.GenerateJobDraft)
 					}
 					pr.Post("/", jobHandler.CreateJob)
 					pr.Put("/{id}", jobHandler.UpdateJob)
@@ -283,8 +344,8 @@ func BuildRouter(
 					}
 
 					// AI applicant ranking (requires session, verified email, and job ownership)
-					if len(aiHandler) > 0 && aiHandler[0] != nil {
-						pr.Get("/{id}/applicants/ranking", aiHandler[0].RankApplicants)
+					if aiH != nil {
+						pr.Get("/{id}/applicants/ranking", aiH.RankApplicants)
 					}
 				})
 
@@ -293,20 +354,103 @@ func BuildRouter(
 			})
 		}
 
-		// Applications endpoints
-		if appHandler != nil {
-			r.Route("/applications", func(r chi.Router) {
-				r.Use(authMiddleware)
-				r.Use(middleware.RequireVerifiedEmail())
-				// Literal /mine and /applied before /{id}
-				r.Get("/mine", appHandler.GetMyApplications)
-				r.Get("/applied", appHandler.GetMyApplicationForJob)
-				r.Get("/{id}", appHandler.GetApplicationByID)
-				r.Patch("/{id}/status", appHandler.UpdateApplicationStatus)
+		// Project workspace endpoints
+		if projectH != nil || teamH != nil || recruitmentH != nil || workspaceH != nil {
+			r.Route("/projects", func(pr chi.Router) {
+				// Public collection and workspace read routes
+				if projectH != nil {
+					pr.Get("/", projectH.ListProjects)
+				}
+				if teamH != nil {
+					pr.Get("/{id}/members", teamH.ListMembers)
+				}
+				if workspaceH != nil {
+					pr.Get("/{id}/sections", workspaceH.GetSections)
+					pr.Get("/{id}/resources", workspaceH.ListResources)
+					pr.Get("/{id}/activity", workspaceH.ListActivity)
+				}
+
+				// Protected project, team, recruitment, and workspace routes (verified campus email required)
+				pr.Group(func(sec chi.Router) {
+					sec.Use(authMiddleware)
+					sec.Use(middleware.RequireVerifiedEmail())
+
+					if projectH != nil {
+						sec.Post("/", projectH.CreateProject)
+						sec.Patch("/{id}", projectH.UpdateProject)
+						sec.Put("/{id}", projectH.UpdateProject)
+						sec.Patch("/{id}/visibility", projectH.UpdateVisibility)
+						sec.Put("/{id}/visibility", projectH.UpdateVisibility)
+					}
+
+					if teamH != nil {
+						sec.Post("/{id}/invitations", teamH.InviteMember)
+						sec.Post("/invitations/{id}/accept", teamH.AcceptInvitation)
+						sec.Patch("/{id}/members/{memberId}", teamH.UpdateRole)
+						sec.Delete("/{id}/members/{memberId}", teamH.RemoveMember)
+						sec.Post("/{id}/transfer-leadership", teamH.TransferLeadership)
+					}
+
+					if recruitmentH != nil {
+						sec.Get("/{id}/questions", recruitmentH.ListQuestions)
+						sec.Post("/{id}/questions", recruitmentH.CreateQuestion)
+						sec.Post("/{id}/applications", recruitmentH.SubmitApplication)
+						sec.Get("/{id}/applications", recruitmentH.ListProjectApplications)
+					}
+
+					if workspaceH != nil {
+						sec.Put("/{id}/sections", workspaceH.UpdateSections)
+						sec.Patch("/{id}/sections", workspaceH.UpdateSections)
+						sec.Post("/{id}/resources", workspaceH.AddResource)
+						sec.Delete("/{id}/resources/{resourceId}", workspaceH.DeleteResource)
+					}
+				})
+
+				// Single project retrieval by ID or slug (registered after literal/subpath routes)
+				if projectH != nil {
+					pr.Get("/{idOrSlug}", projectH.GetProject)
+				}
 			})
 		}
 
-		// Contracts endpoints
+		// Invitations direct acceptance endpoint
+		if teamH != nil {
+			r.Group(func(pr chi.Router) {
+				pr.Use(authMiddleware)
+				pr.Use(middleware.RequireVerifiedEmail())
+				pr.Post("/invitations/{id}/accept", teamH.AcceptInvitation)
+			})
+		}
+
+		// Applications endpoints
+		if recruitmentH != nil || appHandler != nil {
+			r.Route("/applications", func(ar chi.Router) {
+				ar.Use(authMiddleware)
+				ar.Use(middleware.RequireVerifiedEmail())
+
+				if recruitmentH != nil {
+					ar.Get("/me", recruitmentH.ListMyApplications)
+					ar.Get("/mine", recruitmentH.ListMyApplications)
+					ar.Get("/{id}", recruitmentH.GetApplication)
+					ar.Post("/{id}/accept", recruitmentH.AcceptApplication)
+					ar.Post("/{id}/reject", recruitmentH.RejectApplication)
+					ar.Post("/{id}/shortlist", recruitmentH.ShortlistApplication)
+					ar.Post("/{id}/withdraw", recruitmentH.WithdrawApplication)
+				}
+
+				if appHandler != nil {
+					// Fallback routes for legacy job application handlers
+					if recruitmentH == nil {
+						ar.Get("/mine", appHandler.GetMyApplications)
+						ar.Get("/{id}", appHandler.GetApplicationByID)
+					}
+					ar.Get("/applied", appHandler.GetMyApplicationForJob)
+					ar.Patch("/{id}/status", appHandler.UpdateApplicationStatus)
+				}
+			})
+		}
+
+		// Contracts endpoints (deprecated: direct workspace membership via project_members replaces contracts)
 		if contractHandler != nil || reviewHandler != nil {
 			r.Route("/contracts", func(r chi.Router) {
 				if reviewHandler != nil {
@@ -336,20 +480,19 @@ func BuildRouter(
 		}
 
 		// AI user review insights endpoint (public campus reputation viewing)
-		if len(aiHandler) > 0 && aiHandler[0] != nil {
-			r.Get("/users/{id}/ai-insights", aiHandler[0].GetUserAIInsights)
-			r.Get("/analytics/skills", aiHandler[0].GetSkillAnalytics)
+		if aiH != nil {
+			r.Get("/users/{id}/ai-insights", aiH.GetUserAIInsights)
+			r.Get("/analytics/skills", aiH.GetSkillAnalytics)
 		}
 
 		// AI search endpoints
-
-		if len(aiHandler) > 0 && aiHandler[0] != nil {
-			aiHandler[0].RegisterRoutes(r, authMiddleware)
+		if aiH != nil {
+			aiH.RegisterRoutes(r, authMiddleware)
 			if userHandler == nil {
 				r.Route("/profile", func(pr chi.Router) {
 					pr.Use(authMiddleware)
 					pr.Use(middleware.RequireVerifiedEmail())
-					pr.Get("/recommendations", aiHandler[0].GetMyRecommendations)
+					pr.Get("/recommendations", aiH.GetMyRecommendations)
 				})
 			}
 		}
@@ -557,6 +700,23 @@ func main() {
 
 	go outboxWorker.Start(ctx)
 
+	// 5b. Wire Project-First Domain Repositories, Services, and Handlers
+	projectRepo := project.NewRepository(pool)
+	projectService := project.NewService(projectRepo)
+	projectHandler := project.NewHandler(projectService, projectRepo)
+
+	teamRepo := team.NewRepository(pool)
+	teamService := team.NewService(teamRepo)
+	teamHandler := team.NewHandler(teamService, teamRepo)
+
+	recruitmentRepo := recruitment.NewRepository(pool)
+	recruitmentService := recruitment.NewService(recruitmentRepo, projectRepo, teamRepo)
+	recruitmentHandler := recruitment.NewHandler(recruitmentService)
+
+	workspaceRepo := workspace.NewRepository(pool)
+	workspaceService := workspace.NewService(workspaceRepo, projectRepo, teamRepo)
+	workspaceHandler := workspace.NewHandler(workspaceService)
+
 	router := BuildRouter(
 		cfg,
 		pool,
@@ -569,6 +729,12 @@ func main() {
 		s3Client,
 		sseBroker,
 		aiHandler,
+		ProjectRouterOptions{
+			ProjectHandler:     projectHandler,
+			TeamHandler:        teamHandler,
+			RecruitmentHandler: recruitmentHandler,
+			WorkspaceHandler:   workspaceHandler,
+		},
 	)
 
 	// 7. Start HTTP Server with Graceful Shutdown

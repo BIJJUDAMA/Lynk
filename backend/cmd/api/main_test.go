@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,10 +21,14 @@ import (
 	"github.com/lynk/backend/internal/contract"
 	"github.com/lynk/backend/internal/job"
 	"github.com/lynk/backend/internal/middleware"
+	"github.com/lynk/backend/internal/project"
+	"github.com/lynk/backend/internal/recruitment"
 	"github.com/lynk/backend/internal/review"
 	"github.com/lynk/backend/internal/sse"
 	"github.com/lynk/backend/internal/storage"
+	"github.com/lynk/backend/internal/team"
 	"github.com/lynk/backend/internal/user"
+	"github.com/lynk/backend/internal/workspace"
 )
 
 type stubStore struct{}
@@ -913,4 +918,391 @@ func TestBuildRouter_WithDistributedSSEBroker(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401 Unauthorized for unauthenticated SSE, got %d", rec.Code)
 	}
+}
+
+type mockMultiTokenValidator struct {
+	tokens map[string]*auth.UserClaims
+}
+
+func (m *mockMultiTokenValidator) ValidateToken(ctx context.Context, tokenStr string) (*auth.UserClaims, error) {
+	if claims, ok := m.tokens[tokenStr]; ok {
+		return claims, nil
+	}
+	return nil, errors.New("invalid token")
+}
+
+type mockProjectRepo struct {
+	projects []project.Project
+}
+
+func (m *mockProjectRepo) CreateProject(ctx context.Context, p *project.Project) error {
+	p.ID = uuid.New()
+	p.CreatedAt = time.Now()
+	p.UpdatedAt = time.Now()
+	m.projects = append(m.projects, *p)
+	return nil
+}
+
+func (m *mockProjectRepo) GetProjectByID(ctx context.Context, id uuid.UUID) (*project.Project, error) {
+	for _, p := range m.projects {
+		if p.ID == id {
+			return &p, nil
+		}
+	}
+	return nil, project.ErrProjectNotFound
+}
+
+func (m *mockProjectRepo) GetProjectBySlug(ctx context.Context, slug string) (*project.Project, error) {
+	for _, p := range m.projects {
+		if p.Slug == slug {
+			return &p, nil
+		}
+	}
+	return nil, project.ErrProjectNotFound
+}
+
+func (m *mockProjectRepo) ListProjects(ctx context.Context, filter project.ListFilter) ([]project.Project, int, error) {
+	return m.projects, len(m.projects), nil
+}
+
+func (m *mockProjectRepo) UpdateProject(ctx context.Context, p *project.Project) error {
+	return nil
+}
+
+var _ project.Repository = (*mockProjectRepo)(nil)
+
+type mockTeamRepo struct {
+	members []team.ProjectMember
+}
+
+func (m *mockTeamRepo) AddMember(ctx context.Context, pm *team.ProjectMember) error {
+	m.members = append(m.members, *pm)
+	return nil
+}
+
+func (m *mockTeamRepo) GetMember(ctx context.Context, projectID uuid.UUID, memberID string) (*team.ProjectMember, error) {
+	for _, mem := range m.members {
+		if mem.ProjectID == projectID && mem.MemberID == memberID {
+			return &mem, nil
+		}
+	}
+	return nil, team.ErrMemberNotFound
+}
+
+func (m *mockTeamRepo) ListMembers(ctx context.Context, projectID uuid.UUID) ([]team.ProjectMember, error) {
+	return m.members, nil
+}
+
+func (m *mockTeamRepo) UpdateRole(ctx context.Context, projectID uuid.UUID, memberID string, role team.Role) error {
+	return nil
+}
+
+func (m *mockTeamRepo) RemoveMember(ctx context.Context, projectID uuid.UUID, memberID string) error {
+	return nil
+}
+
+func (m *mockTeamRepo) CreateInvitation(ctx context.Context, inv *team.ProjectInvitation) error {
+	return nil
+}
+
+func (m *mockTeamRepo) GetInvitation(ctx context.Context, id uuid.UUID) (*team.ProjectInvitation, error) {
+	return nil, nil
+}
+
+func (m *mockTeamRepo) UpdateInvitationStatus(ctx context.Context, id uuid.UUID, status string) error {
+	return nil
+}
+
+func (m *mockTeamRepo) CountLeads(ctx context.Context, projectID uuid.UUID) (int, error) {
+	return 1, nil
+}
+
+func (m *mockTeamRepo) TransferLeadershipTx(ctx context.Context, projectID uuid.UUID, currentLeadID, newLeadID string) error {
+	return nil
+}
+
+var _ team.Repository = (*mockTeamRepo)(nil)
+
+type mockRecruitmentRepo struct {
+	applications []recruitment.Application
+	questions    []recruitment.ApplicationQuestion
+}
+
+func (m *mockRecruitmentRepo) CreateApplication(ctx context.Context, app *recruitment.Application, answers []recruitment.ApplicationAnswer) error {
+	app.ID = uuid.New()
+	app.Status = recruitment.StatusSubmitted
+	m.applications = append(m.applications, *app)
+	return nil
+}
+
+func (m *mockRecruitmentRepo) GetApplicationByID(ctx context.Context, id uuid.UUID) (*recruitment.Application, error) {
+	for _, a := range m.applications {
+		if a.ID == id {
+			return &a, nil
+		}
+	}
+	return nil, recruitment.ErrApplicationNotFound
+}
+
+func (m *mockRecruitmentRepo) ListApplications(ctx context.Context, projectID uuid.UUID, statusFilter *recruitment.ApplicationStatus) ([]recruitment.Application, error) {
+	var result []recruitment.Application
+	for _, a := range m.applications {
+		if a.ProjectID == projectID {
+			if statusFilter == nil || a.Status == *statusFilter {
+				result = append(result, a)
+			}
+		}
+	}
+	return result, nil
+}
+
+func (m *mockRecruitmentRepo) ListMyApplications(ctx context.Context, applicantID string) ([]recruitment.Application, error) {
+	return m.applications, nil
+}
+
+func (m *mockRecruitmentRepo) UpdateApplicationStatus(ctx context.Context, id uuid.UUID, status recruitment.ApplicationStatus, reviewerNotes string, decidedBy string) error {
+	return nil
+}
+
+func (m *mockRecruitmentRepo) WithdrawApplication(ctx context.Context, id uuid.UUID, applicantID string) error {
+	return nil
+}
+
+func (m *mockRecruitmentRepo) AcceptApplicationTx(ctx context.Context, appID uuid.UUID, reviewerID string) error {
+	return nil
+}
+
+func (m *mockRecruitmentRepo) ListQuestions(ctx context.Context, projectID uuid.UUID) ([]recruitment.ApplicationQuestion, error) {
+	return m.questions, nil
+}
+
+func (m *mockRecruitmentRepo) CreateQuestion(ctx context.Context, q *recruitment.ApplicationQuestion) error {
+	m.questions = append(m.questions, *q)
+	return nil
+}
+
+var _ recruitment.Repository = (*mockRecruitmentRepo)(nil)
+
+type mockWorkspaceRepo struct{}
+
+func (m *mockWorkspaceRepo) GetSections(ctx context.Context, projectID uuid.UUID) ([]workspace.ProjectSection, error) {
+	return []workspace.ProjectSection{}, nil
+}
+
+func (m *mockWorkspaceRepo) UpsertSections(ctx context.Context, projectID uuid.UUID, sections []workspace.ProjectSection) error {
+	return nil
+}
+
+func (m *mockWorkspaceRepo) ListResources(ctx context.Context, projectID uuid.UUID) ([]workspace.ProjectResource, error) {
+	return []workspace.ProjectResource{}, nil
+}
+
+func (m *mockWorkspaceRepo) AddResource(ctx context.Context, res *workspace.ProjectResource) error {
+	return nil
+}
+
+func (m *mockWorkspaceRepo) DeleteResource(ctx context.Context, projectID, resourceID uuid.UUID) error {
+	return nil
+}
+
+func (m *mockWorkspaceRepo) RecordActivity(ctx context.Context, act *workspace.ProjectActivity) error {
+	return nil
+}
+
+func (m *mockWorkspaceRepo) ListActivity(ctx context.Context, projectID uuid.UUID, limit int) ([]workspace.ProjectActivity, error) {
+	return []workspace.ProjectActivity{}, nil
+}
+
+var _ workspace.Repository = (*mockWorkspaceRepo)(nil)
+
+func TestBuildRouter_ProjectAndRecruitmentRoutes(t *testing.T) {
+	cfg := DefaultTestConfig()
+
+	projID := uuid.New()
+	ownerID := "user-owner-123"
+
+	projRepo := &mockProjectRepo{
+		projects: []project.Project{
+			{
+				ID:                projID,
+				Title:             "Autonomous Drone Project",
+				Slug:              "autonomous-drone-project",
+				OwnerMemberID:     ownerID,
+				RecruitmentStatus: project.RecruitmentOpen,
+				Visibility:        project.VisibilityPublic,
+				LifecycleStatus:   project.LifecycleActive,
+			},
+		},
+	}
+	projService := project.NewService(projRepo)
+	projHandler := project.NewHandler(projService, projRepo)
+
+	teamRepo := &mockTeamRepo{
+		members: []team.ProjectMember{
+			{
+				ProjectID: projID,
+				MemberID:  ownerID,
+				Role:      team.RoleLead,
+				Status:    "active",
+			},
+		},
+	}
+	teamService := team.NewService(teamRepo)
+	teamHandler := team.NewHandler(teamService, teamRepo)
+
+	appID := uuid.New()
+	recruitmentRepo := &mockRecruitmentRepo{
+		applications: []recruitment.Application{
+			{
+				ID:          appID,
+				ProjectID:   projID,
+				ApplicantID: "user-applicant-456",
+				Status:      recruitment.StatusSubmitted,
+			},
+		},
+	}
+	recruitmentService := recruitment.NewService(recruitmentRepo, projRepo, teamRepo)
+	recruitmentHandler := recruitment.NewHandler(recruitmentService)
+
+	workspaceRepo := &mockWorkspaceRepo{}
+	workspaceService := workspace.NewService(workspaceRepo, projRepo, teamRepo)
+	workspaceHandler := workspace.NewHandler(workspaceService)
+
+	verifiedLeadClaims := &auth.UserClaims{
+		UserID:        ownerID,
+		Email:         "lead@berkeley.edu",
+		EmailVerified: true,
+		Roles:         []string{"student"},
+	}
+	applicantClaims := &auth.UserClaims{
+		UserID:        "user-applicant-new",
+		Email:         "applicant@berkeley.edu",
+		EmailVerified: true,
+		Roles:         []string{"student"},
+	}
+	unverifiedClaims := &auth.UserClaims{
+		UserID:        "user-unverified",
+		Email:         "unverified@berkeley.edu",
+		EmailVerified: false,
+		Roles:         []string{"student"},
+	}
+
+	validator := &mockMultiTokenValidator{
+		tokens: map[string]*auth.UserClaims{
+			"valid-lead-token":      verifiedLeadClaims,
+			"valid-applicant-token": applicantClaims,
+			"unverified-token":      unverifiedClaims,
+		},
+	}
+
+	authMW := middleware.AuthMiddleware(validator)
+
+	router := BuildRouter(
+		cfg,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		authMW,
+		stubStore{},
+		nil,
+		ProjectRouterOptions{
+			ProjectHandler:     projHandler,
+			TeamHandler:        teamHandler,
+			RecruitmentHandler: recruitmentHandler,
+			WorkspaceHandler:   workspaceHandler,
+		},
+	)
+
+	// 1. GET /api/v1/projects returns 200 with project collection.
+	t.Run("GET /api/v1/projects returns 200 with project collection", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		data, ok := resp["data"].([]any)
+		if !ok || len(data) == 0 {
+			t.Fatalf("expected non-empty project list in data field, got %v", resp)
+		}
+	})
+
+	// 2. POST /api/v1/projects without auth returns 401.
+	t.Run("POST /api/v1/projects without auth returns 401", func(t *testing.T) {
+		body := `{"title":"New Project","category":"engineering"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 Unauthorized, got %d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	// 3. POST /api/v1/projects without verified email returns 403.
+	t.Run("POST /api/v1/projects without verified email returns 403", func(t *testing.T) {
+		body := `{"title":"New Project","category":"engineering"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer unverified-token")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "EMAIL_NOT_VERIFIED") {
+			t.Fatalf("expected EMAIL_NOT_VERIFIED in error response, got %s", rec.Body.String())
+		}
+	})
+
+	// 4. POST /api/v1/projects/{id}/applications routes to recruitment handler.
+	t.Run("POST /api/v1/projects/{id}/applications routes to recruitment handler", func(t *testing.T) {
+		body := `{"statement":"I would love to contribute to this drone project."}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projID.String()+"/applications", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer valid-applicant-token")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201 Created from recruitment handler, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to parse JSON response: %v", err)
+		}
+		if resp["data"] == nil {
+			t.Fatalf("expected created application data in response, got %v", resp)
+		}
+	})
+
+	// 5. POST /api/v1/applications/{id}/accept routes to recruitment handler.
+	t.Run("POST /api/v1/applications/{id}/accept routes to recruitment handler", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+appID.String()+"/accept", nil)
+		req.Header.Set("Authorization", "Bearer valid-lead-token")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK from recruitment handler, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to parse JSON response: %v", err)
+		}
+		data, ok := resp["data"].(map[string]any)
+		if !ok || !strings.Contains(fmt.Sprint(data["message"]), "workspace membership created") {
+			t.Fatalf("expected acceptance message indicating workspace membership, got %v", resp)
+		}
+	})
 }
