@@ -21,6 +21,7 @@ import (
 	"github.com/lynk/backend/internal/job"
 	"github.com/lynk/backend/internal/middleware"
 	"github.com/lynk/backend/internal/review"
+	"github.com/lynk/backend/internal/sse"
 	"github.com/lynk/backend/internal/storage"
 	"github.com/lynk/backend/internal/user"
 )
@@ -877,5 +878,39 @@ func TestBuildRouter_RateLimitHeaders(t *testing.T) {
 	remHeader := rec.Header().Get("X-RateLimit-Remaining")
 	if remHeader == "" {
 		t.Fatalf("expected non-empty X-RateLimit-Remaining header")
+	}
+}
+
+func TestBuildRouter_WithDistributedSSEBroker(t *testing.T) {
+	broker := sse.NewBroker(sse.WithPubSub(sse.NewInMemoryPubSub()))
+	defer broker.Close()
+
+	cfg := Config{
+		Port: "8080",
+	}
+
+	r := BuildRouter(
+		cfg,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		broker,
+	)
+
+	if r == nil {
+		t.Fatal("expected router to be constructed")
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/events/stream", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 Unauthorized for unauthenticated SSE, got %d", rec.Code)
 	}
 }

@@ -131,3 +131,86 @@ func TestBroker_ConcurrentSendAndUnsubscribe(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+func TestBroker_MultiNodeSimulationWithPubSub(t *testing.T) {
+	sharedBus := NewInMemoryPubSub()
+	defer sharedBus.Close()
+
+	// Node 1 (has subscriber for user-A)
+	node1 := NewBroker(WithPubSub(sharedBus))
+	defer node1.Close()
+
+	// Node 2 (has subscriber for user-B)
+	node2 := NewBroker(WithPubSub(sharedBus))
+	defer node2.Close()
+
+	chUserA := node1.Subscribe("user-A")
+	defer node1.Unsubscribe("user-A", chUserA)
+
+	chUserB := node2.Subscribe("user-B")
+	defer node2.Unsubscribe("user-B", chUserB)
+
+	// Node 2 sends targeted message to user-A
+	node2.SendToUser("user-A", "remote_update", map[string]string{"foo": "bar"})
+
+	select {
+	case msg := <-chUserA:
+		if msg.Event != "remote_update" {
+			t.Errorf("expected event remote_update, got %s", msg.Event)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for cross-node event on node 1")
+	}
+
+	// Verify User-B on Node 2 did not receive the user-A targeted message
+	select {
+	case msg := <-chUserB:
+		t.Fatalf("unexpected message received by user-B: %+v", msg)
+	default:
+		// Expected: no cross-user leakage
+	}
+
+	// Node 1 broadcasts announcement -> both User-A and User-B should receive it
+	node1.Broadcast("system_alert", "all hands")
+
+	select {
+	case msg := <-chUserA:
+		if msg.Event != "system_alert" {
+			t.Errorf("expected event system_alert on user-A, got %s", msg.Event)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for broadcast on user-A")
+	}
+
+	select {
+	case msg := <-chUserB:
+		if msg.Event != "system_alert" {
+			t.Errorf("expected event system_alert on user-B, got %s", msg.Event)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for broadcast on user-B")
+	}
+}
+
+func TestBroker_FallbackWithoutPubSub(t *testing.T) {
+	b := NewBroker()
+	defer b.Close()
+
+	if b.IsDistributed() {
+		t.Errorf("expected default broker to not be distributed")
+	}
+
+	ch := b.Subscribe("local-user")
+	defer b.Unsubscribe("local-user", ch)
+
+	b.SendToUser("local-user", "ping", "pong")
+
+	select {
+	case msg := <-ch:
+		if msg.Event != "ping" {
+			t.Errorf("expected ping, got %s", msg.Event)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for local delivery")
+	}
+}

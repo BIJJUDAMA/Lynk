@@ -482,7 +482,12 @@ func main() {
 
 	// 6. Initialize Outbox Writer & SSE Broker
 	// Create SSE broker first so outbox handlers can close over it.
-	sseBroker := sse.NewBroker()
+	sseBroker := sse.NewBroker(sse.WithRedisURL(cfg.RedisURL))
+	defer func() {
+		if err := sseBroker.Close(); err != nil {
+			log.Printf("Error closing SSE broker: %v", err)
+		}
+	}()
 
 	// The outbox writer is injected into services that emit domain events.
 	// The worker polls outbox_events and dispatches to registered handlers.
