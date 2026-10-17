@@ -11,7 +11,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\"",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/lib/auth.test.ts src/lib/auth-bootstrap.test.ts src/lib/api.test.ts src/lib/formatters.test.ts src/lib/email-validation.test.ts src/lib/job-filters.test.ts src/lib/verify-session.test.ts src/types/api.identity.test.ts src/types/project.test.ts src/lib/project-api.test.ts src/lib/project-sections.test.ts src/lib/team-management.test.ts src/lib/recruitment.test.ts src/lib/activity-navigation.test.ts"
+    "test": "node --experimental-strip-types --test src/lib/auth.test.ts src/lib/auth-bootstrap.test.ts src/lib/api.test.ts src/lib/formatters.test.ts src/lib/email-validation.test.ts src/lib/job-filters.test.ts src/lib/verify-session.test.ts src/types/api.identity.test.ts src/types/project.test.ts src/lib/project-api.test.ts src/lib/project-sections.test.ts src/lib/team-management.test.ts src/lib/recruitment.test.ts src/lib/activity-navigation.test.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.0",
@@ -29,6 +30,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^20.17.6",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
