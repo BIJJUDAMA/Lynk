@@ -1128,9 +1128,9 @@ log_pass "Project workspace verified by slug"
 log_substep "Phase 15c: Adding external resource to project workspace..."
 RESOURCE_PAYLOAD=$(cat <<EOF
 {
-  "title": "Hardware Schematics and ROS2 Nodes",
+  "label": "Hardware Schematics and ROS2 Nodes",
   "url": "https://github.com/lynk/mapping-drone",
-  "category": "github"
+  "resource_type": "github"
 }
 EOF
 )
