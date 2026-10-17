@@ -52,7 +52,7 @@ export default function EmployerJobsPage() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
             <Lock className="h-6 w-6" />
           </div>
-          <h1 className="font-serif text-2xl font-normal tracking-tight text-foreground">
+          <h1 className="font-serif text-2xl font-normal leading-snug text-foreground">
             Campus Sign In Required
           </h1>
           <p className="text-xs text-muted-foreground max-w-md mx-auto">
@@ -83,7 +83,7 @@ export default function EmployerJobsPage() {
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-6">
           <div>
-            <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-foreground">
+            <h1 className="font-serif text-3xl sm:text-4xl font-normal leading-[1.2] text-foreground">
               My Posted Gigs
             </h1>
             <p className="mt-1 text-xs text-muted-foreground">

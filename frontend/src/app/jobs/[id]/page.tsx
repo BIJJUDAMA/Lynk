@@ -280,7 +280,7 @@ export default function JobDetailPage() {
           </div>
 
           {/* Job Title */}
-          <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-foreground">
+          <h1 className="font-serif text-3xl sm:text-4xl font-normal leading-[1.2] text-foreground">
             {job.title}
           </h1>
 

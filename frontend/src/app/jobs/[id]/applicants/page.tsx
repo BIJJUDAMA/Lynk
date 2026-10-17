@@ -178,7 +178,7 @@ export default function JobApplicantsPage() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
             <Lock className="h-6 w-6" />
           </div>
-          <h1 className="mt-4 font-serif text-2xl font-normal tracking-tight text-foreground">
+          <h1 className="mt-4 font-serif text-2xl font-normal leading-snug text-foreground">
             Sign In Required
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -205,7 +205,7 @@ export default function JobApplicantsPage() {
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-pastel-red text-pastel-redText">
           <AlertCircle className="h-6 w-6" />
         </div>
-        <h1 className="mt-4 font-serif text-2xl font-normal tracking-tight text-foreground">
+        <h1 className="mt-4 font-serif text-2xl font-normal leading-snug text-foreground">
           Job Not Found
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -235,7 +235,7 @@ export default function JobApplicantsPage() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-pastel-yellow text-pastel-yellowText">
             <ShieldCheck className="h-6 w-6" />
           </div>
-          <h1 className="mt-4 font-serif text-2xl font-normal tracking-tight text-foreground">
+          <h1 className="mt-4 font-serif text-2xl font-normal leading-snug text-foreground">
             Unauthorized Access
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -268,7 +268,7 @@ export default function JobApplicantsPage() {
       </Link>
 
       {/* Page title */}
-      <h1 className="mt-4 font-serif text-3xl sm:text-4xl font-normal tracking-tight text-foreground">
+      <h1 className="mt-4 font-serif text-3xl sm:text-4xl font-normal leading-[1.2] text-foreground">
         Applicant Proposals
       </h1>
 

@@ -358,7 +358,7 @@ export default function ProfilePage() {
             <div className="rounded-xl border border-line bg-surface-elevated p-6 shadow-none space-y-4">
               <div>
                 <h2 className="text-sm font-semibold tracking-tight text-ink font-display text-base">
-                  1. Campus Identity &amp; Bio
+                  Campus Identity &amp; Bio
                 </h2>
                 <p className="text-xs text-ink-secondary">
                   Your public display name and professional background.
@@ -411,7 +411,7 @@ export default function ProfilePage() {
             <div className="rounded-xl border border-line bg-surface-elevated p-6 shadow-none space-y-4">
               <div>
                 <h2 className="text-sm font-semibold tracking-tight text-ink font-display text-base">
-                  2. Academic Department &amp; Year
+                  Academic Department &amp; Year
                 </h2>
                 <p className="text-xs text-ink-secondary">
                   Your academic focus area and expected graduation date.
@@ -473,7 +473,7 @@ export default function ProfilePage() {
             <div className="rounded-xl border border-line bg-surface-elevated p-6 shadow-none space-y-4">
               <div>
                 <h2 className="text-sm font-semibold tracking-tight text-ink font-display text-base">
-                  3. Skills &amp; Technical Competencies
+                  Skills &amp; Technical Competencies
                 </h2>
                 <p className="text-xs text-ink-secondary">
                   Highlight skills for gig proposals or project collaborations.
@@ -552,7 +552,7 @@ export default function ProfilePage() {
             <div className="rounded-xl border border-line bg-surface-elevated p-6 shadow-none space-y-4">
               <div>
                 <h2 className="text-sm font-semibold tracking-tight text-ink font-display text-base">
-                  4. Affiliation &amp; External Links
+                  Affiliation &amp; External Links
                 </h2>
                 <p className="text-xs text-ink-secondary">
                   Lab affiliation, GitHub, portfolio, or publications.
@@ -678,15 +678,14 @@ export default function ProfilePage() {
 
         {/* Right Column: Resume Vault & Account Trust */}
         <div className="space-y-6">
-          {/* Resume Vault Bento Card */}
+          {/* Resume & Documents Bento Card */}
           <div className="rounded-xl border border-line bg-surface-elevated p-6 shadow-none space-y-3">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-ink" />
-              <h2 className="font-display text-xl font-normal text-ink">Resume Vault</h2>
+              <h2 className="font-display text-xl font-normal text-ink">Resume &amp; Documents</h2>
             </div>
             <p className="text-xs text-ink-secondary leading-relaxed">
-              Your resume is stored securely in your private MinIO vault. Share it with gig
-              applications.
+              Your resume is stored securely and attached to your project proposals.
             </p>
 
             <div className="pt-2">

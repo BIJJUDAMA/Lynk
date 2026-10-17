@@ -169,7 +169,7 @@ export function ResumeUploader({
         resume_key: uploadedKey,
         filename: uploadedFilename,
         byte_size: uploadedSize,
-        message: "Resume securely stored in campus vault.",
+        message: "Resume saved to your profile.",
       };
 
       setCurrentResume({
@@ -179,7 +179,7 @@ export function ResumeUploader({
         updatedAt: new Date().toISOString(),
       });
       setShowUploaderOverride(false);
-      setSuccessMessage("Resume uploaded and secured in campus vault.");
+      setSuccessMessage("Resume uploaded and saved to your profile.");
       onUploadSuccess?.(uploadResult);
     } catch (err: unknown) {
       if (err instanceof ApiClientError) {
@@ -327,7 +327,7 @@ export function ResumeUploader({
               </div>
               <div className="mt-2">
                 <Badge variant="default" className="text-[10px]">
-                  Vault Active
+                  On File
                 </Badge>
               </div>
             </div>
@@ -370,7 +370,7 @@ export function ResumeUploader({
           </div>
 
           <div className="pt-2 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground font-mono">
-            <span>Secure presigned S3 URLs generate on-demand.</span>
+            <span>Encrypted and attached to proposals.</span>
             <span>Max 10MB - PDF/DOCX</span>
           </div>
         </div>
@@ -404,7 +404,7 @@ export function ResumeUploader({
           <div className="mt-4 space-y-1">
             <h4 className="font-serif text-base font-medium text-foreground">
               {isUploading
-                ? "Uploading to private vault..."
+                ? "Uploading resume..."
                 : isDragging
                   ? "Drop resume file here"
                   : "Upload your resume document"}

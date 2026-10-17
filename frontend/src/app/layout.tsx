@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
-import { Instrument_Serif, Inter, Geist_Mono } from "next/font/google";
+import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
-import { Navbar } from "@/components/layout/Navbar";
+import { AppShell } from "@/components/layout/AppShell";
 import { SmoothScroll } from "@/components/ui/SmoothScroll";
 import { QueryProvider } from "@/components/providers/QueryProvider";
-
-const instrumentSerif = Instrument_Serif({
-  weight: ["400"],
-  subsets: ["latin"],
-  variable: "--font-display",
-  display: "swap",
-});
 
 const inter = Inter({
   subsets: ["latin"],
@@ -33,18 +26,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html
-      lang="en"
-      className={`${instrumentSerif.variable} ${inter.variable} ${geistMono.variable}`}
-    >
+    <html lang="en" className={`${inter.variable} ${geistMono.variable}`}>
       <body className="min-h-screen bg-canvas text-ink font-sans antialiased selection:bg-ink selection:text-canvas">
         <SmoothScroll>
           <QueryProvider>
             <AuthProvider>
-              <div className="flex min-h-screen flex-col">
-                <Navbar />
-                <div className="flex-1">{children}</div>
-              </div>
+              <AppShell>{children}</AppShell>
             </AuthProvider>
           </QueryProvider>
         </SmoothScroll>

@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
-  ShieldCheck,
   ShieldAlert,
   Mail,
   Eye,
@@ -22,6 +21,7 @@ import { isEduEmail } from "@/lib/email-validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { updateMyProfile } from "@/lib/api";
 
 function LoginContent() {
   const router = useRouter();
@@ -87,6 +87,16 @@ function LoginContent() {
         }
       } else {
         await register(trimmedEmail, password);
+        if (firstName.trim() || lastName.trim()) {
+          try {
+            await updateMyProfile({
+              first_name: firstName.trim() || undefined,
+              last_name: lastName.trim() || undefined,
+            });
+          } catch {
+            // non-blocking profile enrichment
+          }
+        }
         router.push("/verify-email");
       }
     } catch (err: unknown) {
@@ -131,7 +141,7 @@ function LoginContent() {
 
           <div>
             <Badge variant="warning">Verification Pending</Badge>
-            <h2 className="mt-3 font-serif text-2xl font-normal tracking-tight text-foreground">
+            <h2 className="mt-3 font-serif text-2xl font-normal leading-snug text-foreground">
               Verify University Email
             </h2>
             <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
@@ -165,7 +175,7 @@ function LoginContent() {
               type="button"
               onClick={handleResendVerification}
               disabled={isResending}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#111111] px-4 py-2.5 text-xs font-medium text-white hover:bg-[#222222] transition-colors active:scale-[0.98] disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-ink px-4 py-2.5 text-xs font-medium text-canvas hover:bg-ink/90 transition-colors active:scale-[0.98] disabled:opacity-50"
             >
               {isResending ? (
                 <>
@@ -217,7 +227,7 @@ function LoginContent() {
 
           <div>
             <Badge variant="default">VERIFIED .EDU</Badge>
-            <h2 className="mt-3 font-serif text-2xl font-normal tracking-tight text-foreground">
+            <h2 className="mt-3 font-serif text-2xl font-normal leading-snug text-foreground">
               Signed In
             </h2>
             <p className="mt-1 font-mono text-xs text-muted-foreground">{user.email}</p>
@@ -271,7 +281,7 @@ function LoginContent() {
             <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               LYNK
             </span>
-            <h1 className="font-serif text-2xl sm:text-3xl font-normal tracking-tight text-foreground">
+            <h1 className="font-serif text-2xl sm:text-3xl font-normal leading-[1.2] text-foreground">
               {authMode === "login" ? "Sign in to your account" : "Join your campus exchange"}
             </h1>
             <p className="text-xs text-muted-foreground">Institutional .edu address required.</p>
@@ -416,7 +426,7 @@ function LoginContent() {
             <button
               type="submit"
               disabled={isSubmitting || !isFormValid}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#111111] px-5 py-2.5 text-xs font-medium text-white shadow-none hover:bg-[#222222] transition-colors active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-ink px-5 py-2.5 text-xs font-medium text-canvas shadow-none hover:bg-ink/90 transition-colors active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
             >
               {isSubmitting ? (
                 <>
@@ -428,15 +438,6 @@ function LoginContent() {
               )}
             </button>
           </form>
-
-          {/* Institutional Trust Note */}
-          <div className="pt-2 border-t border-border flex items-start gap-2 text-left">
-            <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
-              Every verified campus account can both publish project opportunities and submit
-              deliverable proposals.
-            </p>
-          </div>
         </div>
       </div>
     </div>

@@ -105,10 +105,10 @@ export default function ContractsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       {/* Page Header */}
       <div className="mb-8">
-        <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-foreground">
+        <h1 className="font-serif text-3xl sm:text-4xl font-normal leading-[1.2] text-foreground">
           Contracts &amp; Deliverables
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -119,7 +119,7 @@ export default function ContractsPage() {
       {/* Filter Strip + Search */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-6 border-b border-border">
         {/* Underline tab strip */}
-        <div className="flex items-end gap-0 -mb-px">
+        <div className="flex items-end gap-0 -mb-px overflow-x-auto scrollbar-none w-full sm:w-auto">
           {FILTER_TABS.map((tab) => {
             const count = counts[tab.value];
             const isActive = activeFilter === tab.value;

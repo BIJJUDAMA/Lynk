@@ -179,7 +179,7 @@ export default function CreateJobPage() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
             <Lock className="h-6 w-6" />
           </div>
-          <h1 className="mt-4 font-serif text-2xl font-normal tracking-tight text-foreground">
+          <h1 className="mt-4 font-serif text-2xl font-normal leading-snug text-foreground">
             Campus Sign In Required
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -214,7 +214,7 @@ export default function CreateJobPage() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-pastel-yellow text-pastel-yellowText">
             <ShieldAlert className="h-6 w-6" />
           </div>
-          <h1 className="mt-4 font-serif text-2xl font-normal tracking-tight text-foreground">
+          <h1 className="mt-4 font-serif text-2xl font-normal leading-snug text-foreground">
             Institutional Email Verification Required
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -288,8 +288,8 @@ export default function CreateJobPage() {
 
       {/* Editorial Heading */}
       <div className="mt-6">
-        <h1 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-foreground">
-          Post a Campus Gig
+        <h1 className="font-serif text-3xl sm:text-4xl font-normal leading-[1.2] text-foreground">
+          Post an Opportunity
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Define a clear project deliverable for verified university peers.
@@ -325,7 +325,7 @@ export default function CreateJobPage() {
           </div>
 
           <div>
-            <h2 className="font-serif text-2xl font-normal tracking-tight text-foreground">
+            <h2 className="font-serif text-2xl font-normal leading-snug text-foreground">
               {title.trim() || "Untitled Opportunity"}
             </h2>
             <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-muted-foreground font-mono">
@@ -377,7 +377,7 @@ export default function CreateJobPage() {
               type="button"
               disabled={isSubmitting}
               onClick={handleSubmit}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#111111] px-5 py-2 text-xs font-medium text-white shadow-none hover:bg-[#222222] transition-colors active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-ink px-5 py-2 text-xs font-medium text-canvas shadow-none hover:bg-ink/90 transition-colors active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
             >
               {isSubmitting ? (
                 <>
@@ -385,7 +385,7 @@ export default function CreateJobPage() {
                   <span>Publishing...</span>
                 </>
               ) : (
-                <span>Publish Project</span>
+                <span>Publish Opportunity</span>
               )}
             </button>
           </div>
@@ -396,11 +396,11 @@ export default function CreateJobPage() {
           onSubmit={handleSubmit}
           className="mt-8 rounded-xl border border-border bg-card p-8 shadow-none max-w-2xl mx-auto space-y-8"
         >
-          {/* Section 1: Title input & Academic department selector */}
+          {/* Section: Title input & Academic department selector */}
           <div className="space-y-4">
             <div>
               <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                1. Deliverable Title &amp; Department
+                Deliverable Title &amp; Department
               </h2>
               <p className="text-xs text-muted-foreground">
                 Specify a concise project title and academic category.
@@ -493,11 +493,11 @@ export default function CreateJobPage() {
             </div>
           </div>
 
-          {/* Section 2: Deliverable description textarea */}
+          {/* Section: Deliverable description textarea */}
           <div className="space-y-4 border-t border-border pt-6">
             <div>
               <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                2. Project Scope &amp; Requirements
+                Project Scope &amp; Requirements
               </h2>
               <p className="text-xs text-muted-foreground">
                 Detail the deliverables, technical context, and timeline expectations.
@@ -538,11 +538,11 @@ export default function CreateJobPage() {
             </div>
           </div>
 
-          {/* Section 3: Project Timeline */}
+          {/* Section: Project Timeline */}
           <div className="space-y-4 border-t border-border pt-6">
             <div>
               <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                3. Project Timeline
+                Project Timeline
               </h2>
               <p className="text-xs text-muted-foreground">
                 Set target project deliverable deadline.
@@ -579,11 +579,11 @@ export default function CreateJobPage() {
             </div>
           </div>
 
-          {/* Section 4: Required skills tag selector */}
+          {/* Section: Required skills tag selector */}
           <div className="space-y-4 border-t border-border pt-6">
             <div>
               <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                4. Required Skills
+                Required Skills
               </h2>
               <p className="text-xs text-muted-foreground">
                 Tag prerequisites, frameworks, or tools needed for this gig.
@@ -675,7 +675,7 @@ export default function CreateJobPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#111111] px-5 py-2.5 text-xs font-medium text-white shadow-none hover:bg-[#222222] transition-colors active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-ink px-5 py-2.5 text-xs font-medium text-canvas shadow-none hover:bg-ink/90 transition-colors active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
             >
               {isSubmitting ? (
                 <>
@@ -683,7 +683,7 @@ export default function CreateJobPage() {
                   <span>Publishing...</span>
                 </>
               ) : (
-                <span>Publish Project</span>
+                <span>Publish Opportunity</span>
               )}
             </button>
           </div>

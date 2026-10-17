@@ -345,7 +345,7 @@ export default function ContractDetailPage() {
             </div>
 
             {/* Title */}
-            <h1 className="font-serif text-2xl sm:text-3xl font-normal tracking-tight text-foreground">
+            <h1 className="font-serif text-2xl sm:text-3xl font-normal leading-[1.2] text-foreground">
               {contract.job?.title || "Marketplace Contract"}
             </h1>
 
@@ -791,8 +791,8 @@ export default function ContractDetailPage() {
               Mark as Completed?
             </h3>
             <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-              This confirms all agreed deliverables have been fulfilled. Once completed, the
-              contract moves to a permanent terminal state and unlocks peer review submissions.
+              This confirms all agreed deliverables have been fulfilled. Once completed, the project
+              is finalized and unlocks peer review submissions for both parties.
             </p>
             <div className="mt-6 flex items-center justify-end gap-3">
               <button
@@ -847,7 +847,7 @@ export default function ContractDetailPage() {
               Cancel This Contract?
             </h3>
             <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-              Cancellation terminates the agreement immediately. This is a permanent terminal state;
+              Cancellation terminates the agreement immediately. This action cannot be undone, and
               peer reviews will be disabled.
             </p>
             <div className="mt-6 flex items-center justify-end gap-3">

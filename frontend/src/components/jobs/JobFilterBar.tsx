@@ -103,7 +103,7 @@ export function JobFilterBar({
               searchDebounced.current?.(v);
             }}
             placeholder="Search by title, skill, or keyword..."
-            className="w-full rounded-lg border border-border bg-background py-2.5 pl-9 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-foreground/40 focus:outline-none transition-colors"
+            className="w-full rounded-lg border border-border bg-background py-2.5 pl-11 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-foreground/40 focus:outline-none transition-colors"
           />
           {searchDraft && (
             <button

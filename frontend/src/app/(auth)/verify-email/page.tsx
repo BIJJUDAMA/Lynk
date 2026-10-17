@@ -155,7 +155,7 @@ function VerifyEmailContent() {
             <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               LYNK VERIFICATION
             </span>
-            <h1 className="font-serif text-2xl sm:text-3xl font-normal tracking-tight text-foreground">
+            <h1 className="font-serif text-2xl sm:text-3xl font-normal leading-[1.2] text-foreground">
               {status === "success" ? "University Email Confirmed" : "Verify your university email"}
             </h1>
           </div>

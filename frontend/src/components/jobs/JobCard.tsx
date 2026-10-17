@@ -58,7 +58,7 @@ export function JobCard({ job, className }: JobCardProps) {
         {/* Job Title & Creator */}
         <div className="mt-3">
           <Link href={`/jobs/${job.id}`}>
-            <h3 className="font-serif text-xl font-medium tracking-tight text-foreground hover:text-foreground/80 transition-colors line-clamp-1">
+            <h3 className="font-serif text-xl font-normal leading-snug text-foreground hover:text-foreground/80 transition-colors line-clamp-2 [text-wrap:balance]">
               {job.title}
             </h3>
           </Link>
@@ -81,7 +81,7 @@ export function JobCard({ job, className }: JobCardProps) {
               <Badge
                 key={`${skill}-${index}`}
                 variant="secondary"
-                className="text-[11px] font-mono py-0.5 px-2"
+                className="text-[11px] font-mono py-0.5 px-2 whitespace-nowrap"
               >
                 {skill}
               </Badge>
@@ -89,7 +89,7 @@ export function JobCard({ job, className }: JobCardProps) {
             {overflowSkillsCount > 0 && (
               <Badge
                 variant="secondary"
-                className="text-[11px] font-mono py-0.5 px-2 text-muted-foreground"
+                className="text-[11px] font-mono py-0.5 px-2 text-muted-foreground whitespace-nowrap"
               >
                 +{overflowSkillsCount} more
               </Badge>

@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Briefcase, AlertCircle, RotateCcw, ShieldCheck, PlusCircle } from "lucide-react";
+import { Briefcase, AlertCircle, RotateCcw, PlusCircle } from "lucide-react";
 import { Job, JobStatus } from "@/types/api";
 import { listJobs } from "@/lib/api";
 import { useQuery } from "@/lib/useApi";
@@ -84,7 +84,7 @@ function JobSearchContent() {
           <Badge variant="outline" className="font-mono text-xs mb-3">
             Campus Marketplace
           </Badge>
-          <h1 className="font-serif text-4xl sm:text-5xl font-normal tracking-tight text-foreground">
+          <h1 className="font-serif text-4xl sm:text-5xl font-normal leading-[1.15] text-foreground">
             Campus Opportunities
           </h1>
           <p className="mt-2 max-w-2xl text-sm sm:text-base text-muted-foreground">
@@ -99,27 +99,7 @@ function JobSearchContent() {
             className="inline-flex items-center gap-2 self-start rounded-lg bg-foreground px-4 py-2.5 text-xs font-mono font-medium text-background transition hover:bg-foreground/90"
           >
             <PlusCircle className="h-4 w-4" />
-            Post a Gig
-          </Link>
-        )}
-      </div>
-
-      {/* Institutional Verification Notice */}
-      <div className="mt-6 flex items-center justify-between rounded-xl border border-border bg-card p-4 text-xs text-muted-foreground">
-        <div className="flex items-center gap-2.5">
-          <ShieldCheck className="h-4 w-4 shrink-0 text-foreground" />
-          <span>
-            <strong className="text-foreground font-medium">High-Trust Campus Verification:</strong>{" "}
-            All gig applications and contracts are reserved for verified university members with
-            institutional (.edu) credentials.
-          </span>
-        </div>
-        {!isAuthenticated && (
-          <Link
-            href="/login"
-            className="hidden shrink-0 font-mono text-xs underline hover:text-foreground sm:inline"
-          >
-            Sign in to apply &rarr;
+            Post an Opportunity
           </Link>
         )}
       </div>
@@ -197,7 +177,7 @@ function JobSearchContent() {
                 className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-xs font-mono font-medium text-background transition hover:bg-foreground/90"
               >
                 <PlusCircle className="h-4 w-4" />
-                Post a Gig
+                Post an Opportunity
               </Link>
             </div>
           </div>
