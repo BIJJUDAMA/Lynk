@@ -17,6 +17,7 @@ SERVICES=(
   "Redis Cache & Pub/Sub:6379"
   "Go REST API & SSE:8080"
   "FastAPI AI Subsystem:8000"
+  "Next.js Frontend:3000"
 )
 
 PASSED=0

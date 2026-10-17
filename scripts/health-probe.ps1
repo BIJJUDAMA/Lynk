@@ -16,7 +16,8 @@ $services = @(
     @{ Name = "MinIO Object Storage";  Port = 9000; Type = "HTTP"; Endpoint = "http://${HostName}:9000/minio/health/live" },
     @{ Name = "Redis Cache & Pub/Sub"; Port = 6379; Type = "TCP" },
     @{ Name = "Go REST API & SSE";     Port = 8080; Type = "HTTP"; Endpoint = "http://${HostName}:8080/health" },
-    @{ Name = "FastAPI AI Subsystem";  Port = 8000; Type = "HTTP"; Endpoint = "http://${HostName}:8000/health" }
+    @{ Name = "FastAPI AI Subsystem";  Port = 8000; Type = "HTTP"; Endpoint = "http://${HostName}:8000/health" },
+    @{ Name = "Next.js Frontend";      Port = 3000; Type = "HTTP"; Endpoint = "http://${HostName}:3000" }
 )
 
 $passed = 0
