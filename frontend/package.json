@@ -11,7 +11,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\"",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/lib/auth.test.ts src/lib/auth-bootstrap.test.ts src/lib/api.test.ts src/lib/formatters.test.ts src/lib/email-validation.test.ts src/lib/job-filters.test.ts src/lib/verify-session.test.ts src/types/api.identity.test.ts"
+    "test": "node --experimental-strip-types --test src/lib/auth.test.ts src/lib/auth-bootstrap.test.ts src/lib/api.test.ts src/lib/formatters.test.ts src/lib/email-validation.test.ts src/lib/job-filters.test.ts src/lib/verify-session.test.ts src/types/api.identity.test.ts src/types/project.test.ts src/lib/project-api.test.ts src/lib/project-sections.test.ts src/lib/team-management.test.ts src/lib/recruitment.test.ts src/lib/activity-navigation.test.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.0",
