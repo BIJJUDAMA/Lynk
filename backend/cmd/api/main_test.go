@@ -883,7 +883,7 @@ func TestBuildRouter_RateLimitHeaders(t *testing.T) {
 
 func TestBuildRouter_WithDistributedSSEBroker(t *testing.T) {
 	broker := sse.NewBroker(sse.WithPubSub(sse.NewInMemoryPubSub()))
-	defer broker.Close()
+	defer func() { _ = broker.Close() }()
 
 	cfg := Config{
 		Port: "8080",

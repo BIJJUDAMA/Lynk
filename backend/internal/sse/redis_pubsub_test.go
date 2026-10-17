@@ -71,7 +71,7 @@ func TestEnvelope_BroadcastFlag(t *testing.T) {
 
 func TestInMemoryPubSub_PublishAndReceive(t *testing.T) {
 	ps := NewInMemoryPubSub()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	if ps.IsDistributed() {
 		t.Errorf("expected InMemoryPubSub IsDistributed to be false")
@@ -107,21 +107,21 @@ func TestInMemoryPubSub_PublishAndReceive(t *testing.T) {
 func TestNewPubSubFromURL_FallbackOnEmptyOrInvalidURL(t *testing.T) {
 	// Empty URL should fall back to in-memory
 	ps1 := NewPubSubFromURL("", "test:channel")
-	defer ps1.Close()
+	defer func() { _ = ps1.Close() }()
 	if ps1.IsDistributed() {
 		t.Errorf("expected empty URL to return in-memory pubsub")
 	}
 
 	// Invalid URL should fall back to in-memory
 	ps2 := NewPubSubFromURL("invalid-redis-protocol://localhost:6379", "test:channel")
-	defer ps2.Close()
+	defer func() { _ = ps2.Close() }()
 	if ps2.IsDistributed() {
 		t.Errorf("expected invalid URL to return in-memory pubsub")
 	}
 
 	// Unreachable Redis port should fall back to in-memory gracefully
 	ps3 := NewPubSubFromURL("redis://127.0.0.1:54321", "test:channel")
-	defer ps3.Close()
+	defer func() { _ = ps3.Close() }()
 	if ps3.IsDistributed() {
 		t.Errorf("expected unreachable Redis URL to return in-memory pubsub")
 	}

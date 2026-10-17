@@ -134,15 +134,15 @@ func TestBroker_ConcurrentSendAndUnsubscribe(t *testing.T) {
 
 func TestBroker_MultiNodeSimulationWithPubSub(t *testing.T) {
 	sharedBus := NewInMemoryPubSub()
-	defer sharedBus.Close()
+	defer func() { _ = sharedBus.Close() }()
 
 	// Node 1 (has subscriber for user-A)
 	node1 := NewBroker(WithPubSub(sharedBus))
-	defer node1.Close()
+	defer func() { _ = node1.Close() }()
 
 	// Node 2 (has subscriber for user-B)
 	node2 := NewBroker(WithPubSub(sharedBus))
-	defer node2.Close()
+	defer func() { _ = node2.Close() }()
 
 	chUserA := node1.Subscribe("user-A")
 	defer node1.Unsubscribe("user-A", chUserA)
@@ -194,7 +194,7 @@ func TestBroker_MultiNodeSimulationWithPubSub(t *testing.T) {
 
 func TestBroker_FallbackWithoutPubSub(t *testing.T) {
 	b := NewBroker()
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	if b.IsDistributed() {
 		t.Errorf("expected default broker to not be distributed")
