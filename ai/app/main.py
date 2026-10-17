@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 import asyncpg
 from ai.app.api.analytics import router as analytics_router
+from ai.app.api.embeddings import router as embeddings_router
 from ai.app.api.jobs import router as jobs_router
 from ai.app.api.moderation import router as moderation_router
 from ai.app.api.ranking import router as ranking_router
@@ -95,3 +96,4 @@ app.include_router(moderation_router)
 app.include_router(reviews_router)
 app.include_router(analytics_router)
 app.include_router(jobs_router)
+app.include_router(embeddings_router)
