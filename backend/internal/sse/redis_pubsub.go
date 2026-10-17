@@ -248,4 +248,3 @@ func NewPubSubFromURL(redisURL, channel string) PubSub {
 	slog.Info("connected to redis sse pubsub successfully", "channel", channel)
 	return NewRedisPubSub(client, channel)
 }
-

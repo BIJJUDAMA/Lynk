@@ -126,4 +126,3 @@ func TestNewPubSubFromURL_FallbackOnEmptyOrInvalidURL(t *testing.T) {
 		t.Errorf("expected unreachable Redis URL to return in-memory pubsub")
 	}
 }
-
