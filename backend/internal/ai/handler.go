@@ -53,6 +53,7 @@ type AIHandler struct {
 	userRepo     user.UserRepository
 	appRepo      ApplicationRepository
 	reviewRepo   ReviewRepository
+	service      *Service
 }
 
 // ReviewRepository abstracts review fetching for AI aspect extraction.
@@ -72,13 +73,25 @@ func NewHandler(
 	if len(appRepos) > 0 {
 		appRepo = appRepos[0]
 	}
+	var svc *Service
+	if db != nil {
+		repo := NewProjectEmbeddingRepository(db)
+		svc = NewService(repo, orch)
+	}
 	return &AIHandler{
 		orchestrator: orch,
 		db:           db,
 		jobRepo:      jobRepo,
 		userRepo:     userRepo,
 		appRepo:      appRepo,
+		service:      svc,
 	}
+}
+
+// WithService sets the AI service on the handler.
+func (h *AIHandler) WithService(svc *Service) *AIHandler {
+	h.service = svc
+	return h
 }
 
 // WithApplicationRepo sets the application repository on the handler.
@@ -97,6 +110,7 @@ func (h *AIHandler) WithReviewRepo(reviewRepo ReviewRepository) *AIHandler {
 func (h *AIHandler) RegisterRoutes(r chi.Router, authMiddleware func(http.Handler) http.Handler) {
 	r.Route("/search", func(sr chi.Router) {
 		sr.Get("/jobs", h.SearchJobs)
+		sr.Get("/projects", h.SearchProjects)
 		sr.Group(func(pr chi.Router) {
 			if authMiddleware != nil {
 				pr.Use(authMiddleware)
@@ -407,6 +421,89 @@ func (h *AIHandler) fallbackPeopleSearch(ctx context.Context, query string, limi
 	}
 
 	return []PeopleSearchResult{}
+}
+
+// SearchProjects handles GET /api/v1/search/projects?q=...&limit=...&visibility=...
+// Performs semantic pgvector search across collaborative campus projects with fallback to keyword search.
+func (h *AIHandler) SearchProjects(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	limit := 20
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if parsed, err := strconv.Atoi(lStr); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+
+	visibility := strings.TrimSpace(r.URL.Query().Get("visibility"))
+	if visibility == "" {
+		visibility = "public"
+	}
+
+	if q == "" {
+		httputil.WriteSuccess(w, http.StatusOK, []ProjectMatch{})
+		return
+	}
+
+	// 1. Attempt AI semantic search via pgvector
+	if h.service != nil {
+		matches, err := h.service.SearchProjectsSemantic(r.Context(), q, limit, visibility)
+		if err == nil {
+			httputil.WriteSuccess(w, http.StatusOK, matches)
+			return
+		}
+	}
+
+	// 2. Graceful Fallback: Keyword search in PostgreSQL projects table
+	fallbackMatches := h.fallbackProjectSearch(r.Context(), q, limit, visibility)
+	httputil.WriteSuccess(w, http.StatusOK, fallbackMatches)
+}
+
+func (h *AIHandler) fallbackProjectSearch(ctx context.Context, query string, limit int, visibility string) []ProjectMatch {
+	if h.db == nil {
+		return []ProjectMatch{}
+	}
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	searchPattern := "%" + strings.TrimSpace(query) + "%"
+	sql := `
+		SELECT id, slug, title, description, category, visibility::text, 0.0 AS similarity, 0.0 AS distance
+		FROM projects
+		WHERE ($1 = '' OR visibility::text = $1)
+		  AND (title ILIKE $2 OR description ILIKE $2 OR category ILIKE $2)
+		ORDER BY created_at DESC
+		LIMIT $3;
+	`
+	rows, err := h.db.Query(ctx, sql, visibility, searchPattern, limit)
+	if err != nil {
+		return []ProjectMatch{}
+	}
+	defer rows.Close()
+
+	var matches []ProjectMatch
+	for rows.Next() {
+		var m ProjectMatch
+		if err := rows.Scan(
+			&m.ProjectID,
+			&m.Slug,
+			&m.Title,
+			&m.Description,
+			&m.Category,
+			&m.Visibility,
+			&m.Similarity,
+			&m.Distance,
+		); err != nil {
+			return []ProjectMatch{}
+		}
+		matches = append(matches, m)
+	}
+	if matches == nil {
+		matches = []ProjectMatch{}
+	}
+	return matches
 }
 
 // GetMyRecommendations handles GET /api/v1/profile/recommendations.

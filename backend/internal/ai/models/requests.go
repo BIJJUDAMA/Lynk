@@ -94,3 +94,8 @@ type SkillDemandAnalyticsRequest struct {
 	Period     string                `json:"period"`
 	SkillsData []SkillHistoricalData `json:"skills_data"`
 }
+
+// EmbeddingRequest represents a request to generate a vector embedding for a text string.
+type EmbeddingRequest struct {
+	Text string `json:"text"`
+}

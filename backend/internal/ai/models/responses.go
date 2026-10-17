@@ -148,3 +148,11 @@ type SkillDemandAnalyticsResponse struct {
 	ModelVersion    string                `json:"model_version,omitempty"`
 	PipelineVersion string                `json:"pipeline_version,omitempty"`
 }
+
+// EmbeddingResponse represents the generated vector embedding and metadata.
+type EmbeddingResponse struct {
+	Embedding    []float32 `json:"embedding"`
+	Dimension    int       `json:"dimension"`
+	ModelName    string    `json:"model_name"`
+	ModelVersion string    `json:"model_version"`
+}

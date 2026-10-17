@@ -466,3 +466,29 @@ func (o *Orchestrator) GenerateJobDraft(ctx context.Context, req models.Generate
 
 	return resp, nil
 }
+
+// GenerateEmbedding coordinates embedding generation with resilience, logging, and timeouts.
+func (o *Orchestrator) GenerateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	if !o.flags.AIEnabled || o.client == nil {
+		o.logger.DebugContext(ctx, "ai embedding generation bypassed")
+		return nil, ErrAIBypassed
+	}
+
+	if o.isCircuitOpen() {
+		o.logger.WarnContext(ctx, "ai embedding generation bypassed: circuit open")
+		return nil, ErrAIBypassed
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, DefaultSearchTimeout)
+	defer cancel()
+
+	emb, err := o.client.GenerateEmbedding(callCtx, text)
+	if err != nil {
+		o.recordFailure()
+		o.logger.WarnContext(ctx, "ai embedding generation failed", "error", err)
+		return nil, err
+	}
+	o.recordSuccess()
+
+	return emb, nil
+}
