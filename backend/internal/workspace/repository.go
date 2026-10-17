@@ -93,7 +93,7 @@ func (r *pgxRepository) UpsertSections(ctx context.Context, projectID uuid.UUID,
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	now := time.Now().UTC()
 	for i := range sections {

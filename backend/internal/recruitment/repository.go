@@ -43,7 +43,7 @@ func (r *pgxRepository) CreateApplication(ctx context.Context, app *Application,
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	if app.ID == uuid.Nil {
 		app.ID = uuid.New()
@@ -260,7 +260,7 @@ func (r *pgxRepository) UpdateApplicationStatus(ctx context.Context, id uuid.UUI
 	if err != nil {
 		return fmt.Errorf("failed to begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var currentStatus string
 	err = tx.QueryRow(ctx, `SELECT status FROM project_applications WHERE id = $1 FOR UPDATE`, id).Scan(&currentStatus)
@@ -307,7 +307,7 @@ func (r *pgxRepository) WithdrawApplication(ctx context.Context, id uuid.UUID, a
 	if err != nil {
 		return fmt.Errorf("failed to begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var currentStatus string
 	var ownerApplicantID string
@@ -342,7 +342,7 @@ func (r *pgxRepository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID
 	if err != nil {
 		return fmt.Errorf("failed to begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	// 1. Lock application row
 	var projectID uuid.UUID
