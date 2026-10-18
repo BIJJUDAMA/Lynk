@@ -1,307 +1,342 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
-import Image from "next/image";
 import Link from "next/link";
-import { motion, useScroll, useTransform, useReducedMotion } from "framer-motion";
-import { ArrowRight, PlusCircle, Compass, Sparkles } from "lucide-react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { ArrowRight } from "lucide-react";
 import { EDITORIAL_EASE } from "@/lib/animations";
-import { listJobs } from "@/lib/api";
-import type { Job } from "@/types/api";
+
+interface RosterRow {
+  member: string;
+  department: string;
+  role: string;
+  isNew?: boolean;
+}
+
+interface ResourceRow {
+  resource: string;
+  target: string;
+  status: string;
+  isNew?: boolean;
+}
+
+interface MilestoneRow {
+  timeline: string;
+  deliverable: string;
+  status: string;
+  isNew?: boolean;
+  isPulsing?: boolean;
+}
+
+const ROSTER_DATA: RosterRow[] = [
+  { member: "Nitansh Shankar", department: "Computer Science", role: "Project Lead" },
+  { member: "Frontend Developer", department: "Web Engineering", role: "Next.js / React" },
+  { member: "+ AI Engineer", department: "AI / ML", role: "RAG & LLM Systems", isNew: true },
+];
+
+const RESOURCE_DATA: ResourceRow[] = [
+  { resource: "Source Repository", target: "GitHub", status: "Connected" },
+  { resource: "Backend API", target: "Go / REST API", status: "In development" },
+  { resource: "+ AI Service", target: "Python / FastAPI", status: "RAG integration", isNew: true },
+  { resource: "Database", target: "PostgreSQL", status: "Configured" },
+  { resource: "Object Storage", target: "MinIO", status: "Connected" },
+];
+
+const MILESTONE_DATA: MilestoneRow[] = [
+  { timeline: "Phase 01", deliverable: "Workspace Design", status: "Established" },
+  { timeline: "Phase 02", deliverable: "Core Architecture", status: "In development" },
+  { timeline: "+ Next", deliverable: "AI-Powered Features", status: "Planned", isNew: true, isPulsing: true },
+];
+
+const TABS = [
+  { id: 0, label: "Team Roster" },
+  { id: 1, label: "Connected Resources" },
+  { id: 2, label: "Project Milestones" },
+];
 
 export default function ProductShowcase() {
   const ref = useRef<HTMLElement>(null);
   const prefersReduced = useReducedMotion();
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "end start"] });
-  const imgOpacity = useTransform(scrollYProgress, [0, 0.2, 0.8, 1], [0.6, 1, 1, 0.7]);
 
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  // 12-second seamless looping cycle (4 seconds per phase)
+  const [activeTab, setActiveTab] = useState(0);
+  const [revealNewItem, setRevealNewItem] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
-    listJobs({ limit: 3, status: "open" })
-      .then((data) => {
-        if (isMounted && Array.isArray(data)) {
-          setJobs(data);
-        }
-      })
-      .catch((err) => {
-        // Non-blocking fallback if backend is booting
-        console.error("Failed to load showcase opportunities:", err);
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      });
+    // Reveal the animated item after 1000ms in each phase
+    setRevealNewItem(false);
+    const itemTimer = setTimeout(() => {
+      setRevealNewItem(true);
+    }, 1100);
+
+    // Switch to next tab every 4000ms
+    const tabTimer = setTimeout(() => {
+      setActiveTab((prev) => (prev + 1) % 3);
+    }, 4000);
 
     return () => {
-      isMounted = false;
+      clearTimeout(itemTimer);
+      clearTimeout(tabTimer);
     };
-  }, []);
+  }, [activeTab]);
 
   return (
     <section
       ref={ref}
-      className="relative w-full bg-canvas overflow-hidden border-t border-line/60"
+      className="relative h-screen min-h-[100dvh] max-h-[100dvh] w-full bg-canvas overflow-hidden border-t border-line/60 flex flex-col justify-center py-6 sm:py-8 md:py-10"
       aria-labelledby="product-heading"
     >
-      <div className="max-w-7xl mx-auto px-6 lg:px-12 py-24 md:py-36">
-        <motion.p
-          initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: EDITORIAL_EASE }}
-          viewport={{ once: true }}
-          className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary mb-4"
-        >
-          The platform
-        </motion.p>
-        <motion.h2
-          id="product-heading"
-          initial={prefersReduced ? {} : { opacity: 0, y: 8 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.08, ease: EDITORIAL_EASE }}
-          viewport={{ once: true }}
-          className="font-display text-[clamp(32px,4.5vw,60px)] font-normal leading-[1.1] text-ink mb-6 max-w-4xl"
-        >
-          The product is the experience.
-        </motion.h2>
-        <motion.p
-          initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.16, ease: EDITORIAL_EASE }}
-          viewport={{ once: true }}
-          className="text-base text-ink-secondary leading-relaxed max-w-2xl mb-14"
-        >
-          Job discovery, verified campus identities, milestone contracts, and double-blind peer
-          reviews. Built for real academic work.
-        </motion.p>
-
-        {/* Product atmospheric artwork */}
-        <motion.div
-          style={{ opacity: imgOpacity }}
-          className="relative w-full aspect-[16/9] max-w-5xl mx-auto rounded-sm overflow-hidden border border-line"
-          aria-hidden="true"
-        >
-          <Image
-            src="/product.png"
-            alt="Abstract representation of the Lynk information architecture"
-            fill
-            className="object-cover"
-            sizes="(max-width: 1024px) 100vw, 80vw"
-          />
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                "radial-gradient(ellipse at center, transparent 60%, rgba(244,241,234,0.7) 100%)",
-            }}
-          />
-        </motion.div>
-
-        {/* Dynamic Database Opportunities Layered Beneath */}
-        <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-          {isLoading ? (
-            // Skeleton Loading State
-            Array.from({ length: 3 }).map((_, idx) => (
-              <div
-                key={`skeleton-${idx}`}
-                className="border border-line bg-surface-elevated p-6 flex flex-col justify-between animate-pulse"
-                style={{ minHeight: "260px" }}
-              >
-                <div>
-                  <div className="flex items-center justify-between pb-3 border-b border-line/60">
-                    <div className="h-3 w-24 bg-line/60 rounded" />
-                    <div className="h-3 w-16 bg-line/60 rounded" />
-                  </div>
-                  <div className="h-5 w-3/4 bg-line/60 rounded mt-4" />
-                  <div className="h-3 w-full bg-line/40 rounded mt-3" />
-                  <div className="h-3 w-2/3 bg-line/40 rounded mt-1.5" />
-                  <div className="flex gap-2 mt-4">
-                    <div className="h-4 w-12 bg-line/50 rounded" />
-                    <div className="h-4 w-12 bg-line/50 rounded" />
-                  </div>
-                </div>
-                <div className="pt-4 border-t border-line/60 flex items-center justify-between">
-                  <div className="h-3 w-20 bg-line/50 rounded" />
-                  <div className="h-3 w-12 bg-line/50 rounded" />
-                </div>
-              </div>
-            ))
-          ) : jobs.length > 0 ? (
-            // Live Opportunities from PostgreSQL Database
-            jobs.map((job, index) => {
-              const opportunityNumber = job.id.replace(/-/g, "").slice(0, 6).toUpperCase();
-              const creatorLabel =
-                job.creator?.organization ||
-                (job.creator?.first_name
-                  ? `${job.creator.first_name} ${job.creator.last_name || ""}`.trim()
-                  : job.department || "Campus Lab");
-
-              return (
-                <motion.div
-                  key={job.id}
-                  initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.45, delay: index * 0.06, ease: EDITORIAL_EASE }}
-                  viewport={{ once: true }}
-                  className="border border-line bg-surface-elevated p-6 flex flex-col justify-between hover:border-ink/40 transition-colors"
-                >
-                  <div>
-                    <div className="flex items-center justify-between text-[11px] font-mono text-ink-secondary pb-3 border-b border-line/60">
-                      <span>OPPORTUNITY #{opportunityNumber}</span>
-                      <span className="text-accent-deep font-semibold uppercase">
-                        {job.department || "CAMPUS"}
-                      </span>
-                    </div>
-                    <Link href={`/jobs/${job.id}`}>
-                      <h3 className="font-display text-xl text-ink mt-4 leading-snug hover:text-ink/80 transition-colors line-clamp-2">
-                        {job.title}
-                      </h3>
-                    </Link>
-                    <p className="mt-2 text-xs text-ink-secondary leading-relaxed line-clamp-3">
-                      {job.description}
-                    </p>
-                    {job.required_skills && job.required_skills.length > 0 && (
-                      <div className="mt-4 flex flex-wrap gap-1.5 font-mono text-[10px]">
-                        {job.required_skills.slice(0, 3).map((skill) => (
-                          <span
-                            key={skill}
-                            className="px-2 py-0.5 bg-surface border border-line text-ink-secondary"
-                          >
-                            {skill}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[11px] font-mono text-ink-secondary">
-                    <span className="truncate max-w-[150px]">{creatorLabel}</span>
-                    <Link
-                      href={`/jobs/${job.id}`}
-                      className="text-ink flex items-center gap-1 hover:text-accent-deep transition-colors"
-                    >
-                      Apply <ArrowRight className="h-3 w-3" />
-                    </Link>
-                  </div>
-                </motion.div>
-              );
-            })
-          ) : (
-            // Clean Fallback / Empty State when database has no open postings
-            <>
-              <motion.div
-                initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.45, delay: 0.06, ease: EDITORIAL_EASE }}
-                viewport={{ once: true }}
-                className="border border-line bg-surface-elevated p-6 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between text-[11px] font-mono text-ink-secondary pb-3 border-b border-line/60">
-                    <span>MARKETPLACE</span>
-                    <span className="text-accent-deep font-semibold">CAMPUS DIRECT</span>
-                  </div>
-                  <h3 className="font-display text-xl text-ink mt-4 leading-snug">
-                    Browse All Opportunities
-                  </h3>
-                  <p className="mt-2 text-xs text-ink-secondary leading-relaxed">
-                    Filter open campus research gigs, software contracts, and design projects by
-                    academic department.
-                  </p>
-                </div>
-                <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[11px] font-mono text-ink-secondary">
-                  <span className="flex items-center gap-1">
-                    <Compass className="h-3 w-3" /> Open Marketplace
-                  </span>
-                  <Link href="/jobs" className="text-ink flex items-center gap-1">
-                    Explore <ArrowRight className="h-3 w-3" />
-                  </Link>
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.45, delay: 0.12, ease: EDITORIAL_EASE }}
-                viewport={{ once: true }}
-                className="border border-line bg-surface-elevated p-6 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between text-[11px] font-mono text-ink-secondary pb-3 border-b border-line/60">
-                    <span>CREATION</span>
-                    <span className="text-accent-deep font-semibold">FACULTY & PEERS</span>
-                  </div>
-                  <h3 className="font-display text-xl text-ink mt-4 leading-snug">
-                    Post an Opportunity
-                  </h3>
-                  <p className="mt-2 text-xs text-ink-secondary leading-relaxed">
-                    Looking for student collaborators or lab assistants? Define deliverables and
-                    receive proposals instantly.
-                  </p>
-                </div>
-                <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[11px] font-mono text-ink-secondary">
-                  <span className="flex items-center gap-1">
-                    <PlusCircle className="h-3 w-3" /> Create Posting
-                  </span>
-                  <Link href="/jobs/create" className="text-ink flex items-center gap-1">
-                    Post <ArrowRight className="h-3 w-3" />
-                  </Link>
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.45, delay: 0.18, ease: EDITORIAL_EASE }}
-                viewport={{ once: true }}
-                className="border border-line bg-surface-elevated p-6 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between text-[11px] font-mono text-ink-secondary pb-3 border-b border-line/60">
-                    <span>REPUTATION</span>
-                    <span className="text-accent-deep font-semibold">VERIFIED .EDU</span>
-                  </div>
-                  <h3 className="font-display text-xl text-ink mt-4 leading-snug">
-                    Verified Campus Identity
-                  </h3>
-                  <p className="mt-2 text-xs text-ink-secondary leading-relaxed">
-                    Build a tamper-proof portfolio of peer deliverables, lab contracts, and
-                    institutional credentials.
-                  </p>
-                </div>
-                <div className="mt-6 pt-4 border-t border-line/60 flex items-center justify-between text-[11px] font-mono text-ink-secondary">
-                  <span className="flex items-center gap-1">
-                    <Sparkles className="h-3 w-3" /> Peer Reviews
-                  </span>
-                  <Link href="/login" className="text-ink flex items-center gap-1">
-                    Sign in <ArrowRight className="h-3 w-3" />
-                  </Link>
-                </div>
-              </motion.div>
-            </>
-          )}
+      <div className="max-w-7xl mx-auto px-6 lg:px-12 w-full">
+        {/* Section Header - Centered to ground the page */}
+        <div className="max-w-3xl mx-auto text-center mb-6 sm:mb-8">
+          <motion.p
+            initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: EDITORIAL_EASE }}
+            viewport={{ once: true }}
+            className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-secondary mb-3"
+          >
+            The Platform
+          </motion.p>
+          <motion.h2
+            id="product-heading"
+            initial={prefersReduced ? {} : { opacity: 0, y: 8 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.08, ease: EDITORIAL_EASE }}
+            viewport={{ once: true }}
+            className="font-display text-[clamp(28px,3.8vw,56px)] font-normal leading-[1.08] text-ink mb-3.5 [text-wrap:balance]"
+          >
+            The product is the experience.
+          </motion.h2>
+          <motion.p
+            initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.16, ease: EDITORIAL_EASE }}
+            viewport={{ once: true }}
+            className="text-sm sm:text-base text-ink-secondary leading-relaxed max-w-2xl mx-auto [text-wrap:balance]"
+          >
+            Project discovery, student identities, modular team workspaces, and transparent campus portfolios. Built for real academic collaboration.
+          </motion.p>
         </div>
 
+        {/* Responsive Workspace Window Console (100% Pure HTML/CSS/JS, Zero Pills) */}
+        <motion.div
+          initial={prefersReduced ? {} : { opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, delay: 0.2, ease: EDITORIAL_EASE }}
+          viewport={{ once: true }}
+          className="w-full max-w-4xl mx-auto rounded-2xl border border-line bg-surface-elevated shadow-xl overflow-hidden"
+        >
+          {/* Window Chrome Header - Option B: Clean Git & Sync Metadata (Zero AI Fluff) */}
+          <div className="flex items-center justify-between px-5 sm:px-6 py-2.5 border-b border-line bg-surface/80">
+            <div className="flex items-center gap-2 font-mono text-xs text-ink">
+              <span className="font-medium text-ink">market-engine-core</span>
+              <span className="text-line-strong text-ink-secondary/50" aria-hidden="true">&bull;</span>
+              <span className="text-ink-secondary">main</span>
+              <span className="text-line-strong text-ink-secondary/50 hidden sm:inline" aria-hidden="true">&bull;</span>
+              <span className="text-ink-secondary text-[11px] hidden sm:inline">synced 14m ago</span>
+            </div>
+
+            <div className="flex items-center gap-2 font-mono text-xs text-ink-secondary">
+              <span>3 Contributors</span>
+              <span className="text-line-strong text-ink-secondary/50" aria-hidden="true">&bull;</span>
+              <span className="text-ink text-[11px]">Public Workspace</span>
+            </div>
+          </div>
+
+          {/* Clean Tab Triggers (No Pills - Pure Minimal Lines) */}
+          <div className="flex items-center px-5 sm:px-6 border-b border-line bg-surface-elevated overflow-x-auto scrollbar-none">
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`relative py-3 px-4 font-mono text-xs uppercase tracking-wider transition-colors whitespace-nowrap ${
+                    isActive ? "text-ink font-medium" : "text-ink-secondary hover:text-ink"
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  {isActive && (
+                    <motion.div
+                      layoutId="workspaceActiveTab"
+                      className="absolute bottom-0 left-0 right-0 h-0.5 bg-ink"
+                      transition={{ duration: 0.25 }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Active Phase Display */}
+          <div className="p-5 sm:p-7 min-h-[260px] flex flex-col justify-start bg-surface-elevated">
+            <AnimatePresence mode="wait">
+              {/* PHASE 1: TEAM ROSTER */}
+              {activeTab === 0 && (
+                <motion.div
+                  key="tab-roster"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.3 }}
+                  className="w-full"
+                >
+                  <div className="grid grid-cols-12 pb-2 border-b border-line font-mono text-[10px] sm:text-[11px] uppercase tracking-wider text-ink-secondary">
+                    <div className="col-span-5 sm:col-span-4">Member</div>
+                    <div className="col-span-4 sm:col-span-4">Department</div>
+                    <div className="col-span-3 sm:col-span-4 text-right sm:text-left">Role</div>
+                  </div>
+
+                  <div className="divide-y divide-line/40">
+                    {ROSTER_DATA.map((row) => {
+                      if (row.isNew && !revealNewItem) return null;
+                      return (
+                        <motion.div
+                          key={row.member}
+                          initial={row.isNew ? { opacity: 0, x: -8 } : false}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.35, ease: EDITORIAL_EASE }}
+                          className={`grid grid-cols-12 py-3 items-center text-sm ${
+                            row.isNew ? "bg-accent-deep/[0.04]" : ""
+                          }`}
+                        >
+                          <div className="col-span-5 sm:col-span-4 font-medium text-ink flex items-center gap-1.5">
+                            {row.isNew && (
+                              <span className="text-accent-deep font-mono text-xs shrink-0" aria-hidden="true">
+                                &bull;
+                              </span>
+                            )}
+                            <span className="truncate">{row.member}</span>
+                          </div>
+                          <div className="col-span-4 sm:col-span-4 font-mono text-xs sm:text-sm text-ink-secondary truncate">
+                            {row.department}
+                          </div>
+                          <div className="col-span-3 sm:col-span-4 font-mono text-xs sm:text-sm text-ink text-right sm:text-left truncate">
+                            {row.role}
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* PHASE 2: CONNECTED RESOURCES */}
+              {activeTab === 1 && (
+                <motion.div
+                  key="tab-resources"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.3 }}
+                  className="w-full"
+                >
+                  <div className="grid grid-cols-12 pb-2 border-b border-line font-mono text-[10px] sm:text-[11px] uppercase tracking-wider text-ink-secondary">
+                    <div className="col-span-5 sm:col-span-4">Resource</div>
+                    <div className="col-span-4 sm:col-span-4">Target</div>
+                    <div className="col-span-3 sm:col-span-4 text-right sm:text-left">Sync Status</div>
+                  </div>
+
+                  <div className="divide-y divide-line/40">
+                    {RESOURCE_DATA.map((row) => {
+                      if (row.isNew && !revealNewItem) return null;
+                      return (
+                        <motion.div
+                          key={row.resource}
+                          initial={row.isNew ? { opacity: 0, x: -8 } : false}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.35, ease: EDITORIAL_EASE }}
+                          className={`grid grid-cols-12 py-2.5 items-center text-sm ${
+                            row.isNew ? "bg-accent-deep/[0.04]" : ""
+                          }`}
+                        >
+                          <div className="col-span-5 sm:col-span-4 font-medium text-ink flex items-center gap-1.5">
+                            {row.isNew && (
+                              <span className="text-accent-deep font-mono text-xs shrink-0" aria-hidden="true">
+                                &bull;
+                              </span>
+                            )}
+                            <span className="truncate">{row.resource}</span>
+                          </div>
+                          <div className="col-span-4 sm:col-span-4 font-mono text-xs sm:text-sm text-ink-secondary truncate">
+                            {row.target}
+                          </div>
+                          <div className="col-span-3 sm:col-span-4 font-mono text-xs sm:text-sm text-ink text-right sm:text-left truncate">
+                            {row.status}
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* PHASE 3: PROJECT MILESTONES */}
+              {activeTab === 2 && (
+                <motion.div
+                  key="tab-milestones"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.3 }}
+                  className="w-full"
+                >
+                  <div className="grid grid-cols-12 pb-2 border-b border-line font-mono text-[10px] sm:text-[11px] uppercase tracking-wider text-ink-secondary">
+                    <div className="col-span-4 sm:col-span-3">Timeline</div>
+                    <div className="col-span-5 sm:col-span-5">Deliverable</div>
+                    <div className="col-span-3 sm:col-span-4 text-right sm:text-left">Status</div>
+                  </div>
+
+                  <div className="divide-y divide-line/40">
+                    {MILESTONE_DATA.map((row) => {
+                      if (row.isNew && !revealNewItem) return null;
+                      return (
+                        <motion.div
+                          key={row.timeline}
+                          initial={row.isNew ? { opacity: 0, x: -8 } : false}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.35, ease: EDITORIAL_EASE }}
+                          className={`grid grid-cols-12 py-3 items-center text-sm ${
+                            row.isNew ? "bg-accent-deep/[0.04]" : ""
+                          }`}
+                        >
+                          <div className="col-span-4 sm:col-span-3 font-medium text-ink flex items-center gap-1.5">
+                            {row.isPulsing && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-accent-deep animate-ping shrink-0" aria-hidden="true" />
+                            )}
+                            <span className="truncate">{row.timeline}</span>
+                          </div>
+                          <div className="col-span-5 sm:col-span-5 font-mono text-xs sm:text-sm text-ink truncate">
+                            {row.deliverable}
+                          </div>
+                          <div className="col-span-3 sm:col-span-4 font-mono text-xs sm:text-sm text-ink-secondary text-right sm:text-left truncate">
+                            {row.status}
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </motion.div>
+
+        {/* Action CTA: Single focused button, centered */}
         <motion.div
           initial={prefersReduced ? {} : { opacity: 0, y: 6 }}
           whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, delay: 0.24, ease: EDITORIAL_EASE }}
+          transition={{ duration: 0.45, delay: 0.28, ease: EDITORIAL_EASE }}
           viewport={{ once: true }}
-          className="mt-14 flex flex-wrap gap-6 justify-center"
+          className="mt-8 flex justify-center"
         >
           <Link
-            href="/jobs"
-            className="inline-block text-sm text-ink border-b border-ink pb-0.5 hover:text-ink-secondary hover:border-ink-secondary transition-colors tracking-wide"
+            href="/activity"
+            className="inline-flex items-center gap-2 px-7 py-3.5 bg-ink text-canvas text-sm font-medium tracking-wide rounded hover:bg-ink/90 active:scale-[0.98] transition-all shadow-sm"
           >
-            Browse campus opportunities
-          </Link>
-          <Link
-            href="/login"
-            className="inline-block text-sm text-ink-secondary border-b border-ink-secondary pb-0.5 hover:text-ink hover:border-ink transition-colors tracking-wide"
-          >
-            Create student profile
+            <span>Enter the workspace</span>
+            <ArrowRight className="w-4 h-4" />
           </Link>
         </motion.div>
       </div>

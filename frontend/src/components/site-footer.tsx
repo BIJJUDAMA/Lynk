@@ -9,7 +9,7 @@ export default function SiteFooter() {
           <div>
             <p className="font-display text-lg tracking-[0.12em] text-ink uppercase">Lynk</p>
             <p className="mt-2 text-sm text-ink-secondary max-w-xs leading-relaxed">
-              Campus work platform for verified university students.
+              Campus collaboration platform for student builders and researchers.
             </p>
           </div>
 
@@ -20,22 +20,22 @@ export default function SiteFooter() {
                 Platform
               </span>
               <Link
-                href="/jobs"
+                href="/projects"
                 className="text-sm text-ink-secondary hover:text-ink transition-colors"
               >
-                Opportunities
+                Projects
               </Link>
               <Link
-                href="/jobs/create"
+                href="/projects/create"
                 className="text-sm text-ink-secondary hover:text-ink transition-colors"
               >
-                Post an opportunity
+                Start a project
               </Link>
               <Link
-                href="/contracts"
+                href="/activity"
                 className="text-sm text-ink-secondary hover:text-ink transition-colors"
               >
-                Contracts
+                Activity Hub
               </Link>
             </div>
             <div className="flex flex-col gap-3">

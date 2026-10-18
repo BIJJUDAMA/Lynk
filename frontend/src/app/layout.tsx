@@ -19,9 +19,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Lynk | Campus Work Platform",
+  title: "Lynk | Campus Project & Team Platform",
   description:
-    "Find opportunities, discover people, and turn ideas into something real. Verified university students, structured contracts, peer reviews.",
+    "Find student initiatives, discover teammates across disciplines, and turn ideas into something real in collaborative workspaces.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

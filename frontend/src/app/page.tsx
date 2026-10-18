@@ -1,10 +1,9 @@
 import HeroSection from "@/components/hero-section";
 import FindWorkSection from "@/components/find-work-section";
 import FindPeopleSection from "@/components/find-people-section";
-import SkillsSection from "@/components/skills-section";
 import WorkflowSection from "@/components/workflow-section";
 import ProductShowcase from "@/components/product-showcase";
-import IntelligenceSection from "@/components/intelligence-section";
+import SemanticSearchSection from "@/components/semantic-search-section";
 import FinalCta from "@/components/final-cta";
 
 export default function HomePage() {
@@ -13,10 +12,9 @@ export default function HomePage() {
       <HeroSection />
       <FindWorkSection />
       <FindPeopleSection />
-      <SkillsSection />
       <WorkflowSection />
       <ProductShowcase />
-      <IntelligenceSection />
+      <SemanticSearchSection />
       <FinalCta />
     </main>
   );

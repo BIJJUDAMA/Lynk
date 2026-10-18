@@ -78,16 +78,16 @@ export default function FinalCta() {
           className="mt-12 flex flex-wrap items-center justify-center gap-4"
         >
           <Link
-            href="/jobs"
+            href="/login"
             className="inline-block px-8 py-3.5 bg-ink text-canvas text-xs uppercase tracking-widest hover:bg-ink/90 active:scale-[0.98] transition-all duration-150"
           >
-            Explore Opportunities
+            Join with university email
           </Link>
           <Link
-            href="/login"
+            href="/projects"
             className="inline-block px-8 py-3.5 border border-ink text-ink text-xs uppercase tracking-widest hover:bg-ink hover:text-canvas active:scale-[0.98] transition-all duration-150"
           >
-            Sign In with .edu
+            Browse all projects
           </Link>
         </motion.div>
       </div>
