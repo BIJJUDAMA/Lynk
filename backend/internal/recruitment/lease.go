@@ -17,8 +17,9 @@ type CapacityLeaser interface {
 
 // RedisCapacityLeaser uses an atomic Lua script to guarantee zero over-recruitment at 1M RPS.
 type RedisCapacityLeaser struct {
-	client redis.UniversalClient
-	script *redis.Script
+	client        redis.UniversalClient
+	script        *redis.Script
+	releaseScript *redis.Script
 }
 
 const luaAcquireCapacity = `
@@ -39,11 +40,28 @@ else
 end
 `
 
+const luaReleaseCapacity = `
+local key = KEYS[1]
+
+local current = redis.call('GET', key)
+if not current then
+    return 0
+end
+
+current = tonumber(current)
+if not current or current <= 0 then
+    return 0
+end
+
+return redis.call('DECR', key)
+`
+
 // NewRedisCapacityLeaser initializes the Lua reservation leaser.
 func NewRedisCapacityLeaser(client redis.UniversalClient) *RedisCapacityLeaser {
 	return &RedisCapacityLeaser{
-		client: client,
-		script: redis.NewScript(luaAcquireCapacity),
+		client:        client,
+		script:        redis.NewScript(luaAcquireCapacity),
+		releaseScript: redis.NewScript(luaReleaseCapacity),
 	}
 }
 
@@ -58,7 +76,7 @@ func (l *RedisCapacityLeaser) AcquireLease(ctx context.Context, projectID uuid.U
 
 func (l *RedisCapacityLeaser) ReleaseLease(ctx context.Context, projectID uuid.UUID) error {
 	key := fmt.Sprintf("recruitment:capacity:%s", projectID.String())
-	return l.client.Decr(ctx, key).Err()
+	return l.releaseScript.Run(ctx, l.client, []string{key}).Err()
 }
 
 // InMemoryCapacityLeaser provides atomic in-process tracking for testing and local mode.
