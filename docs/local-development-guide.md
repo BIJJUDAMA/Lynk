@@ -1,6 +1,6 @@
 # Local Development & Testing Guide - Lynk
 
-> Complete runbook for running, testing, and developing Lynk locally.  
+> Complete runbook for running, testing, and developing Lynk locally.
 > Co-locates full-stack Docker orchestration, hybrid host development, pre-configured test personas, and verification procedures.
 
 ---
@@ -56,7 +56,7 @@ All 8 services should report `[PASS]`:
 | Service | Local URL | Credentials / Notes |
 | :--- | :--- | :--- |
 | **Web App (Next.js)** | `http://localhost:3000` | Landing page, discovery, activity |
-| **Job Marketplace** | `http://localhost:3000/jobs` | Browse and filter campus opportunities |
+| **Project Workspaces** | `http://localhost:3000/projects` | Browse and filter campus projects and roles |
 | **Auth & Registration** | `http://localhost:3000/register` | Requires valid institutional `.edu` email |
 | **Login** | `http://localhost:3000/login` | Direct login with credentials |
 | **MinIO S3 Console** | `http://localhost:9001` | Username: `minio_admin`<br/>Password: `minio_password` |
@@ -107,19 +107,36 @@ Visit `http://localhost:3000` in your browser. All API requests from the fronten
 
 ---
 
-## 4. Pre-Configured Test Personas & Accounts
+## 4. One-Command Onboarding with Root Makefile
+
+The repository includes a top-level `Makefile` to automate environment setup, git hooks, and verification across Go, TypeScript, and Python:
+
+```bash
+# Run complete multi-service setup (hooks, Go modules, npm packages, Python venv):
+make setup
+
+# Or run individual setup targets:
+make setup-hooks      # Installs pre-commit hook into .git/hooks/pre-commit
+make setup-go         # Downloads and verifies Go modules in backend/
+make setup-frontend   # Installs npm dependencies in frontend/
+make setup-ai         # Creates ai/.venv and installs requirements.txt
+```
+
+---
+
+## 5. Pre-Configured Test Personas & Accounts
 
 The database seed migration (`000010_seed_test_campus_members.up.sql`) provisions three pre-configured campus member accounts in `supertokens_db` and `lynk_db`:
 
 | Account / Email | Password | Email Verification | Primary Purpose & Profile Persona |
 | :--- | :--- | :--- | :--- |
-| **`poster@campus.edu`** | `password123` | **Verified** | **Job Poster / Employer Persona**<br/>**Profile:** Campus Poster (Computer Science, Class of 2026, Lab Organizer). Use this account to create job opportunities, review incoming student applications, and approve contracts. |
-| **`applicant@campus.edu`** | `password123` | **Verified** | **Student Freelancer Persona**<br/>**Profile:** Campus Applicant (Software Engineering, Class of 2027, Skills: Go, TypeScript, React, PostgreSQL). Use this account to browse opportunities, submit proposals, attach resumes, and deliver work. |
-| **`unverified@campus.edu`** | `password123` | **Unverified** | **Fresh / Gate-Testing Persona**<br/>**Profile:** New Student (Design, Class of 2028). Used to test trust gate enforcement -- verifies that unverified students cannot apply to jobs or upload resumes until completing email verification. |
+| **`poster@campus.edu`** | `password123` | **Verified** | **Project Lead / Organizer Persona**<br/>**Profile:** Campus Poster (Computer Science, Class of 2026, Lab Organizer). Use this account to create projects, review applications, and manage workspace rosters. |
+| **`applicant@campus.edu`** | `password123` | **Verified** | **Student Contributor Persona**<br/>**Profile:** Campus Applicant (Software Engineering, Class of 2027, Skills: Go, TypeScript, React, PostgreSQL). Use this account to discover projects, submit applications, attach resumes, and collaborate in workspaces. |
+| **`unverified@campus.edu`** | `password123` | **Unverified** | **Fresh / Gate-Testing Persona**<br/>**Profile:** New Student (Design, Class of 2028). Used to test trust gate enforcement -- verifies that unverified students cannot apply to projects or upload resumes until completing email verification. |
 
 ---
 
-## 5. Creating Your Own Custom Test Account
+## 6. Creating Your Own Custom Test Account
 
 You can also register any new account directly via the UI:
 
@@ -130,7 +147,20 @@ You can also register any new account directly via the UI:
 
 ---
 
-## 6. Running Test Suites Locally
+## 7. Running Test Suites & Code Quality Checks Locally
+
+You can run the entire verification suite via `make` or standard CLI commands:
+
+### Via Makefile (Unified)
+
+```bash
+make test           # Runs backend, frontend, and AI test suites
+make lint           # Runs golangci-lint, oxlint, and ruff check
+make format         # Formats Go (gofmt), frontend (prettier), and Python (ruff)
+make format-check   # Checks formatting across all services (identical to CI)
+```
+
+### Via Direct CLI Commands
 
 ```bash
 # Backend (Go):

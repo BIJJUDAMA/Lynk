@@ -43,11 +43,11 @@ Lynk completely replaces the fragmented dual-account paradigm with the **Unified
                        /                             \
                       /                               \
                      v                                 v
-        [ Organizer / Poster ]              [ Contributor / Student ]
-        - Create opportunity postings       - Browse campus opportunities
-        - Review proposals                  - Submit applications
-        - Coordinate & execute contracts    - Upload verified resume
-        - Review student deliverable        - Receive peer rating & review
+        [ Project Lead / Maintainer ]       [ Contributor / Team Member ]
+        - Create projects & workspaces      - Browse campus projects & teams
+        - Review member applications        - Submit applications & join teams
+        - Manage team roles & resources     - Upload verified resume
+        - Coordinate milestones & updates   - Receive peer rating & review
 ```
 
 ---
@@ -56,8 +56,8 @@ Lynk completely replaces the fragmented dual-account paradigm with the **Unified
 
 | Dimension | Specification | Notes & Invariants |
 | :--- | :--- | :--- |
-| **Monorepo Topology** | Polyglot monorepo (`frontend/`, `backend/`, `ai/`, `docs/`) | Co-located frontend, authoritative backend, and internal AI subsystems. |
-| **Frontend Stack** | Next.js 14.2 (App Router), React 18.3, TypeScript 5.6, Tailwind CSS 3.4, TanStack Query 5 | **Runs on host (`npm run dev`) at `http://localhost:3000`**. NOT dockerised for instant HMR. |
+| **Monorepo Topology** | Polyglot monorepo (`frontend/`, `backend/`, `ai/`, `docs/`) | Co-located frontend, authoritative backend, and internal AI subsystems unified via root `Makefile`. |
+| **Frontend Stack** | Next.js 16 (App Router), React 19, TypeScript 5.8, Tailwind CSS v4, TanStack Query 5 | **Runs on host (`npm run dev`) at `http://localhost:3000`**. NOT dockerised for instant HMR. |
 | **Frontend Auth Client** | `supertokens-web-js` 0.16.0 | Handles session tokens (`sAccessToken`, `sRefreshToken`), direct login, and email verification. |
 | **Authoritative Backend** | Go 1.25, Chi Router v5.3, `pgx/v5` 5.5, AWS SDK Go v2 (S3) | **Dockerised (`lynk-api`) at `http://localhost:8080`**. Layered architecture: Handler -> Service -> Repository. |
 | **Caching & Rate Limiting** | Redis 7+ (`lynk-redis` on port `6379`) | Sliding-window rate limiter & cache-aside read layer with in-memory fallback. |
@@ -65,7 +65,7 @@ Lynk completely replaces the fragmented dual-account paradigm with the **Unified
 | **AI Backend (Internal)** | Python 3.11, FastAPI, CPU ONNX INT8, sentence-transformers, scikit-learn | **Dockerised (`ai-api`) at `http://ai-api:8000`**. Protected via `X-Internal-AI-Secret`. |
 | **AI Worker Daemon** | Python 3.11 (`ai-worker`) | Background worker consuming `ai_jobs` using PostgreSQL `FOR UPDATE SKIP LOCKED`. |
 | **Database** | PostgreSQL 16 (`pgvector/pgvector:pg16` on port `5432`) | Two logical databases: `lynk_db` (relational schema + `vector(384)`) and `supertokens_db`. |
-| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000015`) | Forward and rollback migrations. Migration 000015 establishes embedding cache and outbox events. |
+| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000019`) | Forward and rollback migrations. Migrations 000016-000019 establish Project-First Workspace architecture and semantic embeddings. |
 | **Identity & Access (IAM)** | Self-hosted SuperTokens Core 9.3 (`lynk-supertokens` on port `3567`) | Recipes: `EmailPassword`, `Session`, `EmailVerification`. Direct HTTP integration with Go API. |
 | **Object Storage** | MinIO S3 (`lynk-minio` on port `9000` API, `9001` Web Console) | Dedicated exclusively to the `resumes` bucket. Direct pre-signed upload URLs and streaming. |
 | **Local Network** | Docker Compose bridge network (`lynk-net`) | Internal container DNS: `postgres:5432`, `pgbouncer:6432`, `redis:6379`, `supertokens:3567`, `minio:9000`, `api:8080`, `ai-api:8000`. |
@@ -80,7 +80,7 @@ The platform strictly isolates containerized backend infrastructure from the hos
 ```mermaid
 flowchart TB
     subgraph HostEnvironment["HOST ENVIRONMENT (Local Developer Workstation)"]
-        FE["Next.js 14 App Router<br/>(Port: 3000)<br/>Host Process (npm run dev)<br/>TanStack Query + SSE"]
+        FE["Next.js 16 App Router<br/>(Port: 3000)<br/>Host Process (npm run dev)<br/>TanStack Query + SSE"]
         Browser["Developer Web Browser<br/>(http://localhost:3000)"]
         Browser <-->|HMR & UI Navigation| FE
     end
@@ -117,7 +117,7 @@ flowchart TB
 
         subgraph DBContainer["PostgreSQL Container (lynk-postgres)"]
             Postgres["PostgreSQL 16 + pgvector<br/>(Port: 5432)"]
-            AppDB[("lynk_db<br/>(Relational Tables + vector(384) HNSW Indexes)")]
+            AppDB[("lynk_db<br/>(Relational Tables + vector(384) HNSW Indexes<br/>Projects, Workspaces, Teams)")]
             AuthDB[("supertokens_db<br/>(Users, Sessions, Verification Tokens)")]
             Postgres --> AppDB
             Postgres --> AuthDB
@@ -159,10 +159,10 @@ The documentation suite is structured into dedicated modular domains under [`arc
 | **OpenAPI 3.1.0 Contract** | [`architecture/openapi.yaml`](architecture/openapi.yaml) | Machine-readable OpenAPI 3.1.0 specification defining components, schemas, parameters, security schemes (`sessionCookie`, `bearerAuth`), and response envelopes. | API Tooling, Frontend Codegen, QA Engineers |
 | **Security, Threat Model & IAM Architecture** | [`architecture/security-and-iam.md`](architecture/security-and-iam.md) | Self-hosted SuperTokens Core configuration, institutional `.edu` email gate, CORS/CSRF defenses, 1MB body limit DoS prevention, dynamic socket timeouts (F-05), password hashing, and threat mitigation. | Security Auditors, DevOps, Backend Engineers |
 | **Object Storage Architecture & MinIO Policies** | [`architecture/object-storage.md`](architecture/object-storage.md) | MinIO S3 bucket configuration (`resumes`), bucket isolation, streaming uploads, MIME type validation (`application/pdf`, `msword`), pre-signed download URLs, and storage security. | Cloud Engineers, Backend Engineers, DevOps |
-| **Local Development & Testing Guide** | [`local-development-guide.md`](local-development-guide.md) | Single-command Docker vs. hybrid host dev workflows, service port registry, pre-configured test personas (`poster`, `applicant`, `unverified`), and test execution runbook. | All Developers, QA, Onboarding Engineers |
+| **Local Development & Testing Guide** | [`local-development-guide.md`](local-development-guide.md) | Single-command root Makefile onboarding (`make setup`), Docker vs. hybrid host dev workflows, service port registry, pre-configured test personas (`lead`, `contributor`, `unverified`), and test execution runbook. | All Developers, QA, Onboarding Engineers |
 | **Operations, Runbook & Local Developer Guide** | [`development/runbook-and-operations.md`](development/runbook-and-operations.md) | First-time setup, Docker Compose lifecycle, environment variable matrices, database seed scripts, troubleshooting runbook, disaster recovery, and operational procedures. | All Developers, DevOps, Site Reliability Engineers |
 | **Testing, Quality Assurance & Verification Strategy** | [`development/testing-strategy.md`](development/testing-strategy.md) | Testing pyramid (unit, integration, HTTP handler, frontend), test execution commands, coverage targets, CI/CD pipeline specifications, and pre-release gates. | QA Engineers, Backend Engineers, Frontend Engineers |
-| **Permanent Tooling Architecture & CI Strategy** | [`tooling.md`](tooling.md) | Universal multi-language linting, formatting, type checking, security scanning, pre-commit boundaries, and parallel GitHub Actions matrix across Go, Python, and TypeScript. | All Developers, DevOps, Platform Engineers |
+| **Permanent Tooling Architecture & CI Strategy** | [`tooling.md`](tooling.md) | Universal multi-language linting, formatting, type checking, security scanning, root Makefile control plane, pre-commit activation, and parallel GitHub Actions matrix across Go, Python, and TypeScript. | All Developers, DevOps, Platform Engineers |
 
 ---
 
@@ -178,14 +178,15 @@ To accelerate onboarding, follow the tailored reading paths based on your primar
    - Migration `000003`: The transition of `id` and `user_id` to `VARCHAR(64)` for SuperTokens compatibility.
    - Migration `000009`: Enforcement of `ON DELETE RESTRICT` on `applications.job_id` preventing dangling application states.
    - State transition invariants: Contract status transitions (`Draft` -> `Active` -> `Completed` | `Cancelled`) and the lock ordering discipline (`jobs -> applications -> contracts`) to prevent deadlocks.
+   - Migrations `000016` - `000019`: Project-First Workspace architecture (`backend/internal/project`, `team`, `recruitment`, `workspace`), team member role enforcement (Lead, Maintainer, Member), modular section registries, and pgvector project semantic embeddings.
 3. **API Implementation:** Inspect [`architecture/api-specifications.md`](architecture/api-specifications.md) to verify expected route handlers, input validation constraints, and standardized JSON error structures (`{"error": "string"}`).
 4. **Storage & Resumes:** Review [`architecture/object-storage.md`](architecture/object-storage.md) for MinIO S3 integration patterns, streaming multipart uploads, and bucket readiness probes.
 5. **Local Workflow & Testing:** Use [`development/runbook-and-operations.md`](development/runbook-and-operations.md) for environment configuration and [`development/testing-strategy.md`](development/testing-strategy.md) for running `go test -v -race ./...`.
 
 ### 5.2 For Frontend Engineers
-*Stack: Next.js 14 (App Router), React 18, TypeScript 5, Tailwind CSS, SuperTokens Web JS.*
+*Stack: Next.js 16 (App Router), React 19, TypeScript 5.8, Tailwind CSS v4, SuperTokens Web JS.*
 
-1. **Orientation & Architecture:** Start with [`architecture/system-architecture.md`](architecture/system-architecture.md) to review runtime boundaries (Next.js executes directly on the host machine at `http://localhost:3000` while proxying API calls to `http://localhost:8080`).
+1. **Orientation & Architecture:** Start with [`architecture/system-architecture.md`](architecture/system-architecture.md) to review runtime boundaries (Next.js executes directly on the host machine at `http://localhost:3000` while proxying API calls to `http://localhost:8080`). Core application surfaces center on `/projects` (discovery), `/projects/create` (project initialization), `/projects/[slug]` (modular workspace & sections), and `/activity` (consolidated project & application hub).
 2. **Authentication Flow:** Read the IAM and Session section in [`architecture/security-and-iam.md`](architecture/security-and-iam.md):
    - SuperTokens Web JS session initialization (`supertokens-web-js`).
    - Session cookies (`sAccessToken`, `sRefreshToken`) transmitted with `credentials: "include"`.
@@ -229,7 +230,7 @@ To accelerate onboarding, follow the tailored reading paths based on your primar
 Every engineer and agent working within this repository must uphold these non-negotiable invariants:
 
 ### Invariant 1: Authoritative Go Backend Boundary
-The Go REST API is the sole authority for authentication, authorization, business logic, domain validation, and transactional database state transitions. The internal FastAPI backend (`ai-api:8000`) is strictly an internal compute engine and must NEVER bypass Go authentication or directly alter authoritative domain status columns (`jobs.status`, `applications.status`, `contracts.status`).
+The Go REST API is the sole authority for authentication, authorization, business logic, domain validation, and transactional database state transitions. The internal FastAPI backend (`ai-api:8000`) is strictly an internal compute engine and must NEVER bypass Go authentication or directly alter authoritative domain status columns (`jobs.status`, `applications.status`, `contracts.status`, `projects.status`).
 
 ### Invariant 2: The Containerization Boundary
 - **Backend Infrastructure:** The Go REST API (`backend/Dockerfile`), FastAPI AI Backend (`ai/Dockerfile`), AI Worker, PostgreSQL + pgvector, SuperTokens Core, and MinIO run inside Docker containers orchestrated via `docker-compose.yml`.
@@ -245,13 +246,13 @@ AI is an enhancement layer. If the AI backend, GPU, or model server is offline, 
 Generative AI endpoints (such as `POST /api/v1/jobs/generate`) produce transient draft payloads and NEVER insert rows directly into the authoritative `jobs` table. Campus organizers retain full editorial control before manually publishing.
 
 ### Invariant 6: The Institutional Email Gate
-Students and campus members cannot post opportunities, submit applications, accept contracts, generate AI drafts, or upload resumes until their institutional `.edu` email address has been verified. The Go API enforces this check via `middleware.RequireVerifiedEmail()`.
+Students and campus members cannot create projects, invite members, submit applications, generate AI drafts, or upload resumes until their institutional `.edu` email address has been verified. The Go API enforces this check via `middleware.RequireVerifiedEmail()`.
 
 ### Invariant 7: Resume Object Storage Exclusivity
 Resumes are stored exclusively in **MinIO** (`resumes` bucket). The PostgreSQL database stores only metadata (object key, file name, MIME type, byte size, upload timestamp). Binary blobs are strictly forbidden in PostgreSQL.
 
 ### Invariant 8: Database Migration Immutability
-Never modify an existing raw SQL migration in `backend/migrations/` that has already been executed. Always write an incremental forward migration (`NNNNNN_name.up.sql`) paired with a rollback migration (`NNNNNN_name.down.sql`). Migration `000012` introduces `pgvector` and 12 AI subsystem tables.
+Never modify an existing raw SQL migration in `backend/migrations/` that has already been executed. Always write an incremental forward migration (`NNNNNN_name.up.sql`) paired with a rollback migration (`NNNNNN_name.down.sql`). Migrations `000001` through `000019` are immutable.
 
 ---
 
@@ -301,7 +302,25 @@ Docker: Go REST API (:8080)
 
 ## 8. Operational Quick Reference & Command Cheat Sheet
 
-### 8.1 Infrastructure Management
+### 8.1 Root Makefile Quickstart (Recommended)
+```bash
+# Complete developer workspace initialization (one-command onboarding)
+make setup
+
+# Targeted stack initialization
+make setup-hooks      # Install and activate Git pre-commit hooks
+make setup-go         # Download and verify Go backend modules
+make setup-frontend   # Install frontend dependencies (npm ci)
+make setup-ai         # Install Python AI dependencies
+
+# Multi-language verification and quality gates across all stacks
+make test             # Run backend, AI, and frontend test suites
+make lint             # Run golangci-lint, ruff, oxlint, and typecheck
+make format           # Auto-format Go, Python, and TypeScript/CSS
+make format-check     # Verify formatting compliance without modifying files
+```
+
+### 8.2 Infrastructure Management
 ```bash
 # Start all backend containers (PostgreSQL, SuperTokens, MinIO, Go API, AI API, AI Worker)
 docker compose up -d
@@ -316,7 +335,7 @@ docker compose logs -f
 docker compose down
 ```
 
-### 8.2 Running Application Processes
+### 8.3 Running Application Processes
 ```bash
 # Terminal 1 (Host Frontend):
 cd frontend
@@ -335,7 +354,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 # AI Backend runs at: http://localhost:8000
 ```
 
-### 8.3 Health Check Verification Probes
+### 8.4 Health Check Verification Probes
 ```bash
 # Deep health check probe (evaluates PostgreSQL connection pool + MinIO bucket status)
 curl -i http://localhost:8080/health
@@ -351,7 +370,7 @@ curl -i http://localhost:8000/health
 curl -i http://localhost:8000/ready
 ```
 
-### 8.4 Verification & Quality Assurance Suite
+### 8.5 Verification & Quality Assurance Suite
 ```bash
 # Backend unit & integration test suite (with race detector)
 cd backend
@@ -375,7 +394,7 @@ npm run build
 .\scripts\smoke-test.ps1         # Windows PowerShell
 ```
 
-### 8.5 Automated GitHub Actions CI/CD Pipelines
+### 8.6 Automated GitHub Actions CI/CD Pipelines
 The repository enforces code quality and deployment safety across decoupled workflows:
 - **Core CI (`.github/workflows/ci.yml`):** Runs `golangci-lint`, forward/rollback migration checks (`up`, `down -all`, `up`), Go race detector tests, ESLint, frontend unit tests, TypeScript typechecks, and Next.js production builds.
 - **Container Build (`.github/workflows/docker-build.yml`):** Validates that containers build cleanly via Buildx with layer caching.

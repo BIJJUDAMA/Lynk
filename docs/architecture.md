@@ -1,12 +1,12 @@
 # System Architecture Document - Lynk
 
 > [!NOTE]
-> **Authoritative Documentation Suite Available:**  
+> **Authoritative Documentation Suite Available:**
 > This file is retained for historical reference. The active, multi-part documentation suite is located in [`docs/README.md`](README.md) and [`docs/architecture/system-architecture.md`](architecture/system-architecture.md).
 
-> **Project:** Lynk - High-Trust Campus Freelance & Gig Marketplace  
-> **Status:** MVP Architecture Specification  
-> **Identity & Access Management (IAM):** SuperTokens Core (Session + EmailPassword + EmailVerification)  
+> **Project:** Lynk - High-Trust Campus Freelance & Gig Marketplace
+> **Status:** MVP Architecture Specification
+> **Identity & Access Management (IAM):** SuperTokens Core (Session + EmailPassword + EmailVerification)
 > **Evolution Phase:** Phase 1 (MVP - "Nothing Else Initially")
 
 ---
@@ -32,7 +32,7 @@
 +------------------------------------------------------------------------+
 |                        HOST ENVIRONMENT (DEVELOPMENT)                  |
 |                                                                        |
-|   Next.js 14+ (App Router + TypeScript + Tailwind CSS)                 |
+|   Next.js 16+ (App Router + React 19 + TypeScript + Tailwind CSS)      |
 |   Runs on host: http://localhost:3000                                  |
 |   Auth Client: supertokens-web-js (Session, EmailPassword, Verify)     |
 +------------------------------------------------------------------------+
@@ -138,7 +138,7 @@ sequenceDiagram
     API->>ST: Create / Verify User in SuperTokens
     ST-->>API: Return Session Tokens & Claims
     API-->>Next: Return Session Cookie (sAccessToken)
-    
+
     Next->>API: Authenticated Request (Cookie: sAccessToken or Bearer)
     API->>API: SessionMiddleware validates session
     API->>API: Check EmailVerification status

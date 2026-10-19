@@ -1,9 +1,9 @@
 # Object Storage Architecture & MinIO Policies - Lynk
 
-> **Authoritative Object Storage Specification**  
-> **Storage Engine:** MinIO S3 (`lynk-minio` on ports `9000` API / `9001` Web Console)  
-> **Scope:** Dedicated exclusively to student resumes (`resumes` bucket)  
-> **Upload Boundary:** Streaming S3 decoupled from PostgreSQL transactions & advisory locks (F-02)  
+> **Authoritative Object Storage Specification**
+> **Storage Engine:** MinIO S3 (`lynk-minio` on ports `9000` API / `9001` Web Console)
+> **Scope:** Dedicated exclusively to student resumes (`resumes` bucket)
+> **Upload Boundary:** Streaming S3 decoupled from PostgreSQL transactions & advisory locks (F-02)
 > **Access Policy:** Private bucket with short-lived pre-signed download URLs (15-minute TTL)
 
 ---
@@ -33,7 +33,7 @@ Lynk enforces strict architectural boundaries separating relational state from b
 ### 1.1 Non-Negotiable Storage Rules
 1. **Resumes Only:** MinIO in the MVP is dedicated strictly to student resumes. It must not be used for generic avatar hosting, static asset serving, or system logs.
 2. **Zero Container Disk Persistence:** Resumes are never written to the local container or host filesystem. File uploads stream directly from the incoming HTTP multipart request body into MinIO via the AWS S3 Go SDK v2.
-3. **No File Blobs in PostgreSQL:** PostgreSQL columns must never store `BYTEA` or binary blobs. Only S3 object keys are persisted in `profiles.resume_key` and `applications.resume_key`.
+3. **No File Blobs in PostgreSQL:** PostgreSQL columns must never store `BYTEA` or binary blobs. Only S3 object keys are persisted in `profiles.resume_key`, `applications.resume_key`, and `project_applications.resume_asset_key`.
 4. **Private by Default:** The `resumes` bucket is strictly private. Anonymous read/write access is blocked at the MinIO bucket policy level.
 
 ---

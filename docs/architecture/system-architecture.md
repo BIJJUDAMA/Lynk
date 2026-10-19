@@ -1,12 +1,12 @@
 # System Architecture & Monorepo Topology - Lynk
 
-> **Authoritative System Architecture Specification**  
-> **Platform:** Lynk - Campus work and student freelance platform  
-> **Status:** Active Baseline (Phase 1 MVP & Phase 1.5 Production Hardening Complete)  
-> **IAM Specification:** Self-Hosted SuperTokens Core 9.3 (`:3567`)  
-> **Object Storage:** MinIO S3 (`:9000` API / `:9001` Web Console) - Exclusively for Resumes  
-> **Caching & Rate Limiting:** Redis 7+ (`:6379`)  
-> **Connection Pooling:** PgBouncer (`:6432`) in transaction pooling mode  
+> **Authoritative System Architecture Specification**
+> **Platform:** Lynk - Campus work and student freelance platform
+> **Status:** Active Baseline (Phase 1 MVP & Phase 1.5 Production Hardening Complete)
+> **IAM Specification:** Self-Hosted SuperTokens Core 9.3 (`:3567`)
+> **Object Storage:** MinIO S3 (`:9000` API / `:9001` Web Console) - Exclusively for Resumes
+> **Caching & Rate Limiting:** Redis 7+ (`:6379`)
+> **Connection Pooling:** PgBouncer (`:6432`) in transaction pooling mode
 > **Container Boundary:** Docker Compose (`backend/`, PostgreSQL, PgBouncer, Redis, SuperTokens Core, MinIO, FastAPI AI, AI Worker) + Host (`frontend/`)
 
 ---
@@ -21,7 +21,7 @@
 3. **Self-Hosted IAM (SuperTokens Core):** Fully self-hosted identity engine running inside Docker Compose on port 3567. Manages session tokens (`sAccessToken`, `sRefreshToken`), credential hashing, and email verification.
 4. **Dedicated Object Storage (MinIO S3):** Student resumes are stored exclusively in an S3-compatible MinIO bucket (`resumes`) via direct pre-signed upload URLs and secure download streaming.
 5. **Clean Layered Backend:** Go REST API following idiomatic `Handler -> Service -> Repository` separation with `pgx/v5` connection pooling, Redis sliding-window rate limiting, cache-aside layer, transactional outbox worker, and real-time SSE stream.
-6. **Decoupled Frontend Development:** Next.js 14 App Router executes directly on the developer's host machine (`npm run dev`) for instant Hot Module Replacement (HMR), backed by TanStack Query for cache synchronization and optimistic UI updates.
+6. **Decoupled Frontend Development:** Next.js 16 App Router executes directly on the developer's host machine (`npm run dev`) for instant Hot Module Replacement (HMR), backed by React 19 and TanStack Query for cache synchronization and optimistic UI updates.
 
 ---
 
@@ -33,7 +33,7 @@ The Lynk architecture strictly enforces a containerization boundary between pers
 flowchart TB
     subgraph Host["HOST ENVIRONMENT (Local Workstation)"]
         Browser["Web Browser / Client<br/>http://localhost:3000"]
-        NextHost["Next.js 14 App Router (Node 22+)<br/>Host Process (npm run dev)<br/>Port: 3000 (TanStack Query + SSE)"]
+        NextHost["Next.js 16 App Router (Node 22+)<br/>Host Process (npm run dev)<br/>Port: 3000 (React 19 + TanStack Query + SSE)"]
         Browser <-->|HMR & UI Pages| NextHost
     end
 
@@ -91,7 +91,7 @@ flowchart TB
 
 | Service | Container Name | Host Port | Internal Port | Protocol | Purpose |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Frontend** | *Host Process* | `3000` | N/A | HTTP | Next.js 14 App Router (React 18, TypeScript, Tailwind, TanStack Query) |
+| **Frontend** | *Host Process* | `3000` | N/A | HTTP | Next.js 16 App Router (React 19, TypeScript 5.8, Tailwind v4, TanStack Query 5) |
 | **Go REST API** | `lynk-api` | `8080` | `8080` | HTTP | Authoritative Go HTTP service (Chi router, SSE stream, `/metrics`) |
 | **Redis 7** | `lynk-redis` | `6379` | `6379` | TCP | Sliding-window rate limiter & high-throughput cache-aside store |
 | **PgBouncer** | `lynk-pgbouncer` | `6432` | `6432` | TCP | PostgreSQL transaction connection pooling |
@@ -208,7 +208,7 @@ The AI subsystem in Lynk is engineered as an internal platform capability preser
 sequenceDiagram
     autonumber
     actor User as Campus Member (Browser)
-    participant FE as Next.js 14 Frontend
+    participant FE as Next.js 16 Frontend
     participant API as Go REST API (:8080)
     participant Redis as Redis 7 (:6379)
     participant ST as SuperTokens Core (:3567)

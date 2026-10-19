@@ -488,51 +488,76 @@ paths:
 
   /applications/{id}/accept:
     post:
-      summary: Accept application proposal
-      description: Closes job, auto-rejects peers, and creates active contract in a single transaction.
+      summary: Accept project application
+      description: Atomically accepts applicant and adds them to project team roster as member. Requires lead or maintainer role.
       parameters:
         - name: id
           in: path
           required: true
           schema:
             type: string
-            format: uuid
       responses:
         '200':
-          description: Application accepted and contract created
+          description: Application accepted and member added
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  contract_id:
-                    type: string
-                    format: uuid
-                  status:
-                    type: string
-                    example: active
+                $ref: '#/components/schemas/ProjectApplication'
 
   /applications/{id}/reject:
     post:
-      summary: Reject application proposal
+      summary: Reject project application
+      description: Rejects an applicant. Requires lead or maintainer role.
       parameters:
         - name: id
           in: path
           required: true
           schema:
             type: string
-            format: uuid
       responses:
         '200':
           description: Application rejected
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: rejected
+                $ref: '#/components/schemas/ProjectApplication'
+
+  /applications/{id}/shortlist:
+    post:
+      summary: Shortlist project application
+      description: Marks an application as shortlisted for further review. Requires lead or maintainer role.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Application shortlisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectApplication'
+
+  /applications/{id}/withdraw:
+    post:
+      summary: Withdraw project application
+      description: Candidate withdraws their own submitted application.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Application withdrawn
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectApplication'
+
 
   /contracts:
     get:
@@ -699,6 +724,515 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /projects:
+    get:
+      summary: List project workspaces
+      description: Returns paginated list of public project workspaces with optional filtering by category, recruitment status, or owner.
+      security: []
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: recruiting
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of project workspaces
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+    post:
+      summary: Create project workspace
+      description: Creates a new project workspace and sets the creator as the lead team member. Requires verified .edu email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project workspace created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Campus verification pending
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /projects/{idOrSlug}:
+    get:
+      summary: Get project workspace
+      description: Retrieves project workspace metadata, modular sections, and team roster. Public for public projects; session required for unlisted/private.
+      security: []
+      parameters:
+        - name: idOrSlug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project workspace details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update project workspace
+      description: Updates workspace details. Requires lead or maintainer role.
+      parameters:
+        - name: idOrSlug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Project updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '403':
+          description: Insufficient workspace permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /projects/{id}/visibility:
+    patch:
+      summary: Update project visibility
+      description: Updates workspace visibility level (public, unlisted, private). Requires lead or maintainer role.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVisibilityRequest'
+      responses:
+        '200':
+          description: Visibility updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+
+  /projects/{id}/members:
+    get:
+      summary: List project team members
+      description: Returns active team roster for the project.
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Team roster
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectMember'
+
+  /projects/{id}/members/{memberId}:
+    patch:
+      summary: Update team member role
+      description: Promotes or demotes team member. Enforces sole lead protection. Requires lead role.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMemberRoleRequest'
+      responses:
+        '200':
+          description: Member role updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMember'
+        '400':
+          description: Sole lead demotion rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Remove member from project team
+      description: Removes collaborator from workspace roster. Enforces sole lead protection. Requires lead role or self-removal.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Member removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: removed
+
+  /projects/{id}/transfer-leadership:
+    post:
+      summary: Transfer project leadership
+      description: Atomically transfers lead role to another active team member. Requires caller to be current lead.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferLeadershipRequest'
+      responses:
+        '200':
+          description: Leadership transferred
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: transferred
+
+  /projects/{id}/invitations:
+    post:
+      summary: Invite member to team
+      description: Creates an invitation for a verified .edu email address. Requires lead or maintainer role.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteMemberRequest'
+      responses:
+        '201':
+          description: Invitation sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectInvitation'
+
+  /invitations/{id}/accept:
+    post:
+      summary: Accept team invitation
+      description: Accepts a pending invitation and joins project team. Requires verified .edu email matching invitee.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invitation accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: accepted
+
+  /projects/{id}/sections:
+    get:
+      summary: Get modular workspace sections
+      description: Returns ordered list of workspace sections.
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project sections list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectSection'
+    put:
+      summary: Update modular workspace sections
+      description: Updates ordered sections for the workspace. Requires lead or maintainer role.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProjectSection'
+      responses:
+        '200':
+          description: Sections updated
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectSection'
+
+  /projects/{id}/resources:
+    get:
+      summary: List external resources
+      description: Lists pinned repositories, Figma links, and documentation links.
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project resources list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectResource'
+    post:
+      summary: Add external resource
+      description: Pins an external link to the workspace. Requires lead or maintainer role.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateResourceRequest'
+      responses:
+        '201':
+          description: Resource added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResource'
+
+  /projects/{id}/resources/{resourceId}:
+    delete:
+      summary: Delete external resource
+      description: Removes an external resource link. Requires lead or maintainer role.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: resourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Resource deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+
+  /projects/{id}/applications:
+    get:
+      summary: List project applications
+      description: Lists applications submitted to this project. Requires lead or maintainer role.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all, submitted, shortlisted, accepted, rejected]
+      responses:
+        '200':
+          description: Applications list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectApplication'
+    post:
+      summary: Submit project application
+      description: Submits an application to join an open project. Requires verified .edu email.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectApplicationRequest'
+      responses:
+        '201':
+          description: Application submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectApplication'
+
+  /applications/me:
+    get:
+      summary: List my project applications
+      description: Returns personal applications submitted across all projects by current member.
+      responses:
+        '200':
+          description: Member applications list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectApplication'
+
+  /search/projects:
+    get:
+      summary: Hybrid semantic project discovery
+      description: Searches projects using hybrid full-text and pgvector embedding similarity search.
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Ranked search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectSearchResult'
 
   /metrics:
     get:
@@ -1148,3 +1682,319 @@ components:
           type: string
           example: application/pdf
 
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+          example: autonomous-campus-rover
+        owner_member_id:
+          type: string
+          example: st_usr_9a4f21e0
+        title:
+          type: string
+          example: Autonomous Campus Rover
+        description:
+          type: string
+          example: Building an autonomous payload delivery rover for campus navigation...
+        category:
+          type: string
+          example: Engineering
+        visibility:
+          type: string
+          enum: [public, unlisted, private]
+          example: public
+        recruitment_status:
+          type: string
+          enum: [open, closed]
+          example: open
+        lifecycle_status:
+          type: string
+          enum: [planning, active, completed, archived]
+          example: active
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateProjectRequest:
+      type: object
+      required:
+        - title
+        - description
+        - category
+        - visibility
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 200
+          example: Autonomous Campus Rover
+        description:
+          type: string
+          minLength: 20
+          maxLength: 10000
+          example: Building an autonomous payload delivery rover for campus navigation...
+        category:
+          type: string
+          example: Engineering
+        visibility:
+          type: string
+          enum: [public, unlisted, private]
+          example: public
+
+    UpdateProjectRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 10000
+        category:
+          type: string
+        recruitment_status:
+          type: string
+          enum: [open, closed]
+        lifecycle_status:
+          type: string
+          enum: [planning, active, completed, archived]
+
+    UpdateVisibilityRequest:
+      type: object
+      required:
+        - visibility
+      properties:
+        visibility:
+          type: string
+          enum: [public, unlisted, private]
+          example: unlisted
+
+    ProjectMember:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        member_id:
+          type: string
+          example: st_usr_9a4f21e0
+        role:
+          type: string
+          enum: [lead, maintainer, member, viewer]
+          example: lead
+        status:
+          type: string
+          enum: [active, inactive]
+          example: active
+        joined_at:
+          type: string
+          format: date-time
+
+    UpdateMemberRoleRequest:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          type: string
+          enum: [lead, maintainer, member, viewer]
+          example: maintainer
+
+    TransferLeadershipRequest:
+      type: object
+      required:
+        - new_lead_id
+      properties:
+        new_lead_id:
+          type: string
+          example: st_usr_newlead123
+
+    InviteMemberRequest:
+      type: object
+      required:
+        - email
+        - role
+      properties:
+        email:
+          type: string
+          format: email
+          example: student@campus.edu
+        role:
+          type: string
+          enum: [lead, maintainer, member, viewer]
+          example: member
+
+    ProjectInvitation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [lead, maintainer, member, viewer]
+        status:
+          type: string
+          enum: [pending, accepted, expired, cancelled]
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+
+    ProjectSection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        section_type:
+          type: string
+          enum: [overview, team, resources, recruitment, updates]
+          example: overview
+        title:
+          type: string
+          example: Project Overview
+        enabled:
+          type: boolean
+          example: true
+        position:
+          type: integer
+          example: 0
+        content:
+          type: string
+          example: High-level overview and roadmap of the project.
+
+    ProjectResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        label:
+          type: string
+          example: GitHub Repository
+        url:
+          type: string
+          format: uri
+          example: https://github.com/organization/rover-firmware
+        resource_type:
+          type: string
+          example: github
+        created_at:
+          type: string
+          format: date-time
+
+    CreateResourceRequest:
+      type: object
+      required:
+        - label
+        - url
+      properties:
+        label:
+          type: string
+          example: GitHub Repository
+        url:
+          type: string
+          format: uri
+          example: https://github.com/organization/rover-firmware
+        resource_type:
+          type: string
+          example: github
+
+    ProjectApplication:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        applicant_member_id:
+          type: string
+          example: st_usr_student123
+        statement:
+          type: string
+          example: I have 2 years of ROS and embedded C++ experience...
+        resume_asset_key:
+          type: string
+          nullable: true
+          example: resumes/st_usr_student123/resume.pdf
+        status:
+          type: string
+          enum: [submitted, shortlisted, accepted, rejected, withdrawn]
+          example: submitted
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateProjectApplicationRequest:
+      type: object
+      required:
+        - statement
+      properties:
+        statement:
+          type: string
+          minLength: 10
+          example: I have 2 years of ROS and embedded C++ experience...
+        resume_asset_key:
+          type: string
+          example: resumes/st_usr_student123/resume.pdf
+
+    ProjectSearchResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+          example: autonomous-campus-rover
+        title:
+          type: string
+          example: Autonomous Campus Rover
+        description:
+          type: string
+          example: Building an autonomous payload delivery rover for campus navigation...
+        category:
+          type: string
+          example: Engineering
+        visibility:
+          type: string
+          example: public
+        recruitment_status:
+          type: string
+          example: open
+        lifecycle_status:
+          type: string
+          example: active
+        score:
+          type: number
+          example: 0.892

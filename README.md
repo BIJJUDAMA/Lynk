@@ -2,38 +2,41 @@
 
 # Lynk
 
-**Campus gig and student freelance platform.**
+**Campus collaboration, project workspace, and peer gig platform.**
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/TypeScript-5.8+-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Next.js-16+-black?style=flat-square&logo=next.js&logoColor=white" alt="Next.js" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React" />
+  <img src="https://img.shields.io/badge/Tailwind-CSS_v4-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white" alt="Tailwind CSS" />
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
-  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
-  <img src="https://img.shields.io/badge/TypeScript-5.6+-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
-  <img src="https://img.shields.io/badge/Next.js-14+-black?style=flat-square&logo=next.js&logoColor=white" alt="Next.js" />
   <img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
   <img src="https://img.shields.io/badge/pgvector-Enabled-336791?style=flat-square" alt="pgvector" />
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
 </p>
 
 </div>
 
 ---
 
-Lynk is a campus work platform connecting verified university students with projects, deliverable agreements, and peer reviews. Built around a Unified Campus Member model, any verified student can publish opportunities and submit proposals under a single academic identity without role silos or commercial fees.
+Lynk is a campus collaboration and work platform connecting verified university students with projects, modular workspaces, team roles, and peer reviews. Built around a Unified Campus Member model, any verified student can create project workspaces, invite teammates, and submit direct applications under a single academic identity without role silos or commercial fees.
 
 ---
 
 ## Core Invariants
 
-- Unified Campus Member Model: Single identity across the platform. Any member can publish opportunities and submit proposals under one account.
-- Institutional (.edu) Verification Gate: Registration requires a university .edu email. Sensitive operations (posting, applying, uploading resumes) require email verification.
-- Authoritative Go Backend Boundary: Go REST API (:8080) is the sole authority for authentication, authorization, business rules, transactional state machines, and public APIs.
-- Defense-in-Depth AI Subsystem: Containerized FastAPI AI service (ai-api:8000) on an internal network executes ML, vector search, and ranking pipelines, secured with X-Internal-AI-Secret.
-- Graceful Degradation: All AI operations (search, ranking, draft generation, recommendations, moderation, analytics) automatically fall back to deterministic SQL logic if the AI service is unreachable.
-- Authoritative Non-Mutation: AI endpoints return advisory draft payloads and never mutate authoritative database tables directly.
-- Self-Hosted IAM (SuperTokens Core): Session management, credential handling, and email verification run on-premise in Docker on port 3567.
-- Dense Semantic Vectors (pgvector): PostgreSQL 16 stores 384-dimensional dense vectors (all-MiniLM-L6-v2) indexed with HNSW cosine distance.
-- Dedicated Object Storage (MinIO S3): Student resumes are stored exclusively in MinIO S3 (resumes bucket); database stores only object keys and file metadata.
-- Containerization Boundary: Go API, AI API, AI Worker, SuperTokens Core, PostgreSQL, and MinIO run in Docker Compose. The Next.js frontend runs on the host for rapid HMR.
+- **Unified Campus Member Model:** Single identity across the platform. Any member can publish project workspaces and submit applications under one verified account.
+- **Institutional (.edu) Verification Gate:** Registration mandates an institutional university `.edu` email address. Sensitive marketplace actions (creating projects, sending invitations, applying, uploading resumes) require email confirmation.
+- **Authoritative Go Backend Boundary:** The Go REST API (`:8080`) is the sole authority for authentication, authorization, business rules, transactional state machines, and public APIs.
+- **Defense-in-Depth AI Subsystem:** A containerized FastAPI AI service (`ai-api:8000`) on an internal network executes ML, vector search, and ranking pipelines, secured via `X-Internal-AI-Secret`.
+- **Graceful Degradation Everywhere:** All AI operations (semantic search, ranking, draft generation, recommendations, moderation, analytics) automatically fall back to deterministic SQL logic if the AI service is unreachable.
+- **Authoritative Non-Mutation:** AI endpoints return advisory draft payloads and never mutate authoritative database tables directly.
+- **Self-Hosted IAM (SuperTokens Core):** Session management, credential handling, and email verification run on-premise in Docker on port `3567`.
+- **Dense Semantic Vectors (pgvector):** PostgreSQL 16 stores 384-dimensional dense vectors (`all-MiniLM-L6-v2`) indexed with HNSW cosine distance for natural language discovery.
+- **Dedicated Object Storage (MinIO S3):** Student resumes are stored exclusively in MinIO S3 (`resumes` bucket); PostgreSQL stores only object keys and file metadata.
+- **Containerization Boundary:** Go API, AI API, AI Worker, SuperTokens Core, PostgreSQL, and MinIO run in Docker Compose. The Next.js frontend runs on the host machine for instant Hot Module Replacement (HMR).
+- **Unified Control Plane:** A root `Makefile` standardizes onboarding, dependency installation, and quality gates across Go, TypeScript, and Python.
 
 ---
 
@@ -43,7 +46,7 @@ Lynk is a campus work platform connecting verified university students with proj
 +------------------------------------------------------------------------+
 |                        HOST ENVIRONMENT (DEVELOPMENT)                  |
 |                                                                        |
-|   Next.js 14+ (App Router + TypeScript + Tailwind CSS)                 |
+|   Next.js 16 (App Router + React 19 + TypeScript 5.8 + Tailwind v4)    |
 |   URL: http://localhost:3000                                           |
 |   Auth: supertokens-web-js (Session, EmailPassword, EmailVerification) |
 +------------------------------------------------------------------------+
@@ -90,14 +93,15 @@ Lynk is a campus work platform connecting verified university students with proj
 
 | Layer | Component | Description |
 | :--- | :--- | :--- |
-| Frontend | Next.js 14+ (App Router) | TypeScript, Tailwind CSS, supertokens-web-js (host-executed) |
-| Authoritative Backend | Go 1.22+ | Chi router, pgx/v5, SuperTokens SDK, MinIO Go SDK (Dockerised) |
-| AI Backend | Python 3.11 + FastAPI | PyTorch, sentence-transformers, scikit-learn, vLLM client (Dockerised) |
-| Background Worker | Python 3.11 (ai-worker) | Concurrency-safe queue worker (PostgreSQL SKIP LOCKED + backoff) |
-| Database | PostgreSQL 16 + pgvector | Relational schema + 384-dim vector storage with HNSW indexing |
-| IAM & Auth | SuperTokens Core 9.3 | Self-hosted session management, EmailPassword, EmailVerification |
-| Object Storage | MinIO | S3-compatible object storage dedicated to student resumes |
-| Orchestration | Docker Compose | Multi-container environment (API, AI API, AI Worker, DB, IAM, MinIO) |
+| **Control Plane** | Root `Makefile` | Multi-language onboarding, Git hook installation, and unified test/lint gates |
+| **Frontend** | Next.js 16 (App Router) | React 19, TypeScript 5.8, Tailwind CSS v4, TanStack Query 5 (host-executed) |
+| **Authoritative Backend** | Go 1.25+ | Chi router v5.3, pgx/v5, SuperTokens SDK, MinIO Go SDK (Dockerised) |
+| **AI Backend** | Python 3.11 + FastAPI | PyTorch, sentence-transformers, scikit-learn, vLLM client (Dockerised) |
+| **Background Worker** | Python 3.11 (`ai-worker`) | Concurrency-safe queue worker (PostgreSQL SKIP LOCKED + exponential backoff) |
+| **Database** | PostgreSQL 16 + pgvector | Relational schema + 384-dim vector storage with HNSW cosine distance indexing |
+| **IAM & Auth** | SuperTokens Core 9.3 | Self-hosted session management, EmailPassword, EmailVerification recipes |
+| **Object Storage** | MinIO | S3-compatible object storage dedicated exclusively to student resumes |
+| **Orchestration** | Docker Compose | Multi-container environment (API, AI API, AI Worker, DB, IAM, MinIO) |
 
 ---
 
@@ -105,8 +109,10 @@ Lynk is a campus work platform connecting verified university students with proj
 
 ```text
 Lynk/
++-- Makefile                    # Universal developer control plane (setup, test, lint, format)
 +-- docker-compose.yml          # Postgres (pgvector), MinIO, SuperTokens, Go API, AI API, AI Worker
 +-- .env.example                # Canonical environment variable template
++-- .pre-commit-config.yaml     # Universal Git hook suite (Prettier, Ruff, Go fmt, whitespace)
 +-- ai/                         # FastAPI AI Backend & Async Workers
 |   +-- Dockerfile              # Multi-stage Python 3.11 container build
 |   +-- requirements.txt        # PyTorch, sentence-transformers, asyncpg, scikit-learn
@@ -123,24 +129,28 @@ Lynk/
 |   +-- Dockerfile              # Multi-stage production container build
 |   +-- cmd/api/main.go         # Dependency injection, router setup, server entrypoint
 |   +-- internal/
-|   |   +-- ai/                 # Go AI client, orchestrator, public handlers, models
+|   |   +-- ai/                 # Go AI client, orchestrator, public handlers, project embeddings
 |   |   +-- auth/               # SuperTokens SDK initialization & session claims
 |   |   +-- user/               # Campus member profiles and resume handling
-|   |   +-- job/                # Job postings, filtering, and search
-|   |   +-- application/        # Job applications and proposal management
-|   |   +-- contract/           # Deliverable contract state machine
+|   |   +-- project/            # Project workspace management & visibility
+|   |   +-- team/               # Team members, role transitions, and invitations
+|   |   +-- recruitment/        # Project applications and applicant review
+|   |   +-- workspace/          # Modular section registries and external resources
+|   |   +-- job/                # Job postings, filtering, and search (legacy)
+|   |   +-- application/        # Proposal applications (legacy)
+|   |   +-- contract/           # Deliverable contract state machine (legacy)
 |   |   +-- review/             # Post-completion ratings and reviews
 |   |   +-- storage/            # MinIO S3 client wrapper
 |   |   +-- database/           # Connection pooling (pgxpool) and raw SQL migrator
 |   |   +-- middleware/         # SuperTokens session auth, CORS, logging, recovery
-|   +-- migrations/             # Incremental SQL migration files (000001 - 000013)
+|   +-- migrations/             # Incremental SQL migration files (000001 - 000019)
 +-- frontend/                   # Next.js App Router frontend (runs on host)
 |   +-- src/
-|   |   +-- app/                # App Router pages ((auth), jobs, profile, activity)
-|   |   +-- components/         # Reusable UI components & AuthProvider
-|   |   +-- lib/                # API client, SuperTokens helpers, domain validation
+|   |   +-- app/                # App Router pages ((auth), projects, activity, profile)
+|   |   +-- components/         # Reusable UI components, ProjectCard, TeamManagementModal
+|   |   +-- lib/                # API client, SuperTokens helpers, project-api
 |   |   +-- types/              # TypeScript interfaces matching backend models
-+-- docs/                       # Architectural documentation, API specs, and ERDs
++-- docs/                       # Comprehensive documentation suite, API specs, and ERDs
 +-- scripts/                    # Automated smoke test suites (PowerShell and Bash)
 ```
 
@@ -148,44 +158,140 @@ Lynk/
 
 ## Local Development Setup
 
+You can set up the Lynk development environment using either the **Root Makefile** (recommended for automated multi-language bootstrapping) or manually via **Individual CLI Commands**.
+
 ### Prerequisites
 
-- Docker and Docker Compose (v20+)
-- Go (v1.22+)
-- Python (v3.11+)
-- Node.js (v18+) and npm
+- **Docker and Docker Compose** (v24+)
+- **Go** (v1.22+, recommended: 1.25.x)
+- **Node.js** (v20+) and **npm**
+- **Python** (v3.11+)
+- **Git** (v2.40+)
 
-### 1. Environment Configuration
+---
+
+### Option A: Quickstart via Root Makefile (Recommended)
+
+The top-level `Makefile` automates environment variable copying, Git hook installation, Go module verification, frontend dependencies, and Python virtual environment creation in a single command.
+
+#### 1. One-Command Setup
 
 ```bash
-cp .env.example .env
+# Clone the repository
+git clone https://github.com/BIJJUDAMA/Lynk.git
+cd Lynk
+
+# Initialize all dependencies and Git hooks
+make setup
 ```
 
-### 2. Start Core Infrastructure
+This single command:
+1. Creates `.env` from `.env.example` if not already present.
+2. Installs and activates Git pre-commit hooks via `pre-commit install`.
+3. Downloads and verifies backend Go modules in `backend/`.
+4. Installs frontend npm packages (`npm install`) in `frontend/`.
+5. Creates a Python virtual environment (`ai/.venv`) and installs `ai/requirements.txt`.
 
-Launch PostgreSQL (pgvector), SuperTokens Core, MinIO, the Go API, FastAPI AI Backend, and AI Worker in Docker:
+#### 2. Start Backend Infrastructure
 
 ```bash
 docker compose up -d --build
 ```
 
-Confirm that all services are healthy:
+#### 3. Launch Frontend on Host
+
+```bash
+cd frontend
+npm run dev
+```
+
+Visit `http://localhost:3000` in your browser.
+
+#### Targeted Makefile Setup Targets
+
+If you only need to bootstrap a specific subsystem:
+
+```bash
+make setup-hooks      # Link pre-commit hooks into .git/hooks/pre-commit
+make setup-go         # Download and verify Go modules
+make setup-frontend   # Install npm packages in frontend/
+make setup-ai         # Create Python venv in ai/.venv and install dependencies
+```
+
+---
+
+### Option B: Manual Setup Step-by-Step (Without Makefile)
+
+Follow these manual steps if you prefer direct command execution without `make`:
+
+#### Step 1: Environment Configuration
+
+```bash
+cp .env.example .env
+```
+
+#### Step 2: Install Git Pre-Commit Hooks
+
+Activate local Git hooks so code formatting (Prettier, Ruff, Go fmt) runs automatically before each commit:
+
+```bash
+pre-commit install
+```
+
+#### Step 3: Authoritative Backend (Go) Dependencies
+
+Download and verify backend Go module dependencies:
+
+```bash
+cd backend
+go mod download
+go mod verify
+cd ..
+```
+
+#### Step 4: Python AI Subsystem Dependencies
+
+Create a local virtual environment for the AI service and install requirements:
+
+```bash
+# Linux / macOS:
+python3 -m venv ai/.venv
+source ai/.venv/bin/activate
+pip install -r ai/requirements.txt
+deactivate
+
+# Windows (PowerShell):
+python -m venv ai\.venv
+.\ai\.venv\Scripts\Activate.ps1
+pip install -r ai\requirements.txt
+deactivate
+```
+
+#### Step 5: Start Container Infrastructure
+
+Launch PostgreSQL (`pgvector`), SuperTokens Core, MinIO, the Go REST API, FastAPI AI Backend, and the AI Worker:
+
+```bash
+docker compose up -d --build
+```
+
+Verify that all containers are healthy:
 
 ```bash
 docker compose ps
 ```
 
-Service access points:
-- Go REST API (Authoritative): http://localhost:8080
-- FastAPI AI Backend (Internal): http://localhost:8000
-- SuperTokens Core: http://localhost:3567
-- MinIO S3 API: http://localhost:9000
-- MinIO Web Console: http://localhost:9001 (User: `minio_admin`, Password: `minio_password`)
-- PostgreSQL + pgvector: localhost:5432 (Database: `lynk_db`, User: `lynk_user`)
+Service access registry:
+- **Go REST API (Authoritative):** `http://localhost:8080`
+- **FastAPI AI Backend (Internal):** `http://localhost:8000`
+- **SuperTokens Core IAM:** `http://localhost:3567`
+- **MinIO S3 API:** `http://localhost:9000`
+- **MinIO Web Console:** `http://localhost:9001` (User: `minio_admin`, Password: `minio_password`)
+- **PostgreSQL 16 + pgvector:** `localhost:5432` (Database: `lynk_db`, User: `lynk_user`)
 
-### 3. Start Frontend Development Server
+#### Step 6: Start Frontend Development Server
 
-Install dependencies and start the Next.js dev server on the host:
+Install dependencies and start the Next.js server on the host machine:
 
 ```bash
 cd frontend
@@ -193,110 +299,132 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000 in your browser.
+Open `http://localhost:3000` in your browser.
+
+---
+
+## Unified Developer Control Plane (Makefile)
+
+The root `Makefile` provides unified targets for cross-stack verification, linting, and formatting:
+
+| Target | Description | Subsystems Executed |
+| :--- | :--- | :--- |
+| `make setup` | Complete onboarding (hooks, Go modules, npm dependencies, Python venv) | All |
+| `make setup-hooks` | Installs Git pre-commit hook into `.git/hooks/` | Git |
+| `make setup-go` | Downloads and verifies backend Go modules | Backend (`backend/`) |
+| `make setup-frontend` | Installs npm dependencies | Frontend (`frontend/`) |
+| `make setup-ai` | Creates Python venv and installs requirements | AI (`ai/`) |
+| `make test` | Runs unit test suites across Go, frontend, and AI | All |
+| `make lint` | Runs `golangci-lint`, `oxlint`, and `ruff check` | All |
+| `make format` | Auto-formats Go (`gofmt`), frontend (`prettier`), and Python (`ruff`) | All |
+| `make format-check` | Enforces formatting compliance (identical to CI) | All |
 
 ---
 
 ## API Endpoints Overview
 
-All public REST API endpoints are served by the authoritative Go API on port 8080 and prefixed with `/api/v1`.
+All public REST API endpoints are served by the authoritative Go API on port `8080` and prefixed with `/api/v1`.
 
 | Domain | Method | Path | Auth Required | Description |
 | :--- | :--- | :--- | :---: | :--- |
-| Auth | POST | /auth/* | Public | Handled by SuperTokens Core via mounted middleware |
-| Profile | GET | /profile/me | Session | Retrieve current campus member profile |
-| Profile | PUT | /profile/me | Session | Update bio, skills, department, graduation year |
-| Profile | GET | /profile/recommendations | Verified .edu | Intelligent profile completeness and skill advice |
-| Resume | POST | /profile/resume | Verified .edu | Upload resume PDF to MinIO |
-| Resume | GET | /profile/resume | Session | Download current member resume via presigned URL |
-| Jobs | GET | /jobs | Public | Browse and search campus opportunities |
-| Jobs | POST | /jobs | Verified .edu | Create a new opportunity posting |
-| Jobs | GET | /jobs/{id} | Public | Get detailed view of an opportunity |
-| Jobs | PUT | /jobs/{id} | Owner | Update an active job posting |
-| Jobs | DELETE | /jobs/{id} | Owner | Cancel or close a job posting |
-| AI Jobs | POST | /jobs/generate | Verified .edu | Generate structured job description draft via vLLM |
-| AI Ranking | GET | /jobs/{id}/applicants/ranking | Job Creator | Advisory candidate ranking based on skills & semantics |
-| Search | GET | /search/jobs?q=... | Public | Hybrid semantic + keyword job search |
-| Search | GET | /search/people?q=... | Verified .edu | Hybrid semantic + keyword student member discovery |
-| Applications | POST | /jobs/{id}/applications | Verified .edu | Submit proposal with attached resume |
-| Applications | GET | /jobs/{id}/applications | Owner | Review submitted applications for posting |
-| Applications | GET | /applications/mine | Session | List applications submitted by current user |
-| Applications | PATCH | /applications/{id}/status | Owner | Accept or reject application (acceptance creates contract) |
-| Contracts | GET | /contracts | Session | List contracts for authenticated user |
-| Contracts | GET | /contracts/{id} | Participant | View contract details and status |
-| Contracts | PATCH | /contracts/{id}/status | Participant | Transition contract state (Active -> Completed or Cancelled) |
-| Reviews | POST | /contracts/{id}/reviews | Participant | Submit 1-5 star rating (unlocked upon contract completion) |
-| Reviews | GET | /users/{id}/reviews | Public | View aggregated ratings and reviews for a member |
-| AI Insights | GET | /users/{id}/ai-insights | Public | Aspect breakdown (technical, timeliness, communication) |
-| AI Analytics| GET | /analytics/skills | Public | Campus skill demand metrics and statistical growth forecasts |
+| **Auth** | POST | `/auth/*` | Public | Handled by SuperTokens Core via mounted middleware |
+| **Profile** | GET | `/profile/me` | Session | Retrieve current campus member profile |
+| **Profile** | PUT | `/profile/me` | Session | Update bio, skills, department, graduation year |
+| **Profile** | GET | `/profile/recommendations` | Verified .edu | Intelligent profile completeness and skill advice |
+| **Resume** | POST | `/profile/resume` | Verified .edu | Upload resume PDF/DOCX to MinIO (5MB limit) |
+| **Resume** | GET | `/profile/resume` | Session | Download member resume via presigned S3 URL |
+| **Projects** | GET | `/projects` | Public | List and filter projects by category, skills, recruitment |
+| **Projects** | POST | `/projects` | Verified .edu | Create a new project workspace |
+| **Projects** | GET | `/projects/{slugOrId}` | Public | Detailed view of project workspace and sections |
+| **Projects** | PATCH | `/projects/{id}` | Lead / Maintainer | Update project title, description, category |
+| **Projects** | PATCH | `/projects/{id}/visibility` | Lead / Maintainer | Update visibility (`public`, `unlisted`, `private`) |
+| **Team** | GET | `/projects/{id}/members` | Public | List team members and assigned roles |
+| **Team** | PATCH | `/projects/{id}/members/{mId}` | Lead / Maintainer | Adjust member role (Lead, Maintainer, Member) |
+| **Team** | DELETE | `/projects/{id}/members/{mId}` | Lead / Maintainer | Remove member from project team roster |
+| **Team** | POST | `/projects/{id}/invitations` | Lead / Maintainer | Invite university student via institutional `.edu` email |
+| **Team** | POST | `/invitations/{id}/accept` | Verified .edu | Accept team invitation and join workspace |
+| **Sections** | GET | `/projects/{id}/sections` | Public | Retrieve ordered modular workspace sections |
+| **Sections** | PUT | `/projects/{id}/sections` | Lead / Maintainer | Update and re-order modular workspace sections |
+| **Resources** | GET | `/projects/{id}/resources` | Public | List external project resources and documentation links |
+| **Resources** | POST | `/projects/{id}/resources` | Lead / Maintainer | Add project documentation link or external resource |
+| **Resources** | DELETE | `/projects/{id}/resources/{rId}` | Lead / Maintainer | Delete external resource link |
+| **Recruitment** | POST | `/projects/{id}/applications` | Verified .edu | Submit project recruitment application with resume |
+| **Recruitment** | GET | `/projects/{id}/applications` | Lead / Maintainer | Review received applications and applicant notes |
+| **Recruitment** | GET | `/applications/me` | Session | List personal applications submitted by current user |
+| **Recruitment** | PATCH | `/applications/{id}/status` | Lead / Maintainer | Accept (adds to team roster), shortlist, or reject |
+| **Search** | GET | `/search/projects?q=...` | Public | Hybrid semantic + keyword project discovery |
+| **Search** | GET | `/search/people?q=...` | Verified .edu | Hybrid semantic + keyword student directory discovery |
+| **Reviews** | GET | `/users/{id}/reviews` | Public | View aggregated bilateral peer ratings and reviews |
+| **AI Insights** | GET | `/users/{id}/ai-insights` | Public | Aspect breakdown (technical, timeliness, communication) |
+| **AI Analytics** | GET | `/analytics/skills` | Public | Campus skill demand metrics and statistical growth forecasts |
 
 ---
 
-## Verification & Testing
+## Verification & Quality Assurance
 
-### Backend Verification
+You can verify the entire monorepo using the root `Makefile` or through individual toolchain commands.
 
-Run the complete Go test suite with race detector and code vet:
+### Via Root Makefile (Recommended)
 
 ```bash
+# Run all test suites across Go, Frontend, and Python AI
+make test
+
+# Run all linters (golangci-lint, oxlint, ruff check, typecheck)
+make lint
+
+# Check code formatting compliance (Go fmt, Prettier, Ruff)
+make format-check
+
+# Auto-format all code
+make format
+```
+
+### Via Direct Toolchain Commands
+
+#### Backend Verification (Go)
+```bash
 cd backend
-go test -count=1 ./...
+go test -v -race ./...
 go vet ./...
 ```
 
-### Python AI Subsystem Verification
-
-Run all 115 unit, pipeline, worker, and evaluation tests:
-
-```bash
-python -m pytest ai/tests/ -v
-```
-
-### Offline Evaluation Suite & Benchmarks
-
-Execute offline IR metrics (NDCG@K, MRR, Precision@K, F1):
-
-```bash
-python -m ai.evaluation.harness
-```
-
-### Frontend Verification
-
-Execute frontend unit tests, TypeScript type checking, and production build:
-
+#### Frontend Verification (Next.js & TypeScript)
 ```bash
 cd frontend
 npm test
-npx tsc --noEmit
-npm run lint
+npm run typecheck
+npm run lint:ox
+npm run format:check
 npm run build
 ```
 
-### End-to-End Smoke Test
-
-Run the full 14-phase lifecycle smoke test (validates .edu email rejection, account creation, email verification gate, job posting, application, contract transition, review, AI health, draft generation, candidate ranking, semantic search, and fallback degradation):
-
-PowerShell (Windows):
-```powershell
-pwsh scripts/smoke-test.ps1
+#### Python AI Subsystem Verification
+```bash
+python -m pytest ai/tests/ -v
+python -m ai.evaluation.harness
 ```
 
-Bash (Linux / macOS):
+#### End-to-End Multi-Container Smoke Tests
 ```bash
+# Linux / macOS:
 bash scripts/smoke-test.sh
+
+# Windows (PowerShell):
+pwsh scripts/smoke-test.ps1
 ```
 
 ---
 
 ## Security & Operational Invariants
 
-1. Strict .edu Validation: Registrations with non-.edu email domains are rejected immediately with HTTP 400.
-2. Email Verification Gate: Posting opportunities, applying to jobs, uploading resumes, and generating AI drafts require confirmed institutional email ownership. Unverified attempts return HTTP 403 (EMAIL_NOT_VERIFIED).
-3. Authoritative Go Boundary: The Go backend is the sole authority for authentication, authorization, domain validation, and transactional state. FastAPI is strictly an internal compute engine.
-4. Defense-in-Depth AI Secret: The FastAPI AI backend requires `X-Internal-AI-Secret` on all internal routes. It is never exposed directly to public web traffic.
-5. Authoritative Non-Mutation: Generative AI endpoints return draft payloads and never mutate authoritative database rows directly.
-6. Graceful Degradation Everywhere: If the AI backend or GPU is unreachable, all Go endpoints seamlessly fall back to deterministic SQL logic with HTTP 200.
-7. Circuit Breaker Protection: The Go AI orchestrator trips after 5 consecutive failures for 30s, fast-bypassing to heuristics without blocking requests.
-8. Contract State Machine: Contracts strictly follow Draft -> Active -> Completed or Cancelled transitions. Reviews can only be submitted for completed contracts.
-9. Resumes in MinIO: Resumes are never stored on local disk or inside PostgreSQL. All resume transfers stream directly through MinIO with short-lived presigned URLs for client downloads.
-10. Concurrency & Fairness: Candidate ranking excludes protected demographic attributes (gender, race, age, graduation year, ethnicity) for algorithmic fairness.
+1. **Strict .edu Validation:** Registrations with non-.edu email domains are rejected immediately with HTTP 400.
+2. **Email Verification Gate:** Creating projects, inviting members, applying, uploading resumes, and generating AI drafts require confirmed institutional email ownership. Unverified attempts return HTTP 403 (`EMAIL_NOT_VERIFIED`).
+3. **Authoritative Go Boundary:** The Go backend is the sole authority for authentication, authorization, domain validation, and transactional state. FastAPI is strictly an internal compute engine.
+4. **Defense-in-Depth AI Secret:** The FastAPI AI backend requires `X-Internal-AI-Secret` on all internal routes. It is never exposed directly to public web traffic.
+5. **Authoritative Non-Mutation:** Generative AI endpoints return draft payloads and never mutate authoritative database rows directly.
+6. **Graceful Degradation Everywhere:** If the AI backend or GPU is unreachable, all Go endpoints seamlessly fall back to deterministic SQL logic with HTTP 200.
+7. **Circuit Breaker Protection:** The Go AI orchestrator trips after 5 consecutive failures for 30s, fast-bypassing to heuristics without blocking requests.
+8. **Deterministic Database Migrations:** All migrations in `backend/migrations/` (`000001` through `000019`) are immutable and sequential.
+9. **Resumes in MinIO Exclusively:** Resumes are never stored on local disk or inside PostgreSQL. All resume transfers stream directly through MinIO with short-lived presigned URLs for client downloads.
+10. **Concurrency & Fairness:** Candidate ranking excludes protected demographic attributes (gender, race, age, graduation year, ethnicity) for algorithmic fairness.

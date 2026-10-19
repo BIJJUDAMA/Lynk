@@ -1,9 +1,9 @@
 # Complete REST API Specifications - Lynk
 
-> **Authoritative HTTP API Specification**  
-> **Base URL:** `http://localhost:8080/api/v1`  
-> **Content-Type:** `application/json` (or `multipart/form-data` for resume upload)  
-> **Authentication:** SuperTokens Session Cookies (`sAccessToken`, `sRefreshToken`) or `Authorization: Bearer <sAccessToken>`  
+> **Authoritative HTTP API Specification**
+> **Base URL:** `http://localhost:8080/api/v1`
+> **Content-Type:** `application/json` (or `multipart/form-data` for resume upload)
+> **Authentication:** SuperTokens Session Cookies (`sAccessToken`, `sRefreshToken`) or `Authorization: Bearer <sAccessToken>`
 > **Standard Error Response:** `{"error": "human-readable error description"}`
 
 ---
@@ -501,11 +501,234 @@ Returns all public peer reviews received by a campus member.
 
 ---
 
-## 8. AI Subsystem Public Endpoints
+## 8. Project Workspaces, Teams, Modular Sections, & Recruitment Domain (`/projects`)
+
+### 8.1 List Projects
+`GET /projects`
+Returns paginated list of public project workspaces with multi-faceted filtering.
+
+- **Auth Required:** No (Publicly accessible)
+- **Query Parameters:**
+  - `category` (string, optional): Filter by category (Engineering, Design, AI, etc.)
+  - `recruiting` (boolean, optional): Filter by active recruitment (`recruitment_status=open`)
+  - `visibility` (string, optional): Filter by visibility (`public`, `unlisted`, `private`)
+  - `owner_id` (string, optional): Filter by creator/owner member ID
+  - `limit` (integer, optional, default: 20, max: 100)
+  - `offset` (integer, optional, default: 0)
+- **Response `200 OK`:**
+  ```json
+  [
+    {
+      "id": "7b6f284e-8f2a-4a6c-9a1b-3f2e1d0c9b8a",
+      "slug": "autonomous-campus-rover",
+      "owner_member_id": "st_usr_9a4f21e0",
+      "title": "Autonomous Campus Rover",
+      "description": "Building an autonomous payload delivery rover for campus navigation...",
+      "category": "Engineering",
+      "visibility": "public",
+      "recruitment_status": "open",
+      "lifecycle_status": "active",
+      "created_at": "2026-10-18T12:00:00Z",
+      "updated_at": "2026-10-18T12:00:00Z"
+    }
+  ]
+  ```
+
+### 8.2 Create Project Workspace
+`POST /projects`
+Initializes a new persistent campus project workspace and automatically assigns creator as `lead`.
+
+- **Auth Required:** Yes (Active session + verified `.edu` email)
+- **Request Body:**
+  ```json
+  {
+    "title": "Autonomous Campus Rover",
+    "description": "Building an autonomous payload delivery rover for campus navigation...",
+    "category": "Engineering",
+    "visibility": "public"
+  }
+  ```
+- **Validation Rules:**
+  - `title`: 3 to 200 characters.
+  - `description`: 20 to 10,000 characters.
+  - `category`: Must match standard categories (`Engineering`, `Design`, `AI`, `Product`, `Research`, `Writing`).
+  - `visibility`: Must be `public`, `unlisted`, or `private`.
+- **Response `201 Created`:** Returns created Project JSON object.
+- **Error Codes:** `400 Bad Request`, `401 Unauthorized`, `403 Forbidden` (unverified email), `409 Conflict` (slug exists).
+
+### 8.3 Get Project by Slug or ID
+`GET /projects/{idOrSlug}`
+Retrieves project details, modular workspace sections, and member permissions.
+
+- **Auth Required:** No for public projects; session required for unlisted/private projects.
+- **Response `200 OK`:** Returns Project JSON object with nested owner and visibility metadata.
+
+### 8.4 Update Project Details & Visibility
+`PATCH /projects/{id}` or `PATCH /projects/{id}/visibility`
+Updates workspace properties or changes visibility level.
+
+- **Auth Required:** Yes (Caller must hold `lead` or `maintainer` role)
+- **Request Body for Visibility:**
+  ```json
+  {
+    "visibility": "unlisted"
+  }
+  ```
+- **Response `200 OK`:** Returns updated Project JSON object.
+
+### 8.5 List Project Team Members
+`GET /projects/{id}/members`
+Returns all active collaborators on the project workspace with their assigned roles.
+
+- **Auth Required:** No
+- **Response `200 OK`:**
+  ```json
+  [
+    {
+      "id": "9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e",
+      "project_id": "7b6f284e-8f2a-4a6c-9a1b-3f2e1d0c9b8a",
+      "member_id": "st_usr_9a4f21e0",
+      "role": "lead",
+      "status": "active",
+      "joined_at": "2026-10-18T12:00:00Z",
+      "profile": {
+        "full_name": "Campus Poster",
+        "department": "Computer Science"
+      }
+    }
+  ]
+  ```
+
+### 8.6 Invite Member to Team
+`POST /projects/{id}/invitations`
+Sends an invitation to a university student via institutional `.edu` email.
+
+- **Auth Required:** Yes (Caller must hold `lead` or `maintainer` role)
+- **Request Body:**
+  ```json
+  {
+    "email": "teammate@campus.edu",
+    "role": "member"
+  }
+  ```
+- **Response `201 Created`:** Returns Invitation JSON object.
+
+### 8.7 Accept Team Invitation
+`POST /invitations/{id}/accept`
+Accepts a pending invitation and joins the project workspace roster.
+
+- **Auth Required:** Yes (Active session + verified `.edu` email matching invitee)
+- **Response `200 OK`:** `{"status": "accepted"}`
+
+### 8.8 Update Member Role / Sole Lead Protection
+`PATCH /projects/{id}/members/{memberId}`
+Promotes or demotes team members.
+
+- **Auth Required:** Yes (Caller must hold `lead` role)
+- **Invariant:** Cannot demote or remove the last remaining `lead` on a project.
+- **Request Body:** `{"role": "maintainer"}`
+- **Response `200 OK`:** Returns updated ProjectMember JSON object.
+
+### 8.9 Remove Member from Team
+`DELETE /projects/{id}/members/{memberId}`
+Removes a collaborator from the workspace roster.
+
+- **Auth Required:** Yes (Caller must hold `lead` role, or self-removal)
+- **Invariant:** Sole lead cannot be removed.
+- **Response `200 OK`:** `{"status": "removed"}`
+
+### 8.10 Transfer Project Leadership
+`POST /projects/{id}/transfer-leadership`
+Atomically transfers the primary `lead` role to another active team member.
+
+- **Auth Required:** Yes (Caller must be current `lead`)
+- **Request Body:** `{"new_lead_id": "st_usr_newlead123"}`
+- **Response `200 OK`:** `{"status": "transferred"}`
+
+### 8.11 Modular Workspace Sections
+`GET /projects/{id}/sections` & `PUT /projects/{id}/sections`
+Manages modular sections (`overview`, `team`, `resources`, `recruitment`, `updates`).
+
+- **Auth Required:** `GET` is public; `PUT` requires `lead` or `maintainer` role.
+- **PUT Request Body:**
+  ```json
+  [
+    {
+      "section_type": "overview",
+      "title": "Project Overview",
+      "enabled": true,
+      "position": 0,
+      "content": "Detailed overview content..."
+    },
+    {
+      "section_type": "resources",
+      "title": "Team Resources",
+      "enabled": true,
+      "position": 1,
+      "content": ""
+    }
+  ]
+  ```
+- **Response `200 OK`:** Returns ordered array of ProjectSection JSON objects.
+
+### 8.12 External Project Resources Catalog
+`GET /projects/{id}/resources`, `POST /projects/{id}/resources`, & `DELETE /projects/{id}/resources/{rId}`
+Maintains external links (GitHub repos, Figma boards, documentation).
+
+- **Auth Required:** `GET` is public; `POST` and `DELETE` require `lead` or `maintainer` role.
+- **POST Request Body:**
+  ```json
+  {
+    "label": "GitHub Repository",
+    "url": "https://github.com/organization/rover-firmware",
+    "resource_type": "github"
+  }
+  ```
+- **Response `201 Created`:** Returns created ProjectResource JSON object.
+
+### 8.13 Submit Project Application
+`POST /projects/{id}/applications`
+Submits an application to join an actively recruiting project workspace.
+
+- **Auth Required:** Yes (Active session + verified `.edu` email)
+- **Request Body:**
+  ```json
+  {
+    "statement": "I have 2 years of ROS and embedded C++ experience...",
+    "resume_asset_key": "resumes/st_usr_student123/resume.pdf"
+  }
+  ```
+- **Response `201 Created`:** Returns ProjectApplication JSON object with `status: "submitted"`.
+
+### 8.14 Review Project Applications
+`GET /projects/{id}/applications`
+Lists submitted applications with status filtering (`all`, `submitted`, `shortlisted`, `accepted`, `rejected`).
+
+- **Auth Required:** Yes (Caller must hold `lead` or `maintainer` role)
+- **Response `200 OK`:** Returns array of ProjectApplication JSON objects.
+
+### 8.15 Application Review Actions
+- `POST /applications/{id}/accept`: Atomically sets application status to `accepted` and adds applicant to `project_members` as `member`.
+- `POST /applications/{id}/reject`: Sets status to `rejected`.
+- `POST /applications/{id}/shortlist`: Sets status to `shortlisted`.
+- `POST /applications/{id}/withdraw`: Candidate withdraws their own application.
+
+- **Auth Required:** Yes (`accept`, `reject`, `shortlist` require `lead`/`maintainer`; `withdraw` requires applicant).
+
+### 8.16 List My Project Applications
+`GET /applications/me`
+Returns all personal project applications submitted by the authenticated member.
+
+- **Auth Required:** Yes (Active session)
+- **Response `200 OK`:** Returns array of personal applications with project metadata.
+
+---
+
+## 9. AI Subsystem Public Endpoints
 
 All AI endpoints are exposed authoritatively through the Go REST API under `/api/v1` with built-in graceful degradation.
 
-### 8.1 Generate Job Description Draft
+### 9.1 Generate Job Description Draft
 `POST /jobs/generate`
 Generates a structured, professional opportunity posting draft from a rough idea and department using vLLM.
 
@@ -531,7 +754,7 @@ Generates a structured, professional opportunity posting draft from a rough idea
   ```
 - **Error Codes:** `401 Unauthorized`, `403 Forbidden` (unverified email), `400 Bad Request` (empty idea).
 
-### 8.2 Advisory Candidate Ranking
+### 9.2 Advisory Candidate Ranking
 `GET /jobs/{id}/applicants/ranking`
 Returns transparent, algorithmic advisory scoring for all applicants to a specific posting.
 
@@ -558,7 +781,30 @@ Returns transparent, algorithmic advisory scoring for all applicants to a specif
   ```
 - **Error Codes:** `401 Unauthorized`, `403 Forbidden` (caller is not job creator or email unverified), `404 Not Found` (job does not exist).
 
-### 8.3 Hybrid Semantic Job Search
+### 9.3 Hybrid Semantic Project Discovery
+`GET /search/projects?q={query}&limit={limit}`
+Performs natural language project discovery utilizing 384-dimensional dense vectors stored in `project_embeddings` with HNSW cosine distance indexing (`<=>`) and Reciprocal Rank Fusion.
+
+- **Auth Required:** No (Publicly accessible)
+- **Response `200 OK`:**
+  ```json
+  {
+    "data": [
+      {
+        "id": "7b6f284e-8f2a-4a6c-9a1b-3f2e1d0c9b8a",
+        "slug": "autonomous-campus-rover",
+        "title": "Autonomous Campus Rover",
+        "description": "Building an autonomous payload delivery rover for campus navigation...",
+        "category": "Engineering",
+        "recruitment_status": "open",
+        "score": 0.92,
+        "matched_skills": ["ROS", "C++", "Robotics"]
+      }
+    ]
+  }
+  ```
+
+### 9.4 Hybrid Semantic Job Search (Legacy)
 `GET /search/jobs?q={query}&limit={limit}`
 Performs hybrid search combining PostgreSQL full-text search, canonical skill tags, and pgvector cosine distance via Reciprocal Rank Fusion.
 
@@ -580,7 +826,7 @@ Performs hybrid search combining PostgreSQL full-text search, canonical skill ta
   }
   ```
 
-### 8.4 Hybrid Semantic Member Discovery
+### 9.5 Hybrid Semantic Member Discovery
 `GET /search/people?q={query}&limit={limit}`
 Discovers campus peers by natural language query combining skills, academic interests, and bio semantics.
 
@@ -603,7 +849,7 @@ Discovers campus peers by natural language query combining skills, academic inte
   ```
 - **Error Codes:** `401 Unauthorized`, `403 Forbidden` (unverified email).
 
-### 8.5 Member Profile Recommendations
+### 9.6 Member Profile Recommendations
 `GET /profile/recommendations`
 Returns personalized skill suggestions (via skill co-occurrence graph) and profile completeness guidance.
 
@@ -628,7 +874,7 @@ Returns personalized skill suggestions (via skill co-occurrence graph) and profi
   }
   ```
 
-### 8.6 Campus Skill Demand Analytics & Forecasts
+### 9.7 Campus Skill Demand Analytics & Forecasts
 `GET /analytics/skills`
 Aggregates active opportunity counts, demand snapshots, and statistical least-squares linear growth forecasts.
 
@@ -651,7 +897,7 @@ Aggregates active opportunity counts, demand snapshots, and statistical least-sq
   }
   ```
 
-### 8.7 Member Review AI Insights
+### 9.8 Member Review AI Insights
 `GET /users/{id}/ai-insights`
 Decomposes qualitative peer reviews into aspect-based ratings (Technical Ability, Communication, Timeliness) and recurring strength highlights.
 
@@ -685,9 +931,9 @@ Decomposes qualitative peer reviews into aspect-based ratings (Technical Ability
 
 ---
 
-## 9. Real-Time Events & Observability Domain
+## 10. Real-Time Events & Observability Domain
 
-### 9.1 Server-Sent Events (SSE) Stream
+### 10.1 Server-Sent Events (SSE) Stream
 `GET /events/stream`
 Establishes a persistent, unidirectionally streaming HTTP connection (Server-Sent Events) delivering real-time notifications and state updates to authenticated members.
 
@@ -709,7 +955,7 @@ Establishes a persistent, unidirectionally streaming HTTP connection (Server-Sen
   ```
 - **Error Codes:** `401 Unauthorized`.
 
-### 9.2 Prometheus Metrics Endpoint
+### 10.2 Prometheus Metrics Endpoint
 `GET /metrics`
 Exposes real-time Prometheus telemetry metrics for latency histograms, request counters, error rates, and connection pool saturation.
 
@@ -723,5 +969,3 @@ Exposes real-time Prometheus telemetry metrics for latency histograms, request c
   # TYPE http_request_duration_seconds histogram
   http_request_duration_seconds_bucket{le="0.05",method="GET",path="/api/v1/jobs"} 128
   ```
-
-

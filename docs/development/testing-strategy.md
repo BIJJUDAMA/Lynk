@@ -1,9 +1,10 @@
 # Testing, Quality Assurance, & Verification Strategy - Lynk
 
-> **Authoritative Testing Handbook & Verification Standard**  
-> **Backend Testing:** Go 1.25 Standard Library + Race Detector (`-race -count=1`) across 16 packages  
-> **AI Subsystem Testing:** Python 3.11+ Pytest Suite (100 tests) + Offline IR Benchmarks (`ai/evaluation/`)  
-> **Frontend Testing:** Node 22+ Native ESM Runner (`--experimental-strip-types --test`)  
+> **Authoritative Testing Handbook & Verification Standard**
+> **Backend Testing:** Go 1.25 Standard Library + Race Detector (`-race -count=1`) across 20 packages
+> **AI Subsystem Testing:** Python 3.11+ Pytest Suite (115 tests) + Offline IR Benchmarks (`ai/evaluation/`)
+> **Frontend Testing:** Next.js 16 + React 19 + Node 22+ Native ESM Runner (100 tests)
+> **Unified Control Plane:** Root `Makefile` (`make test`, `make lint`, `make format-check`)
 > **Continuous Integration:** GitHub Actions Multi-Job Pipeline (`.github/workflows/ci.yml`)
 
 ---
@@ -206,14 +207,14 @@ flowchart TB
             F2["npm ci (clean dependency installation)"]
             F3["npm test (native type-stripping runner)"]
             F4["npm run typecheck (tsc --noEmit)"]
-            F5["npm run build (Next.js 14 production compilation)"]
+            F5["npm run build (Next.js 16 production compilation)"]
             F1 --> F2 --> F3 --> F4 --> F5
         end
 
         subgraph AIJob["Job 3: AI Subsystem CI (Ubuntu Latest)"]
             A1["Setup Python 3.11 with pip cache"]
             A2["Install dependencies (FastAPI, PyTorch, pgvector, pydantic)"]
-            A3["Execute 100-test Pytest Suite (pytest ai/tests/ -v)"]
+            A3["Execute 115-test Pytest Suite (pytest ai/tests/ -v)"]
             A4["Run Offline IR Evaluation Harness (python -m ai.evaluation.harness)"]
             A1 --> A2 --> A3 --> A4
         end
@@ -223,9 +224,9 @@ flowchart TB
 ### 5.1 Backend CI Verification Sequence
 1. **Container Health:** PostgreSQL 16 Alpine container spins up with `pgvector` extension and health checks (`pg_isready`).
 2. **Linting:** `golangci-lint` (v2.4.0) performs static analysis across all Go packages.
-3. **Migration Verification:** `golang-migrate` tests raw SQL migration files (`000001` through `000012`) against a throwaway database (`lynk_migrate_check`), testing forward `up`, rollback `down -all`, and re-application `up`.
+3. **Migration Verification:** `golang-migrate` tests raw SQL migration files (`000001` through `000019`) against a throwaway database (`lynk_migrate_check`), testing forward `up`, rollback `down -all`, and re-application `up`.
 4. **App Migrations:** The application migrator applies migrations to `lynk_db` via `TestRunMigrations_AppliesInitOnEmptyDatabase`.
-5. **Race Detector Suite:** `go test -race -count=1 ./...` executes across all 16 Go packages under thread-safety scrutiny.
+5. **Race Detector Suite:** `go test -race -count=1 ./...` executes across all 20 Go packages under thread-safety scrutiny.
 
 ### 5.2 Frontend CI Verification Sequence
 1. **Clean Installation:** `npm ci` restores exact locked dependencies from `package-lock.json`.

@@ -1,9 +1,9 @@
 # Database Schema, Relational Constraints, & ERD - Lynk
 
-> **Authoritative Database Specification**  
-> **Database Engine:** PostgreSQL 16 Alpine (`lynk-postgres` on port `5432`)  
-> **Databases:** `lynk_db` (application data) & `supertokens_db` (IAM data)  
-> **Schema Migrations:** Raw SQL (`backend/migrations/000001` through `000015`)  
+> **Authoritative Database Specification**
+> **Database Engine:** PostgreSQL 16 Alpine (`lynk-postgres` on port `5432`)
+> **Databases:** `lynk_db` (application data) & `supertokens_db` (IAM data)
+> **Schema Migrations:** Raw SQL (`backend/migrations/000001` through `000019`)
 > **User Identity Type:** `VARCHAR(64)` (SuperTokens Core user identity format)
 
 ---
@@ -305,6 +305,84 @@ erDiagram
         TIMESTAMPTZ next_retry_at "Next scheduled dispatch timestamp"
         TIMESTAMPTZ created_at "Event creation timestamp"
         TIMESTAMPTZ processed_at "Successful dispatch timestamp"
+    }
+```
+
+### 1.4 Project-First Workspace Relational Model (Migrations 000017-000019)
+
+Migrations `000017`, `000018`, and `000019` introduce the collaborative project workspace model, team rosters, modular sections, recruitment applications, and semantic vector embeddings:
+
+```mermaid
+erDiagram
+    users ||--o{ projects : "owns (1:N)"
+    users ||--o{ project_members : "member on (1:N)"
+    users ||--o{ project_applications : "applies on (1:N)"
+    users ||--o{ project_invitations : "invites / invited (1:N)"
+
+    projects ||--o{ project_members : "roster (1:N)"
+    projects ||--o{ project_sections : "sections (1:N)"
+    projects ||--o{ project_resources : "resources (1:N)"
+    projects ||--o{ project_activity : "activity (1:N)"
+    projects ||--o{ application_questions : "questions (1:N)"
+    projects ||--o{ project_applications : "applications (1:N)"
+    projects ||--o{ project_invitations : "invitations (1:N)"
+    projects ||--o| project_embeddings : "embedding (1:1)"
+
+    project_applications ||--o{ application_answers : "answers (1:N)"
+    application_questions ||--o{ application_answers : "answered by (1:N)"
+
+    projects {
+        UUID id PK "Project identifier"
+        VARCHAR(120) slug UK "URL slug"
+        VARCHAR(64) owner_member_id FK "References users(id)"
+        VARCHAR(200) title "Project title"
+        TEXT description "Detailed project description"
+        VARCHAR(100) category "Engineering, Design, AI, etc."
+        project_visibility visibility "public, unlisted, private"
+        project_recruitment_status recruitment_status "open, paused, closed"
+        project_lifecycle_status lifecycle_status "idea, active, completed, archived"
+        JSONB settings "Workspace settings"
+        TIMESTAMPTZ created_at "Creation timestamp"
+        TIMESTAMPTZ updated_at "Update timestamp"
+    }
+
+    project_members {
+        UUID id PK "Member record ID"
+        UUID project_id FK "References projects(id) ON DELETE CASCADE"
+        VARCHAR(64) member_id FK "References users(id) ON DELETE CASCADE"
+        project_member_role role "lead, maintainer, member, viewer"
+        VARCHAR(50) status "active, departed"
+        TIMESTAMPTZ joined_at "Join timestamp"
+    }
+
+    project_sections {
+        UUID id PK "Section ID"
+        UUID project_id FK "References projects(id) ON DELETE CASCADE"
+        VARCHAR(50) section_type "overview, team, resources, recruitment, updates"
+        VARCHAR(100) title "Section heading"
+        BOOLEAN enabled "Toggle visibility"
+        INT position "Display order"
+        JSONB config "Section configuration"
+        TEXT content "Section content"
+    }
+
+    project_applications {
+        UUID id PK "Application ID"
+        UUID project_id FK "References projects(id) ON DELETE CASCADE"
+        VARCHAR(64) applicant_id FK "References users(id) ON DELETE CASCADE"
+        project_application_status status "submitted, shortlisted, accepted, rejected, withdrawn"
+        TEXT statement "Candidate pitch"
+        VARCHAR(512) resume_asset_key "MinIO S3 object key"
+        TEXT reviewer_notes "Internal review notes"
+        VARCHAR(64) decided_by FK "Deciding lead / maintainer"
+        TIMESTAMPTZ decided_at "Decision timestamp"
+    }
+
+    project_embeddings {
+        UUID project_id PK, FK "References projects(id) ON DELETE CASCADE"
+        vector(384) embedding "all-MiniLM-L6-v2 dense vector"
+        VARCHAR(64) content_hash "SHA-256 hash"
+        TIMESTAMPTZ updated_at "Embedding timestamp"
     }
 ```
 
@@ -817,3 +895,7 @@ When an employer cancels an active contract:
 | `000013_ai_subsystem_constraints` | Adds domain check constraints on AI scores, review insights, job attempts, moderation risk scores, and recommendations uniqueness (`uq_ai_recommendations_user_type_title`). | No | Yes | Hardens AI data integrity and prevents duplicate recommendations. |
 | `000014_active_partial_indexes` | Adds partial indexes for active open jobs, pending applications, active contracts, and active recommendations. | No | Yes | Accelerates hot path marketplace queries while minimizing index disk size. |
 | `000015_phase1_5_hardening` | Creates `embedding_cache` (composite PK `content_hash, model_name`) for INT8 CPU ONNX deduplication and `outbox_events` table with partial retry index for transactional event streaming. | No | Yes | Core data structures for Phase 1.5 outbox dispatcher and AI inference deduplication. |
+| `000016_seed_initial_campus_jobs` | Seeds realistic campus jobs across Engineering, Design, AI, and Writing with skill tags. | No | Yes | Initial realistic marketplace dataset for local testing. |
+| `000017_project_core_schema` | Creates core project workspace tables: `projects`, `project_members`, `project_sections`, `project_resources`, and `project_activity` with custom enums (`project_visibility`, `project_recruitment_status`, `project_lifecycle_status`, `project_member_role`). | No | Yes | Establishes foundational data layer for Project-First Workspace architecture. |
+| `000018_recruitment_and_applications` | Creates `application_questions`, `project_applications`, `application_answers`, and `project_invitations` with enum types (`project_application_status`, `invitation_status`). | No | Yes | Enables structured campus project applications, reviewer notes, and team invitations. |
+| `000019_project_vector_search` | Creates `project_embeddings` table storing 384-dimensional dense vectors with HNSW cosine distance index (`vector_cosine_ops`, m=16, ef_construction=64). | No | Yes | Powers sub-5ms semantic project discovery. |

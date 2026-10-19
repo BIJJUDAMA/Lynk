@@ -1,9 +1,9 @@
 # Security, Threat Model, & IAM Architecture - Lynk
 
-> **Authoritative Security & Identity Specification**  
-> **Identity Engine:** Self-Hosted SuperTokens Core 9.3 (`lynk-supertokens` on port `3567`)  
-> **Verification Gate:** Institutional `.edu` Domain Validation & Mandatory Email Activation  
-> **Network Perimeter:** Strict CORS (`http://localhost:3000`), Anti-CSRF, and 1MB JSON Body Clamping  
+> **Authoritative Security & Identity Specification**
+> **Identity Engine:** Self-Hosted SuperTokens Core 9.3 (`lynk-supertokens` on port `3567`)
+> **Verification Gate:** Institutional `.edu` Domain Validation & Mandatory Email Activation
+> **Network Perimeter:** Strict CORS (`http://localhost:3000`), Anti-CSRF, and 1MB JSON Body Clamping
 > **Socket Protection:** 95s/100s TCP Timeout Envelopes exceeding 90s dynamic upload deadlines (F-05)
 
 ---
@@ -14,7 +14,7 @@ Lynk rejects commercial third-party auth SaaS vendors (Auth0, Clerk, Supabase) i
 
 ```mermaid
 flowchart TB
-    subgraph Client["Frontend Client (Next.js 14)"]
+    subgraph Client["Frontend Client (Next.js 16)"]
         Browser["Browser Storage (HttpOnly Cookies)"]
         STWebJS["supertokens-web-js (Session, EmailPassword, EmailVerification)"]
     end
@@ -161,6 +161,23 @@ func (c *UserClaims) HasRole(role string) bool {
 }
 ```
 
+### 3.6 Project-First Role-Based Access Control (RBAC) & Workspace Security
+Project workspaces enforce granular role permissions defined in `backend/internal/team/`:
+- **`lead`:** Project creator or transferred owner. Holds total administrative control, including role adjustments, leadership transfer, and project deletion.
+- **`maintainer`:** Delegated organizer. Can invite teammates, review recruitment applications, update sections, and manage external resources. Cannot remove leads or demote other maintainers.
+- **`member`:** Verified student collaborator. Has active workspace access and can view internal resources.
+- **`viewer`:** Read-only collaborator.
+
+#### The Sole Lead Invariant
+A project workspace must maintain at least one active `lead` at all times.
+- `team.Service.RemoveMember` and `team.Service.UpdateRole` explicitly check whether the target member is the sole active lead.
+- Attempting to remove or demote the sole lead without first transferring leadership via `POST /projects/{id}/transfer-leadership` returns `HTTP 400 Bad Request` (`CANNOT_REMOVE_SOLE_LEAD`).
+
+#### Visibility Enforcement Matrix
+- **`public`:** Discoverable via search and browse. Accessible to unauthenticated visitors and students.
+- **`unlisted`:** Direct link access only. Omitted from public search indexes.
+- **`private`:** Strictly restricted to active project members (`project_members`). Non-members receive `404 Not Found` or `403 Forbidden`.
+
 ---
 
 ## 4. CORS, CSRF, & Network Perimeter Defense
@@ -253,4 +270,3 @@ The platform guarantees that AI failure never compromises core business function
 - Every Go handler wrapping an AI pipeline includes deterministic SQL fallback logic.
 - If `ai-api` is unresponsive, times out, or returns a 5xx error, the Go backend logs the failure, records telemetry, and returns standard database results with `HTTP 200 OK`.
 - Core campus gig creation, applications, and contract completions remain operational even during total AI subsystem outages.
-

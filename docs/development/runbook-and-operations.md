@@ -1,10 +1,11 @@
 # Operations, Runbook, & Local Developer Guide - Lynk
 
-> **Authoritative Operational Runbook & Developer Guide**  
-> **Environment:** Polyglot Monorepo (Next.js 14 Host + Docker Compose Backend + AI Subsystem)  
-> **Databases:** PostgreSQL 16 (`lynk_db`, `supertokens_db`) with `pgvector`  
-> **AI Subsystem:** FastAPI (`:8000`), `ai-worker` queue daemon, and optional profile-gated `vllm`  
-> **Object Storage:** MinIO S3 (`resumes` bucket)  
+> **Authoritative Operational Runbook & Developer Guide**
+> **Environment:** Polyglot Monorepo (Next.js 16 Host + Docker Compose Backend + AI Subsystem)
+> **Control Plane:** Root `Makefile` for unified onboarding, testing, linting, and formatting
+> **Databases:** PostgreSQL 16 (`lynk_db`, `supertokens_db`) with `pgvector`
+> **AI Subsystem:** FastAPI (`:8000`), `ai-worker` queue daemon, and optional profile-gated `vllm`
+> **Object Storage:** MinIO S3 (`resumes` bucket)
 > **Authentication:** Self-Hosted SuperTokens Core (`:3567`)
 
 ---
@@ -16,7 +17,7 @@ Before setting up Lynk locally, ensure your developer workstation satisfies the 
 | Tool | Version Floor | Purpose | Installation Check |
 | :--- | :--- | :--- | :--- |
 | **Docker & Compose** | Docker v24+ / Compose v2.20+ | Backend containerization & service orchestration | `docker compose version` |
-| **Node.js** | Node.js v22.0.0+ | Frontend development & native type-stripping ESM test runner | `node -v` |
+| **Node.js** | Node.js v20.0.0+ | Frontend development & native type-stripping ESM test runner | `node -v` |
 | **npm** | npm v10.0.0+ | Package management for Next.js frontend | `npm -v` |
 | **Go** | Go 1.22+ (Recommended: 1.25.x) | Direct Go compilation, testing, and toolchain checks | `go version` |
 | **Python** | Python v3.11+ | AI subsystem service, queue worker daemon, and pytest suite | `python --version` |
@@ -27,7 +28,49 @@ Before setting up Lynk locally, ensure your developer workstation satisfies the 
 
 ## 2. First-Time Developer Quickstart
 
-Execute this exact sequence to bootstrap a fresh local development environment:
+You can bootstrap a fresh local development environment using either the **Root Makefile** (recommended) or manual CLI commands.
+
+### Option A: Quickstart via Root Makefile (Recommended)
+
+The top-level `Makefile` automates environment variable copying, Git hook installation, Go module verification, frontend dependencies, and Python virtual environment creation in a single command:
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/BIJJUDAMA/Lynk.git
+cd Lynk
+
+# 2. Run universal onboarding (copies .env, installs hooks, Go modules, npm packages, Python venv)
+make setup
+
+# 3. Spin up backend container infrastructure
+docker compose up -d --build
+
+# 4. Verify all container services are healthy
+docker compose ps
+
+# 5. Launch frontend development server on host
+cd frontend
+npm run dev
+
+# Frontend is live at: http://localhost:3000
+# Authoritative Go REST API is live at: http://localhost:8080
+# SuperTokens Core IAM is live at: http://localhost:3567
+# MinIO Web Console is live at: http://localhost:9001 (User: minio_admin / Pass: minio_password)
+```
+
+Subsystem-specific setup targets:
+```bash
+make setup-hooks      # Link pre-commit hooks into .git/hooks/pre-commit
+make setup-go         # Download and verify Go modules
+make setup-frontend   # Install npm packages in frontend/
+make setup-ai         # Create Python venv in ai/.venv and install dependencies
+```
+
+---
+
+### Option B: Manual Setup Step-by-Step (Without Makefile)
+
+If you prefer direct command execution without `make`:
 
 ```bash
 # 1. Clone the repository
@@ -37,10 +80,26 @@ cd Lynk
 # 2. Configure environment variables from template
 cp .env.example .env
 
-# 3. Spin up backend container infrastructure
-docker compose up -d
+# 3. Install Git pre-commit hooks
+pre-commit install
 
-# 4. Verify all container services are healthy
+# 4. Download and verify backend Go modules
+cd backend
+go mod download
+go mod verify
+cd ..
+
+# 5. Setup Python AI virtual environment
+python -m venv ai/.venv
+# Windows: .\ai\.venv\Scripts\Activate.ps1
+# Linux/macOS: source ai/.venv/bin/activate
+pip install -r ai/requirements.txt
+deactivate
+
+# 6. Spin up backend container infrastructure
+docker compose up -d --build
+
+# 7. Verify all container services are healthy
 docker compose ps
 
 # Expected output:
@@ -50,9 +109,9 @@ docker compose ps
 # lynk-minio          quay.io/minio/minio:RELEASE...          "/usr/bin/docker-ent..."   minio               Up (healthy)        0.0.0.0:9000->9000/tcp, 0.0.0.0:9001->9001/tcp
 # lynk-api            lynk-backend                            "/app/api"               api                 Up (healthy)        0.0.0.0:8080->8080/tcp
 # ai-api              lynk-ai-api                             "uvicorn ai.app.main..."   ai-api              Up (healthy)        0.0.0.0:8000->8000/tcp
-# ai-worker           lynk-ai-worker                          "python -m ai.worker..."   ai-worker           Up                  
+# ai-worker           lynk-ai-worker                          "python -m ai.worker..."   ai-worker           Up
 
-# 5. Bootstrap and launch the Next.js frontend on host
+# 8. Bootstrap and launch the Next.js frontend on host
 cd frontend
 npm install
 npm run dev
@@ -98,43 +157,12 @@ The application relies on `.env` loaded at root. The table below details every c
 | `INTERNAL_AI_SECRET` | `lynk-ai-internal-shared-secret-2026` | Go API / AI | Shared defense-in-depth secret for internal AI routes |
 | `AI_ENABLED` | `true` | Go API | Master toggle for AI orchestrator pipelines |
 | `AI_SKILL_NORMALIZATION` | `true` | Go API | Enables canonical skill normalization |
-| `AI_SEMANTIC_SEARCH` | `true` | Go API | Enables pgvector hybrid semantic search |
-| `AI_APPLICATION_RANKING` | `true` | Go API | Enables candidate advisory ranking |
-| `AI_JOB_GENERATION` | `true` | Go API | Enables generative job draft pipeline |
-| `AI_MODERATION` | `true` | Go API | Enables content safety & spam moderation |
-| `AI_REVIEW_INSIGHTS` | `true` | Go API | Enables aspect sentiment extraction |
-| `AI_SKILL_ANALYTICS` | `true` | Go API | Enables skill demand velocity analytics |
-| `AI_WORKER_POLL_INTERVAL_SEC` | `5` | `ai-worker` | Queue polling frequency in seconds |
-| `VLLM_API_BASE` | `http://vllm:8000/v1` | AI / vLLM | Optional OpenAI-compatible local LLM endpoint |
-| `VLLM_MODEL` | `Qwen/Qwen2.5-7B-Instruct` | AI / vLLM | Model name passed to vLLM server |
-
-### 3.1 Secret & API Key Rotation
-In `docker-compose.yml`, all credentials utilize bash variable expansion with development fallbacks:
-```yaml
-API_KEYS: "${SUPERTOKENS_API_KEY:-lynk-supertokens-secret-api-key-2026}"
-MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minio_admin}"
-MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minio_password}"
-INTERNAL_AI_SECRET: "${INTERNAL_AI_SECRET:-lynk-ai-internal-shared-secret-2026}"
-```
-
-To rotate any API key or secret in any environment:
-1. Provide the new values in a `.env` file in the project root or in the host environment:
-   ```env
-   SUPERTOKENS_API_KEY=your-new-secret-key-here
-   MINIO_ROOT_PASSWORD=your-new-minio-password-here
-   INTERNAL_AI_SECRET=your-new-ai-secret-here
-   ```
-2. Re-create the affected containers:
-   ```bash
-   docker compose up -d
-   ```
-Docker Compose detects updated environment variables and cleanly restarts affected containers without requiring Docker Secrets file mounts or code changes.
 
 ---
 
 ## 4. Database Migration Management
 
-Lynk utilizes pure sequential SQL migrations stored in `backend/migrations/`.
+Lynk utilizes pure sequential SQL migrations stored in `backend/migrations/` (`000001` through `000019`).
 
 ### 4.1 Automatic Startup Migrations
 When `lynk-api` starts, `database.RunMigrations(ctx, pool, cfg.MigrationsDir)` executes in `cmd/api/main.go`. It checks the `schema_migrations` table and applies any pending forward `.up.sql` files in ascending lexicographical order inside an isolated transaction.
@@ -142,9 +170,9 @@ When `lynk-api` starts, `database.RunMigrations(ctx, pool, cfg.MigrationsDir)` e
 ### 4.2 Creating New Migrations
 Always create an incremental forward and rollback pair with a zero-padded 6-digit sequence:
 ```bash
-# Template: backend/migrations/000013_<name>.up.sql and .down.sql
-touch backend/migrations/000013_add_feature.up.sql
-touch backend/migrations/000013_add_feature.down.sql
+# Template: backend/migrations/000020_<name>.up.sql and .down.sql
+touch backend/migrations/000020_add_feature.up.sql
+touch backend/migrations/000020_add_feature.down.sql
 ```
 
 ### 4.3 Migration Rules & Invariants
@@ -153,12 +181,12 @@ touch backend/migrations/000013_add_feature.down.sql
 3. **No file blobs in database:** Do not add `BYTEA` columns for user documents. All documents belong in MinIO S3.
 
 ### 4.4 Pre-Seeded Test Campus Member Accounts
-Migration `000010_seed_test_campus_members` pre-seeds three standard test member accounts across both `lynk_db` and `supertokens_db`:
+Migration `000010_seed_test_campus_members` pre-seeds standard test member accounts across both `lynk_db` and `supertokens_db`:
 
 | Account | Email | Password | Role | Verification Status | Purpose |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Poster** | `poster@campus.edu` | `password123` | `member` | **Verified** (`true`) | Creates peer jobs & reviews applications |
-| **Applicant** | `applicant@campus.edu` | `password123` | `member` | **Verified** (`true`) | Browses jobs & submits peer applications |
+| **Project Lead** | `poster@campus.edu` | `password123` | `member` | **Verified** (`true`) | Creates projects, manages workspaces & team rosters |
+| **Contributor** | `applicant@campus.edu` | `password123` | `member` | **Verified** (`true`) | Discovers projects & submits recruitment applications |
 | **Unverified** | `unverified@campus.edu` | `password123` | `member` | **Pending** (`false`) | Tests HTTP 403 `EMAIL_NOT_VERIFIED` gate |
 
 For manual standalone execution directly into `supertokens_db`, run:
@@ -182,7 +210,7 @@ docker exec -i lynk-postgres psql -U lynk_user -d supertokens_db < .docker/postg
 | **AI API: `401 Unauthorized` on internal routes** | `INTERNAL_AI_SECRET` header mismatch | Inspect `docker compose logs ai-api` | Ensure `INTERNAL_AI_SECRET` matches across `.env`, `docker-compose.yml`, and Go API configuration. |
 | **AI Worker: connection refused to postgres** | PostgreSQL not ready when worker booted | `docker compose logs ai-worker` | Restart worker via `docker compose restart ai-worker`. In production, worker retries with backoff. |
 | **Search fallback warning in Go API logs** | AI backend offline, degraded, or timed out | Inspect `docker compose ps ai-api` | Normal graceful degradation. Go automatically serves standard SQL results without breaking. |
-| **PostgreSQL: `type "vector" does not exist`** | `pgvector` extension not loaded on database | Check `docker compose exec postgres psql -U lynk_user -d lynk_db -c '\dx'` | Run migration `000012_ai_subsystem_init.up.sql` to install `vector` extension. |
+| **PostgreSQL: `type "vector" does not exist`** | `pgvector` extension not loaded on database | Check `docker compose exec postgres psql -U lynk_user -d lynk_db -c '\dx'` | Run migration `000012_ai_subsystem_init.up.sql` or `000019_project_vector_search.up.sql` to install `vector` extension. |
 
 ---
 
@@ -198,8 +226,28 @@ docker compose down -v
 docker compose rm -f -v
 
 # 3. Spin up fresh stack from zero
-docker compose up -d
+docker compose up -d --build
 
 # 4. Verify clean schema creation
 docker compose logs -f api
+```
+
+---
+
+## 7. Universal Quality Verification Suite (Makefile)
+
+Run verification across all three languages without manual path changes:
+
+```bash
+# Execute unit tests across Go backend, frontend, and Python AI:
+make test
+
+# Run multi-language linters (golangci-lint, oxlint, ruff check, typecheck):
+make lint
+
+# Check code formatting compliance (Go fmt, Prettier, Ruff):
+make format-check
+
+# Auto-format all code in monorepo:
+make format
 ```

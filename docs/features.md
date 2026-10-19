@@ -1,8 +1,8 @@
 # Lynk Platform Features & Capabilities Specification
 
-> **Authoritative Technical Feature Specification for Lynk**  
-> **Platform Version:** MVP Baseline  
-> **Architectural Topology:** Unified Campus Member Identity, Go REST API, Next.js 14 Frontend, PostgreSQL 16, SuperTokens Core 9.3, MinIO S3
+> **Authoritative Technical Feature Specification for Lynk**
+> **Platform Version:** MVP Baseline
+> **Architectural Topology:** Unified Campus Member Identity, Go REST API, Next.js 16 Frontend (React 19, Tailwind v4), PostgreSQL 16, SuperTokens Core 9.3, MinIO S3
 
 ---
 
@@ -83,7 +83,31 @@ flowchart TD
 
 ---
 
-### Feature 4: Campus Opportunity (Job) Discovery & Management
+### Feature 4: Project Workspaces, Modular Sections & Team Rosters
+
+| Capability | Technical Mechanism | User Experience |
+| :--- | :--- | :--- |
+| **Project Workspace Creation** | `POST /api/v1/projects` with Title, Description, Category, and Visibility (`public`, `unlisted`, `private`). | Verified students can initialize a persistent campus project workspace with real-time slug preview. |
+| **Role-Based Team Roster** | PostgreSQL `project_members` table with enum roles (`lead`, `maintainer`, `member`, `viewer`). | Transparent team rosters displaying avatars, roles, departments, and active statuses. |
+| **Sole Lead Protection** | Business logic in `team.Service` prevents demoting or removing the last active lead without leadership transfer. | Protects workspaces from becoming unmanaged or orphaned. |
+| **Direct Institutional Invitations** | `POST /api/v1/projects/{id}/invitations` sending invitations to campus students via university `.edu` email. | Project leads can directly invite collaborators to join the workspace team roster. |
+| **Modular Section Registry** | Ordered dynamic sections stored in `project_sections` (`overview`, `team`, `resources`, `recruitment`, `updates`). | Leads can customize their project page layout by enabling, configuring, and re-ordering sections. |
+| **External Resource Catalog** | Curated links in `project_resources` with URL scheme validation (HTTP/HTTPS only). | Teams can centralize GitHub repos, Figma files, documentation, and external links directly in the workspace. |
+
+---
+
+### Feature 5: Project Recruitment & Applicant Review
+
+| Capability | Technical Mechanism | User Experience |
+| :--- | :--- | :--- |
+| **Direct Project Applications** | `POST /api/v1/projects/{id}/applications` requiring applicant statement and optional resume key. | Students can apply directly to open project workspaces with their profile credentials. |
+| **Recruitment Status Controls** | Workspace toggle transitions `recruitment_status` between `open`, `paused`, and `closed`. | Clear visual indicator whether the project is actively recruiting new teammates. |
+| **Applicant Review Dashboard** | Next.js `/projects/[slug]/applications` providing review metrics, search, and status filters. | Leads and Maintainers can evaluate applicants, add reviewer notes, and make decisions. |
+| **Atomic Acceptance to Team** | Accepting an application atomically updates application status to `accepted` and inserts the applicant into `project_members` as `member`. | Frictionless onboarding: approved applicants instantly gain workspace member permissions. |
+
+---
+
+### Feature 6: Campus Opportunity (Job) Discovery & Management (Legacy Track)
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -223,8 +247,16 @@ flowchart TD
 
 ## 4. Role & Permissions Matrix
 
-| Platform Action | Unauthenticated Visitor | Unverified Member | Verified Student | Verified Organizer | Platform Admin |
+| Platform Action | Unauthenticated Visitor | Unverified Member | Verified Student | Verified Organizer / Lead | Platform Admin |
 | :--- | :---: | :---: | :---: | :---: | :---: |
+| **Browse Public Projects** | Yes | Yes | Yes | Yes | Yes |
+| **View Project Workspace** | Yes | Yes | Yes | Yes | Yes |
+| **Hybrid Semantic Project Search** | Yes | Yes | Yes | Yes | Yes |
+| **Create Project Workspace** | No | No (403) | Yes | Yes | Yes |
+| **Manage Project & Sections** | No | No | Lead/Maintainer | Lead/Maintainer | Yes |
+| **Invite Team Members** | No | No | Lead/Maintainer | Lead/Maintainer | Yes |
+| **Submit Project Application** | No | No (403) | Yes | Yes | Yes |
+| **Review Project Applications** | No | No | Lead/Maintainer | Lead/Maintainer | Yes |
 | **Browse Open Opportunities** | Yes | Yes | Yes | Yes | Yes |
 | **View Opportunity Details** | Yes | Yes | Yes | Yes | Yes |
 | **Search & Filter Opportunities (SQL)** | Yes | Yes | Yes | Yes | Yes |
@@ -253,7 +285,7 @@ flowchart TD
 
 ## 5. Non-Functional & Reliability Highlights
 
-1. **Deterministic Database Migrations:** 12 raw forward and rollback SQL migrations (`000001` through `000012`) including `pgvector` vector extension and 12 AI subsystem tables.
+1. **Deterministic Database Migrations:** 19 raw forward and rollback SQL migrations (`000001` through `000019`) including `pgvector` vector extension, 12 AI subsystem tables, and the Project-First Workspace architecture.
 2. **Layered Go Architecture:** Clean separation of concerns (`Handler` -> `Service` -> `Repository`) with standard library routing and `pgx/v5` connection pooling.
 3. **Internal AI Microservice & Secret Defense:** FastAPI backend operates on internal Docker network (`lynk-net`) requiring `X-Internal-AI-Secret`. Zero direct public exposure.
 4. **Comprehensive Graceful Degradation:** Every AI endpoint falls back to deterministic SQL logic with HTTP 200 if the AI backend is unreachable.

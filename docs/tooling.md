@@ -359,9 +359,41 @@ repos:
 - What belongs in pre-commit: Formatting, syntax checks, trailing whitespace, EOF fixers, small lint fixes (`ruff --fix`). Execution time must remain under 3 seconds.
 - What NEVER belongs in pre-commit: Full `pytest` runs, Go integration tests, whole-repo `mypy`, Docker image builds, or expensive security scans. These belong exclusively in CI.
 
+### Local Hook Activation
+
+Git deliberately does not run hooks on freshly cloned repositories automatically for workstation security. To link and activate the pre-commit configuration into your local `.git/hooks/pre-commit`, run:
+
+```bash
+# Via Makefile:
+make setup-hooks
+
+# Or directly:
+pre-commit install
+```
+
+Once installed, every local `git commit` runs Prettier, Ruff, Go formatting, and whitespace hygiene before creating the commit object.
+
 ---
 
-## 7. GitHub Actions CI Architecture
+## 7. Unified Project Control Plane (Makefile)
+
+The repository provides a top-level `Makefile` to unify tooling across Go, TypeScript, and Python without needing to navigate subdirectories or remember disparate package managers:
+
+| Target | Description | Subsystems Touched |
+| :--- | :--- | :--- |
+| `make setup` | Complete local onboarding (hooks, Go modules, npm dependencies, Python venv) | All |
+| `make setup-hooks` | Installs Git pre-commit hook | Git (`.git/hooks`) |
+| `make setup-go` | Downloads and verifies backend Go modules | Backend (`backend/`) |
+| `make setup-frontend` | Installs frontend dependencies | Frontend (`frontend/`) |
+| `make setup-ai` | Creates Python virtual environment (`ai/.venv`) and installs requirements | AI (`ai/`) |
+| `make test` | Executes unit tests across Go, frontend, and AI | All |
+| `make lint` | Runs `golangci-lint`, `oxlint`, and `ruff` | All |
+| `make format` | Formats Go (`gofmt`), frontend (`prettier`), and Python (`ruff`) | All |
+| `make format-check` | Enforces formatting compliance (identical to CI) | All |
+
+---
+
+## 8. GitHub Actions CI Architecture
 
 CI workflows run in parallel jobs inside `.github/workflows/ci.yml`. Each language executes independently so failures are isolated and easily diagnosed:
 
@@ -445,7 +477,7 @@ jobs:
 
 ---
 
-## 8. Version Pinning Strategy
+## 9. Version Pinning Strategy
 
 To eliminate unexpected CI breaks from upstream changes, all tools must follow strict version pinning:
 
@@ -462,7 +494,7 @@ To eliminate unexpected CI breaks from upstream changes, all tools must follow s
 
 ---
 
-## 9. Local Developer Command Reference
+## 10. Local Developer Command Reference
 
 | Action | Go (`backend/`) | Python (`ai/`) | TypeScript (`frontend/`) |
 | :--- | :--- | :--- | :--- |
