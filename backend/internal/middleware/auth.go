@@ -142,6 +142,15 @@ func SessionMiddlewareWithTokenCache(tc *auth.TokenCache) func(http.Handler) htt
 				return
 			}
 
+			// Cache writes must key on the token SuperTokens actually verified,
+			// never on the request-parsed candidate: an invalid (but parseable)
+			// Authorization header would otherwise let a cookie-authenticated
+			// request poison the cache under an attacker-chosen key.
+			verifiedToken := ""
+			if sessionContainer.GetAccessToken != nil {
+				verifiedToken = sessionContainer.GetAccessToken()
+			}
+
 			if sessionContainer.GetAccessTokenPayload != nil {
 				payload := sessionContainer.GetAccessTokenPayload()
 				email, isVerified, roles, complete := ParseSessionPayload(payload)
@@ -162,8 +171,8 @@ func SessionMiddlewareWithTokenCache(tc *auth.TokenCache) func(http.Handler) htt
 						EmailVerified: isVerified,
 						Roles:         roles,
 					}
-					if tc != nil && isSafeMethod(r.Method) && token != "" {
-						tc.Set(token, claims, auth.TokenFastPathTTL)
+					if tc != nil && isSafeMethod(r.Method) && verifiedToken != "" {
+						tc.Set(verifiedToken, claims, auth.TokenFastPathTTL)
 					}
 					ctx := auth.WithUserContext(r.Context(), claims)
 					next.ServeHTTP(tw, r.WithContext(ctx))
@@ -217,8 +226,8 @@ func SessionMiddlewareWithTokenCache(tc *auth.TokenCache) func(http.Handler) htt
 				Roles:         roles,
 			}
 
-			if tc != nil && isSafeMethod(r.Method) && token != "" {
-				tc.Set(token, claims, auth.TokenFastPathTTL)
+			if tc != nil && isSafeMethod(r.Method) && verifiedToken != "" {
+				tc.Set(verifiedToken, claims, auth.TokenFastPathTTL)
 			}
 
 			ctx := auth.WithUserContext(r.Context(), claims)
