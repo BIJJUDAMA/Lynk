@@ -281,6 +281,28 @@ func BuildRouter(
 	}
 	r.Get("/health", healthHandler)
 	r.Get("/api/v1/health", healthHandler)
+
+	// Readiness Check (DB-only: shed a pod from the load balancer only when its
+	// database pool is unusable; a MinIO outage must not remove all capacity)
+	readinessHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if dbPool == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "database": "not_configured"})
+			return
+		}
+		if err := dbPool.Ping(r.Context()); err != nil {
+			slog.Error("readiness db ping failed", "error", err)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "database": "disconnected"})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	}
+	r.Get("/readyz", readinessHandler)
+	r.Get("/api/v1/readyz", readinessHandler)
+
 	r.Get("/metrics", metrics.Handler())
 
 	if authMiddleware == nil {

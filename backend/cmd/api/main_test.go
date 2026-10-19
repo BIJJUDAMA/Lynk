@@ -214,6 +214,29 @@ func TestHealthEndpoint(t *testing.T) {
 	})
 }
 
+func TestReadinessEndpoint(t *testing.T) {
+	cfg := DefaultTestConfig()
+	router := BuildRouter(cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	for _, path := range []string{"/readyz", "/api/v1/readyz"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 Service Unavailable for %s when db pool is nil, got %d", path, rr.Code)
+		}
+
+		var resp map[string]interface{}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode %s response: %v", path, err)
+		}
+		if resp["status"] != "not_ready" {
+			t.Errorf("expected status 'not_ready' for %s, got %v", path, resp["status"])
+		}
+	}
+}
+
 func TestBuildRouter_MarketplaceWritesRequireVerifiedEmail(t *testing.T) {
 	cfg := DefaultTestConfig()
 
