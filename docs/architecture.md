@@ -5,9 +5,9 @@
 > This file is retained for historical reference. The active, multi-part documentation suite is located in [`docs/README.md`](README.md) and [`docs/architecture/system-architecture.md`](architecture/system-architecture.md).
 
 > **Project:** Lynk - High-Trust Campus Freelance & Gig Marketplace
-> **Status:** MVP Architecture Specification
+> **Status:** Architecture Specification (Historical Baseline)
 > **Identity & Access Management (IAM):** SuperTokens Core (Session + EmailPassword + EmailVerification)
-> **Evolution Phase:** Phase 1 (MVP - "Nothing Else Initially")
+> **Evolution Stage:** Post-MVP Expansion
 
 ---
 
@@ -16,7 +16,7 @@
 **Lynk** is a university-centric freelance and campus gig platform designed to bridge the trust gap between students, campus departments, and student founders. Unlike generic freelance platforms that segregate users into rigid "student" vs "employer" silos, Lynk enforces a **Unified Campus Member** architecture. Any verified student or faculty member can both offer services (as a contributor) and publish opportunities (as an organizer), powered by institutional `.edu` email verification, direct deliverable contracts, and transparent peer reviews.
 
 ### Primary Architectural Invariants
-1. **Strict MVP Scope ("Nothing Else Initially"):** Zero message queues, zero distributed caches, and zero commercial cloud auth SaaS vendors (Auth0/Firebase/Supabase) during MVP. Self-hosted **SuperTokens Core** in Docker handles session management, user credentials, and email verification. Synchronous HTTP + PostgreSQL + MinIO + SuperTokens handles 100% of MVP requirements.
+1. **Self-Hosted Stack:** No commercial cloud auth SaaS (Auth0/Firebase/Supabase). Self-hosted **SuperTokens Core** in Docker handles session management, user credentials, and email verification. The active stack adds Redis (caching, rate limiting, capacity leases, invalidation), PgBouncer, pgvector, and an Nginx gateway on top of PostgreSQL + MinIO; RabbitMQ/async workers and multi-campus federation are the next expansion steps.
 2. **Containerization Boundary:**
    - **Backend & Core Services (`backend/`, SuperTokens, Postgres, MinIO):** Dockerised and orchestrated using `docker-compose.yml`.
    - **Frontend (`frontend/`):** Co-located in the monorepo but **NOT** dockerised. Runs directly on the host (`npm run dev`) for instant Hot Module Replacement (HMR).
@@ -74,14 +74,15 @@
 
 ## 3. Evolutionary Architecture Roadmap
 
-Lynk starts with a synchronous Go backend and SuperTokens Core IAM. Later phases introduce distributed performance tools strictly after the MVP baseline is verified.
+Lynk began with a synchronous Go backend and SuperTokens Core IAM and has since added the distributed performance layer (Redis, PgBouncer, Nginx, sharded L1 caching).
 
 ```mermaid
 flowchart TD
-    subgraph Phase1["Phase 1: MVP (Active Baseline)"]
+    subgraph Phase1["Phase 1 Baseline + Phase 1.5 Hardening (Active)"]
         FE[Next.js App on Host] -->|SuperTokens Web JS| API[Dockerised Go REST API]
         API -->|SuperTokens Core API| ST[SuperTokens Core in Docker]
         API -->|Raw SQL Migrations| PG[(PostgreSQL 16+)]
+        API -->|PgBouncer + Redis| PGB[PgBouncer / Redis 7]
         API -->|S3 API| S3[(MinIO: Resumes Bucket)]
     end
 

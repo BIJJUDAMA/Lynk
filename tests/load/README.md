@@ -17,7 +17,7 @@ The test suite is orchestrated sequentially by `tests/load/run_all.js` across 6 
 | **Stage 5** | `scripts/05_high_concurrency_stress.js` | High-concurrency stress | 1,000 VUs exercising PgBouncer, Redis cache, covering indexes |
 | **Stage 6** | `scripts/06_ultra_concurrency_stress.js` | Ultra-concurrency stress | 2,500 VUs exercising Nginx micro-caching, sharded L1 cache, DB buffers |
 
-The two heavy stages (05, 06) cover the merged high-throughput integration: the sharded L1 cache, SingleFlight request coalescing, Redis L2 with the invalidation bus, keyset pagination, capacity leases, and the safe-method session fast path. Measured results for the current build are recorded in `tests/load/results/REPORT.md`; the architecture behind them is in `docs/architecture/SCALABILITY.md`.
+The two heavy stages (05, 06) cover the merged high-throughput integration: the sharded L1 cache, SingleFlight request coalescing, Redis L2 with the invalidation bus, keyset pagination, capacity leases, and the safe-method session fast path. Measured results for the current build are recorded in `tests/load/results/REPORT.md`; the architecture behind them is in `docs/architecture/scalability.md`.
 
 ---
 
@@ -86,4 +86,4 @@ make load-test-concurrency
 
 ## 5. Artifacts & Reports
 
-Every run generates individual stage outputs in `tests/load/results/*.json` and produces a consolidated summary report at `tests/load/results/SUMMARY.md`. The full write-up for the current build, including the compute profile and measured RPS/VU/latency table, lives at `tests/load/results/REPORT.md`, and the architecture it validates is documented in `docs/architecture/SCALABILITY.md`.
+Every run generates individual stage outputs in `tests/load/results/*.json` and produces a consolidated summary report at `tests/load/results/SUMMARY.md`. The full write-up for the current build, including the compute profile and measured RPS/VU/latency table, lives at `tests/load/results/REPORT.md`, and the architecture it validates is documented in `docs/architecture/scalability.md`.

@@ -420,7 +420,7 @@ This documentation suite is synchronized with the repository lifecycle. When mod
 ```mermaid
 timeline
     title Lynk Platform Evolutionary Roadmap
-    Phase 1 (Active MVP) : Direct Go REST API
+    Phase 1 (Active Baseline) : Direct Go REST API
                          : Self-Hosted SuperTokens Core IAM
                          : PostgreSQL 16 Application Storage
                          : MinIO S3 Resume Storage

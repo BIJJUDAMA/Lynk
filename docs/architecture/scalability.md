@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-10-20
 **Scope:** Single-campus deployment (`@university.edu`), Go REST API behind an Nginx gateway.
-**Read with:** `docs/architecture/SCALABILITY.md` (this file), `PLAN.md`, `docs/superpowers/specs/2026-10-19-1m-rps-integration-design.md`, `tests/load/results/SUMMARY.md`.
+**Read with:** `docs/architecture/scalability.md` (this file), `PLAN.md`, `docs/superpowers/specs/2026-10-19-1m-rps-integration-design.md`, `tests/load/results/REPORT.md`.
 
 ---
 
@@ -112,18 +112,7 @@ Full numbers and methodology: `tests/load/results/SUMMARY.md`.
 
 ---
 
-## 8. What Is Deliberately Not Here
-
-Per the MVP "nothing else initially" rule and the single-campus invariant:
-
-- No multi-tenant campus routing.
-- No Redis/RabbitMQ/Kafka beyond the Redis already in the stack.
-- No server-side session revocation hook yet (bounded by the 10s fast-path TTL).
-- The horizontal scaling manifests exist (`deploy/k8s/`) but the local compose stack runs a single API replica; multi-replica behavior is enforced by the invalidation bus and sticky primary, not exercised by the laptop benchmark above.
-
----
-
-## 9. Where to Change What
+## 8. Where to Change What
 
 | Concern | File |
 | :--- | :--- |

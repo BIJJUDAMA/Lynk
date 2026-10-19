@@ -263,7 +263,7 @@ linters-settings:
   govet:
     enable-all: true
     disable:
-      - fieldalignment  # Micro-optimization not required for MVP
+      - fieldalignment  # Micro-optimization not required
   gosec:
     excludes:
       - G104  # Handled comprehensively by errcheck

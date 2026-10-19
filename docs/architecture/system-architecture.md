@@ -2,7 +2,7 @@
 
 > **Authoritative System Architecture Specification**
 > **Platform:** Lynk - Campus work and student freelance platform
-> **Status:** Active Baseline (Phase 1 MVP & Phase 1.5 Production Hardening Complete)
+> **Status:** Active (Post-MVP Expansion - Phase 1 baseline, Phase 1.5 hardening, and the 1M+ RPS scaling program complete)
 > **IAM Specification:** Self-Hosted SuperTokens Core 9.3 (`:3567`)
 > **Object Storage:** MinIO S3 (`:9000` API / `:9001` Web Console) - Exclusively for Resumes
 > **Caching & Rate Limiting:** TwoTierCache (L1 In-Memory LRU + L2 Redis 7+ `:6379`) & Sliding Window Limiter
@@ -280,7 +280,7 @@ Lynk progresses across structured phases balancing rapid delivery with productio
 
 ```mermaid
 flowchart TD
-    subgraph Phase1["Phase 1: MVP Baseline (Completed)"]
+    subgraph Phase1["Phase 1: Baseline (Completed)"]
         direction TB
         P1_FE[Next.js 14 Host Development]
         P1_API[Dockerised Go REST API]
@@ -333,8 +333,8 @@ flowchart TD
 ```
 
 ### Phase Descriptions
-- **Phase 1 (MVP Baseline - Completed):** Synchronous Go API, self-hosted SuperTokens Core, PostgreSQL 16, MinIO S3, Next.js host frontend.
+- **Phase 1 (Baseline - Completed):** Synchronous Go API, self-hosted SuperTokens Core, PostgreSQL 16, MinIO S3, Next.js host frontend.
 - **Phase 1.5 (Production Hardening & Ultra-Scale Optimization - Completed):** Redis 7 sliding-window rate limiting, TwoTierCache (L1 in-memory LRU + L2 Redis), Nginx edge gateway with 5s micro-caching (`proxy_cache_lock on`), PgBouncer transaction pooling, compound covering database indexes, PostgreSQL 1GB RAM buffers & NVMe I/O tuning, Transactional Outbox pattern & worker, Server-Sent Events realtime stream, CPU ONNX INT8 AI embeddings with SHA-256 deduplication cache, Prometheus `/metrics` endpoint.
 - **Phase 2.0 (Campus Work Platform - Planned):** Student ID OCR verification, milestone deliverable escrow, multi-campus tenancy, WebSockets, SOW generator, FERPA compliance shield.
 - **Phase 3 (Async Processing & Workers - Planned):** RabbitMQ message broker and distributed worker pools for heavy background asynchronous tasks.
-- **Phase 4 (Reliability, Benchmarking & Scale - Active Baseline Established):** Complete 6-stage k6 load test suite (`make load-test-ultra`) stress testing up to 2,500 concurrent Virtual Users (VUs) and 1,453.9 req/s peak throughput with 0.00% error rate and sub-13ms p95 latencies. See complete metrics in [`performance-and-scale.md`](performance-and-scale.md). Planned expansion: Grafana production dashboards and automated CI regressions.
+- **Phase 4 (Reliability, Benchmarking & Scale - Active Baseline Established):** Complete 6-stage k6 load test suite (`make load-test-ultra`) stress testing up to 2,500 concurrent Virtual Users (VUs) and ~1,458 req/s peak throughput with 0.00% error rate and a 2.07ms p95 latency, single API container. See complete metrics in [`tests/load/results/REPORT.md`](../../tests/load/results/REPORT.md) and [`performance-and-scale.md`](performance-and-scale.md). Planned expansion: Grafana production dashboards and automated CI regressions.
