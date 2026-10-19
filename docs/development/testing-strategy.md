@@ -279,3 +279,34 @@ For full-stack verification of live running containers and endpoints, automated 
     - **14.7 Review Insights:** Tests `GET /api/v1/users/{id}/ai-insights` returning aggregated aspect scores for completed work.
     - **14.8 Skill Demand Analytics:** Verifies `GET /api/v1/analytics/skills` returning campus velocity and growth snapshots.
     - **14.9 Graceful Degradation:** Simulates AI service outage and proves Go backend returns HTTP 200 with deterministic SQL fallback data.
+
+---
+
+## 7. Backend Reliability & Capacity Benchmark (k6 Load Testing Suite)
+
+Lynk provides a multi-stage, protocol-level load testing harness in `tests/load/` powered by k6 and orchestrated sequentially via `node tests/load/run_all.js` or `make load-test`.
+
+### 7.1 Progressive Load Test Stages
+1. **Stage 1: Rate Limiter & DDoS Protection (`01_rate_limit.js`)**:
+   - Single-IP burst sending 300 requests in 10s.
+   - Proves `NewSlidingWindowMiddleware` strictly returns `429 Too Many Requests` beyond 120 req/min with sub-10ms response time.
+2. **Stage 2: Cache & Read Path Benchmark (`02_cache_benchmark.js`)**:
+   - Evaluates read throughput (RPS) and latency distributions (p50, p95, p99) across project feeds and hybrid search.
+3. **Stage 3: PostgreSQL Connection Pool Saturation (`03_pool_saturation.js`)**:
+   - Pushes concurrency to 60 VUs, exceeding `pgxpool.MaxConns = 25`.
+   - Proves Go runtime connection queues handle DB contention without socket drops or 500 errors.
+4. **Stage 4: Max Concurrent User Breakpoint Test (`04_user_concurrency.js`)**:
+   - Multi-tenant student IP simulation cycling through progressive tiers (25 -> 50 -> 100 -> 200 -> 350 VUs) with realistic student think times (1-3s).
+   - Identifies the exact throughput and concurrency ceiling of the platform.
+
+### 7.2 Execution Commands
+```bash
+# Execute all 4 stages sequentially with unified summary report
+make load-test
+
+# Or run individual stages
+make load-test-rate-limit
+make load-test-cache
+make load-test-pool
+make load-test-concurrency
+```

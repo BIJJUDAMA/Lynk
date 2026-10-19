@@ -1,4 +1,4 @@
-.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check
+.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check load-test load-test-rate-limit load-test-cache load-test-pool load-test-concurrency
 
 help:
 	@echo "Available commands:"
@@ -11,6 +11,7 @@ help:
 	@echo "  make lint           - Run all static analyzers and linters"
 	@echo "  make format         - Auto-format Go, Python, and TypeScript code"
 	@echo "  make format-check   - Verify code formatting across all services"
+	@echo "  make load-test      - Run complete sequential k6 backend load test suite"
 
 setup-hooks:
 	@echo "==> Installing pre-commit hooks..."
@@ -93,3 +94,23 @@ format-check:
 	else \
 		ruff format --check ai/; \
 	fi
+
+load-test:
+	@echo "==> Running complete backend load testing suite..."
+	node tests/load/run_all.js
+
+load-test-rate-limit:
+	@echo "==> Running Stage 1: Rate limiter enforcement test..."
+	k6 run tests/load/scripts/01_rate_limit.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/01_rate_limit.js
+
+load-test-cache:
+	@echo "==> Running Stage 2: Cache & read benchmark..."
+	k6 run tests/load/scripts/02_cache_benchmark.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/02_cache_benchmark.js
+
+load-test-pool:
+	@echo "==> Running Stage 3: Database pool saturation test..."
+	k6 run tests/load/scripts/03_pool_saturation.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/03_pool_saturation.js
+
+load-test-concurrency:
+	@echo "==> Running Stage 4: Max user concurrency breakpoint test..."
+	k6 run tests/load/scripts/04_user_concurrency.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/04_user_concurrency.js

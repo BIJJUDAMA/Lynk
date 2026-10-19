@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -204,14 +205,20 @@ func BuildRouter(
 	})
 	r.Use(middleware.CORS(cfg.CORSAllowedOrigins))
 
-	// Rate Limiting Store (global 120 requests/minute per IP, health checks exempted)
+	// Rate Limiting Store (configurable requests/minute per IP, defaults to 120, health checks exempted)
 	var limiterStore ratelimit.Store = ratelimit.NewMemoryStore()
 	if cfg.RedisURL != "" {
 		if rStore, err := ratelimit.NewRedisStoreFromURL(cfg.RedisURL); err == nil {
 			limiterStore = rStore
 		}
 	}
-	r.Use(ratelimit.NewSlidingWindowMiddleware(limiterStore, 120, time.Minute))
+	rateLimitPerMin := 120
+	if envLimit := os.Getenv("RATE_LIMIT_PER_MINUTE"); envLimit != "" {
+		if parsed, err := strconv.Atoi(envLimit); err == nil && parsed > 0 {
+			rateLimitPerMin = parsed
+		}
+	}
+	r.Use(ratelimit.NewSlidingWindowMiddleware(limiterStore, rateLimitPerMin, time.Minute))
 
 	// Enforce 1MB limit for JSON request bodies to prevent OOM DoS attacks (F-09)
 	r.Use(func(next http.Handler) http.Handler {

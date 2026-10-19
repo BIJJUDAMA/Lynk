@@ -390,6 +390,7 @@ The repository provides a top-level `Makefile` to unify tooling across Go, TypeS
 | `make lint` | Runs `golangci-lint`, `oxlint`, and `ruff` | All |
 | `make format` | Formats Go (`gofmt`), frontend (`prettier`), and Python (`ruff`) | All |
 | `make format-check` | Enforces formatting compliance (identical to CI) | All |
+| `make load-test` | Runs sequential k6 backend load test suite (Rate limiting, Cache, DB Pool, Max Users) | Backend & Database |
 
 ---
 

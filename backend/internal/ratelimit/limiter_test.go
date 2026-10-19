@@ -177,6 +177,26 @@ func TestExtractClientIP(t *testing.T) {
 	}
 }
 
+func TestExtractClientIP_TrustForwardedFor(t *testing.T) {
+	t.Setenv("TRUST_FORWARDED_FOR", "true")
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "127.0.0.1:54321"
+	req.Header.Set("X-Forwarded-For", "203.0.113.195, 70.41.3.18")
+
+	ip := ExtractClientIP(req)
+	if ip != "203.0.113.195" {
+		t.Fatalf("expected 203.0.113.195, got %s", ip)
+	}
+
+	// Falls back to RemoteAddr if header is empty
+	reqNoHeader := httptest.NewRequest("GET", "/", nil)
+	reqNoHeader.RemoteAddr = "192.168.1.50:8080"
+	if ip := ExtractClientIP(reqNoHeader); ip != "192.168.1.50" {
+		t.Fatalf("expected 192.168.1.50, got %s", ip)
+	}
+}
+
 func TestSlidingWindow_RedisStore_Fallback(t *testing.T) {
 	// RedisStore with nil client falls back cleanly to in-memory store
 	store := NewRedisStore(nil)

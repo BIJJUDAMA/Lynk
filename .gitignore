@@ -49,6 +49,7 @@ desktop.ini
 # --- Docker ---
 .docker-volumes/
 
-# --- Logs ---
+# --- Logs & Test Results ---
 *.log
 logs/
+tests/load/results/

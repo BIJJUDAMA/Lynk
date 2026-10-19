@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -221,8 +222,22 @@ func cleanIP(ipStr string) string {
 	return ipStr
 }
 
-// ExtractClientIP extracts the client IP strictly from RemoteAddr to prevent unvalidated X-Forwarded-For spoofing.
+// ExtractClientIP extracts the client IP strictly from RemoteAddr by default to prevent unvalidated X-Forwarded-For spoofing.
+// When TRUST_FORWARDED_FOR or TRUST_PROXY is set to "true" (e.g. behind trusted reverse proxy or multi-tenant load testing),
+// the first client IP in X-Forwarded-For is extracted if present.
 func ExtractClientIP(r *http.Request) string {
+	if os.Getenv("TRUST_FORWARDED_FOR") == "true" || os.Getenv("TRUST_PROXY") == "true" {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			if len(parts) > 0 {
+				client := cleanIP(parts[0])
+				if client != "" {
+					return client
+				}
+			}
+		}
+	}
+
 	remote := cleanIP(r.RemoteAddr)
 	if remote == "" {
 		return "127.0.0.1"
