@@ -1341,6 +1341,57 @@ func TestResolveMigrationDatabaseURL(t *testing.T) {
 	})
 }
 
+func TestBuildRouter_ETagMiddleware(t *testing.T) {
+	router := BuildRouter(
+		DefaultTestConfig(),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		func(next http.Handler) http.Handler { return next },
+		stubStore{},
+		nil,
+	)
+
+	router.Get("/test-etag", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	// Fresh GET
+	req1 := httptest.NewRequest(http.MethodGet, "/test-etag", nil)
+	rec1 := httptest.NewRecorder()
+	router.ServeHTTP(rec1, req1)
+
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec1.Code)
+	}
+	etag := rec1.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("expected ETag header to be set by BuildRouter middleware")
+	}
+	cacheControl := rec1.Header().Get("Cache-Control")
+	if cacheControl != "public, max-age=15, stale-while-revalidate=45" {
+		t.Fatalf("expected Cache-Control header, got %q", cacheControl)
+	}
+
+	// Conditional GET
+	req2 := httptest.NewRequest(http.MethodGet, "/test-etag", nil)
+	req2.Header.Set("If-None-Match", etag)
+	rec2 := httptest.NewRecorder()
+	router.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusNotModified {
+		t.Fatalf("expected 304 Not Modified, got %d", rec2.Code)
+	}
+	if rec2.Body.Len() != 0 {
+		t.Fatalf("expected empty body on 304, got %q", rec2.Body.String())
+	}
+}
+
 func TestTwoTierCache_WiringIntegration(t *testing.T) {
 	mem := cache.NewMemoryCache()
 	ttc := cache.NewTwoTierCache(mem, mem, 5*time.Second)

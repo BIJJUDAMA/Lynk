@@ -209,6 +209,7 @@ func BuildRouter(
 		})
 	})
 	r.Use(middleware.CORS(cfg.CORSAllowedOrigins))
+	r.Use(middleware.ETag())
 
 	// Rate Limiting Store (configurable requests/minute per IP, defaults to 120, health checks exempted)
 	var limiterStore ratelimit.Store = ratelimit.NewMemoryStore()
