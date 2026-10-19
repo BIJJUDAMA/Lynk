@@ -90,6 +90,11 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if err := ValidateCursor(filter.Cursor); err != nil {
+		httputil.WriteBadRequest(w, r, "INVALID_CURSOR", "invalid pagination cursor")
+		return
+	}
+
 	var viewerID *string
 	claims, err := auth.GetUserContext(r.Context())
 	if err == nil && claims != nil && claims.UserID != "" {
@@ -101,6 +106,17 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteInternalServerError(w, r, err)
 		return
 	}
+
+	pageSize := filter.Limit
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if len(projects) == pageSize && pageSize > 0 {
+		if next := NextCursor(projects, pageSize); next != "" {
+			w.Header().Set("X-Next-Cursor", next)
+		}
+	}
+	w.Header().Set("Access-Control-Expose-Headers", "X-Next-Cursor")
 
 	httputil.WriteSuccess(w, http.StatusOK, projects)
 }

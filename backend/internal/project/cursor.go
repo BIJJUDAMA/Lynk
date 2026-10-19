@@ -18,6 +18,28 @@ func EncodeCursor(t time.Time, id uuid.UUID) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }
 
+// ValidateCursor reports whether a pagination cursor is acceptable. An empty
+// cursor is valid (it means "start from the first page"); anything else must
+// decode cleanly.
+func ValidateCursor(cursor string) error {
+	if strings.TrimSpace(cursor) == "" {
+		return nil
+	}
+	_, _, err := DecodeCursor(cursor)
+	return err
+}
+
+// NextCursor returns the cursor that continues a keyset page after the given
+// projects. It returns an empty string when there are no projects to continue
+// from; otherwise it encodes the last project's creation time and ID.
+func NextCursor(projects []Project, limit int) string {
+	if len(projects) == 0 {
+		return ""
+	}
+	last := projects[len(projects)-1]
+	return EncodeCursor(last.CreatedAt, last.ID)
+}
+
 // DecodeCursor parses a base64 pagination cursor into timestamp and UUID.
 func DecodeCursor(cursor string) (time.Time, uuid.UUID, error) {
 	trimmed := strings.TrimSpace(cursor)
