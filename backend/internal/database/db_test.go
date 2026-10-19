@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/lynk/backend/internal/database"
 )
 
@@ -235,6 +237,31 @@ func TestNewPool_InvalidURL(t *testing.T) {
 	_, err := database.NewPool(ctx, "postgres://invalid uri with spaces")
 	if err == nil {
 		t.Error("expected error for invalid database URL, got nil")
+	}
+}
+
+func TestNewPool_PgBouncerCompatible(t *testing.T) {
+	rawURL := "postgres://lynk_user:lynk_password@localhost:6432/lynk_db?sslmode=disable"
+	cfg, err := database.BuildPoolConfig(rawURL)
+	if err != nil {
+		t.Fatalf("unexpected error parsing pool config: %v", err)
+	}
+
+	if cfg.ConnConfig.DefaultQueryExecMode != pgx.QueryExecModeSimpleProtocol {
+		t.Errorf("expected DefaultQueryExecMode to be SimpleProtocol (%v), got %v",
+			pgx.QueryExecModeSimpleProtocol, cfg.ConnConfig.DefaultQueryExecMode)
+	}
+	if cfg.MaxConns != 25 {
+		t.Errorf("expected MaxConns to be 25, got %d", cfg.MaxConns)
+	}
+	if cfg.MinConns != 5 {
+		t.Errorf("expected MinConns to be 5, got %d", cfg.MinConns)
+	}
+	if cfg.MaxConnLifetime != 1*time.Hour {
+		t.Errorf("expected MaxConnLifetime to be 1h, got %v", cfg.MaxConnLifetime)
+	}
+	if cfg.MaxConnIdleTime != 30*time.Minute {
+		t.Errorf("expected MaxConnIdleTime to be 30m, got %v", cfg.MaxConnIdleTime)
 	}
 }
 
