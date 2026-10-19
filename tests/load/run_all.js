@@ -62,6 +62,13 @@ const STAGES = [
     resultFile: path.join(RESULTS_DIR, '07_saturation_ceiling.json'),
     description: 'Ramps fixed arrival rate (no think time) to find the true per-pod server ceiling',
   },
+  {
+    id: '08_connection_hold',
+    name: '08. Concurrent Connection Hold',
+    script: path.join(SCRIPTS_DIR, '08_connection_hold.js'),
+    resultFile: path.join(RESULTS_DIR, '08_connection_hold.json'),
+    description: 'Opens and holds keep-alive connections (500 -> 8,000) to measure concurrent connection capacity',
+  },
 ];
 
 // Ensure Windows default install paths for k6 and winget links are in PATH

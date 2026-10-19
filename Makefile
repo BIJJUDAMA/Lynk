@@ -1,4 +1,4 @@
-.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check load-test load-test-rate-limit load-test-cache load-test-pool load-test-concurrency load-test-stress load-test-ultra load-test-saturation stack-ram stack-ram-down
+.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check load-test load-test-rate-limit load-test-cache load-test-pool load-test-concurrency load-test-stress load-test-ultra load-test-saturation load-test-connections stack-ram stack-ram-down
 
 help:
 	@echo "Available commands:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make load-test      - Run complete sequential k6 backend load test suite"
 	@echo "  make load-test-ultra - Run Stage 6 ultra-concurrency stress test (2,500 VUs)"
 	@echo "  make load-test-saturation - Run Stage 7 constant-arrival saturation ceiling (no think time)"
+	@echo "  make load-test-connections - Run Stage 8 concurrent connection hold (500 -> 8,000 held connections)"
 	@echo "  make stack-ram RAM=N - Start the server stack capped to N MiB total (e.g. RAM=4096, RAM=6144)"
 	@echo "  make stack-ram-down  - Stop the RAM-capped server stack"
 
@@ -130,6 +131,10 @@ load-test-ultra:
 load-test-saturation:
 	@echo "==> Running Stage 7: Constant-arrival saturation ceiling (no think time)..."
 	k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/07_saturation_ceiling.json tests/load/scripts/07_saturation_ceiling.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/07_saturation_ceiling.json tests/load/scripts/07_saturation_ceiling.js
+
+load-test-connections:
+	@echo "==> Running Stage 8: Concurrent connection hold (500 -> 8,000 held connections)..."
+	k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/08_connection_hold.json tests/load/scripts/08_connection_hold.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/08_connection_hold.json tests/load/scripts/08_connection_hold.js
 
 RAM ?= 4096
 
