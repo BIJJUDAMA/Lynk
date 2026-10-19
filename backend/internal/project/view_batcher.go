@@ -72,7 +72,14 @@ func (b *ViewBatcher) Flush(ctx context.Context) error {
 	b.mu.Unlock()
 
 	if b.flushFunc != nil {
-		return b.flushFunc(ctx, current)
+		if err := b.flushFunc(ctx, current); err != nil {
+			b.mu.Lock()
+			for id, count := range current {
+				b.pending[id] += count
+			}
+			b.mu.Unlock()
+			return err
+		}
 	}
 	return nil
 }
