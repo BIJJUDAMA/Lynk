@@ -8,6 +8,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// flushTimeout bounds a single flush so a stalled sink cannot block shutdown.
+const flushTimeout = 2 * time.Second
+
 // ViewFlushFunc handles persisting batched view counts to PostgreSQL.
 type ViewFlushFunc func(ctx context.Context, batch map[uuid.UUID]int64) error
 
@@ -72,7 +75,9 @@ func (b *ViewBatcher) Flush(ctx context.Context) error {
 	b.mu.Unlock()
 
 	if b.flushFunc != nil {
-		if err := b.flushFunc(ctx, current); err != nil {
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), flushTimeout)
+		defer cancel()
+		if err := b.flushFunc(fctx, current); err != nil {
 			b.mu.Lock()
 			for id, count := range current {
 				b.pending[id] += count

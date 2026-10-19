@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -106,5 +107,31 @@ func TestViewBatcher_FlushFailureRetainsBatch(t *testing.T) {
 	}
 	if len(successful) != 1 {
 		t.Fatalf("expected exactly 1 project in retried batch, got %d", len(successful))
+	}
+}
+
+func TestViewBatcher_FlushReturnsWhenSinkStalls(t *testing.T) {
+	batcher := NewViewBatcher(time.Second, func(ctx context.Context, batch map[uuid.UUID]int64) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(30 * time.Second):
+			return nil
+		}
+	})
+	batcher.RecordView(uuid.New())
+
+	done := make(chan error, 1)
+	go func() {
+		done <- batcher.Flush(context.Background())
+	}()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected DeadlineExceeded from bounded flush, got %v", err)
+		}
+	case <-time.After(flushTimeout + 3*time.Second):
+		t.Fatal("Flush hung past the bounded timeout")
 	}
 }
