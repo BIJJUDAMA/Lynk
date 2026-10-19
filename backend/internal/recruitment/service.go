@@ -328,12 +328,22 @@ func (s *Service) AcceptApplication(ctx context.Context, claims *auth.UserClaims
 					return ErrTeamCapacityExceeded
 				}
 
-				if err := s.repo.AcceptApplicationTx(ctx, appID, claims.UserID); err != nil {
+				released := false
+				release := func() {
+					if released {
+						return
+					}
+					released = true
 					releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 					defer cancel()
 					_ = s.leaser.ReleaseLease(releaseCtx, app.ProjectID)
+				}
+				defer release()
+
+				if err := s.repo.AcceptApplicationTx(ctx, appID, claims.UserID); err != nil {
 					return err
 				}
+				released = true
 				return nil
 			}
 		}

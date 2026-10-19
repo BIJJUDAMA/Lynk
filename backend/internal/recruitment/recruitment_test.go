@@ -30,6 +30,7 @@ type mockRecruitmentRepo struct {
 	projects     map[uuid.UUID]*project.Project
 	acceptErr    error
 	acceptCalls  int
+	acceptPanic  bool
 }
 
 func newMockRecruitmentRepo() *mockRecruitmentRepo {
@@ -158,6 +159,10 @@ func (m *mockRecruitmentRepo) AcceptApplicationTx(ctx context.Context, appID uui
 	defer m.mu.Unlock()
 
 	m.acceptCalls++
+
+	if m.acceptPanic {
+		panic("simulated AcceptApplicationTx panic")
+	}
 
 	if m.acceptErr != nil {
 		return m.acceptErr
@@ -1166,6 +1171,50 @@ func TestAcceptApplication_ReleaseUsesDetachedContext(t *testing.T) {
 	if releaseErr != nil {
 		t.Fatalf("expected detached release context to be live, got ctx.Err()=%v", releaseErr)
 	}
+}
+
+func TestAcceptApplication_ReleasesLeaseOnPanic(t *testing.T) {
+	repo := newMockRecruitmentRepo()
+	projReader := newMockProjectReader()
+	memReader := newMockMembershipReader()
+	leaser := &spyCapacityLeaser{acquireOK: true}
+	svc := recruitment.NewService(repo, projReader, memReader).WithCapacityLeaser(leaser)
+
+	projectID := uuid.New()
+	leadID := "lead-panic-release"
+	appID := "applicant-panic-release"
+	proj := &project.Project{
+		ID:                projectID,
+		Title:             "Panic Release Project",
+		RecruitmentStatus: project.RecruitmentOpen,
+		OwnerMemberID:     leadID,
+		Settings:          map[string]any{"max_members": 1},
+	}
+	projReader.projects[projectID] = proj
+	repo.projects[projectID] = proj
+
+	leadClaims := &auth.UserClaims{UserID: leadID, Email: "lead@mit.edu", EmailVerified: true}
+	appClaims := &auth.UserClaims{UserID: appID, Email: "panic@mit.edu", EmailVerified: true}
+
+	app, err := svc.SubmitApplication(context.Background(), appClaims, projectID, recruitment.SubmitApplicationInput{
+		Statement: "Applicant whose transactional accept panics after lease acquisition.",
+	})
+	if err != nil {
+		t.Fatalf("failed to submit app: %v", err)
+	}
+
+	repo.acceptPanic = true
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected AcceptApplicationTx panic to propagate")
+		}
+		if got := leaser.releaseCount(); got != 1 {
+			t.Fatalf("expected exactly 1 ReleaseLease call after panic, got %d", got)
+		}
+	}()
+
+	_ = svc.AcceptApplication(context.Background(), leadClaims, app.ID)
 }
 
 func TestAcceptApplication_LeaseRefusesAtCapacity(t *testing.T) {
