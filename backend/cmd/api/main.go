@@ -815,7 +815,10 @@ func main() {
 
 	// 5b. Wire Project-First Domain Repositories, Services, and Handlers
 	projectRepo := project.NewRepository(pool)
-	projectService := project.NewService(projectRepo).WithCache(appCache)
+	viewBatcher := project.NewViewBatcher(2*time.Second, projectRepo.IncrementViewCounts)
+	viewBatcher.Start(context.Background())
+	defer viewBatcher.Stop()
+	projectService := project.NewService(projectRepo).WithCache(appCache).WithViewBatcher(viewBatcher)
 	projectHandler := project.NewHandler(projectService, projectRepo)
 
 	teamRepo := team.NewRepository(pool)

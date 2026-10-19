@@ -21,13 +21,15 @@ import (
 )
 
 type mockProjectRepo struct {
-	mu       sync.RWMutex
-	projects map[uuid.UUID]*project.Project
+	mu         sync.RWMutex
+	projects   map[uuid.UUID]*project.Project
+	viewCounts map[uuid.UUID]int64
 }
 
 func newMockProjectRepo() *mockProjectRepo {
 	return &mockProjectRepo{
-		projects: make(map[uuid.UUID]*project.Project),
+		projects:   make(map[uuid.UUID]*project.Project),
+		viewCounts: make(map[uuid.UUID]int64),
 	}
 }
 
@@ -164,6 +166,18 @@ func (m *mockProjectRepo) UpdateProject(ctx context.Context, p *project.Project)
 	copy := *p
 	copy.UpdatedAt = time.Now().UTC()
 	m.projects[p.ID] = &copy
+	return nil
+}
+
+func (m *mockProjectRepo) IncrementViewCounts(ctx context.Context, deltas map[uuid.UUID]int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for id, delta := range deltas {
+		if _, ok := m.projects[id]; ok {
+			m.viewCounts[id] += delta
+		}
+	}
 	return nil
 }
 

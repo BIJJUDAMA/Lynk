@@ -23,6 +23,7 @@ type Repository interface {
 	ListProjects(ctx context.Context, filter ListFilter) ([]Project, int, error)
 	ListPublic(ctx context.Context, filter ListFilter) ([]Project, error)
 	UpdateProject(ctx context.Context, p *Project) error
+	IncrementViewCounts(ctx context.Context, deltas map[uuid.UUID]int64) error
 }
 
 // pgxRepository implements Repository backed by PostgreSQL.
@@ -311,6 +312,31 @@ func (r *pgxRepository) UpdateProject(ctx context.Context, p *Project) error {
 		return fmt.Errorf("failed to update project: %w", err)
 	}
 
+	return nil
+}
+
+// IncrementViewCounts atomically adds the batched view deltas to each project.
+func (r *pgxRepository) IncrementViewCounts(ctx context.Context, deltas map[uuid.UUID]int64) error {
+	if len(deltas) == 0 {
+		return nil
+	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin view count transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	const query = `UPDATE projects SET view_count = view_count + $2 WHERE id = $1`
+	for id, delta := range deltas {
+		if _, err := tx.Exec(ctx, query, id, delta); err != nil {
+			return fmt.Errorf("failed to increment view count for project %s: %w", id, err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit view count transaction: %w", err)
+	}
 	return nil
 }
 

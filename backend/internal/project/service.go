@@ -35,6 +35,7 @@ func GenerateSlug(title string) string {
 type Service struct {
 	repo  Repository
 	cache cache.Cacher
+	views *ViewBatcher
 	sf    singleflight.Group
 }
 
@@ -50,6 +51,12 @@ func NewService(repo Repository, cacher ...cache.Cacher) *Service {
 // WithCache sets the optional cache on the Service.
 func (s *Service) WithCache(c cache.Cacher) *Service {
 	s.cache = c
+	return s
+}
+
+// WithViewBatcher sets the optional batched view counter on the Service.
+func (s *Service) WithViewBatcher(b *ViewBatcher) *Service {
+	s.views = b
 	return s
 }
 
@@ -220,6 +227,9 @@ func (s *Service) GetProjectBySlug(ctx context.Context, slug string, viewerID ..
 					return nil, ErrUnauthorized
 				}
 			}
+			if s.views != nil {
+				s.views.RecordView(cached.ID)
+			}
 			cp := cached
 			return &cp, nil
 		}
@@ -228,6 +238,9 @@ func (s *Service) GetProjectBySlug(ctx context.Context, slug string, viewerID ..
 				if vID == nil || *vID != cached.OwnerMemberID {
 					return nil, ErrUnauthorized
 				}
+			}
+			if s.views != nil {
+				s.views.RecordView(cached.ID)
 			}
 			cp := cached
 			return &cp, nil
@@ -258,6 +271,10 @@ func (s *Service) GetProjectBySlug(ctx context.Context, slug string, viewerID ..
 		}
 	}
 
+	if s.views != nil {
+		s.views.RecordView(p.ID)
+	}
+
 	cp := *p
 	return &cp, nil
 }
@@ -273,6 +290,9 @@ func (s *Service) GetProjectByID(ctx context.Context, id uuid.UUID, viewerID *st
 					return nil, ErrUnauthorized
 				}
 			}
+			if s.views != nil {
+				s.views.RecordView(cached.ID)
+			}
 			cp := cached
 			return &cp, nil
 		}
@@ -281,6 +301,9 @@ func (s *Service) GetProjectByID(ctx context.Context, id uuid.UUID, viewerID *st
 				if viewerID == nil || *viewerID != cached.OwnerMemberID {
 					return nil, ErrUnauthorized
 				}
+			}
+			if s.views != nil {
+				s.views.RecordView(cached.ID)
 			}
 			cp := cached
 			return &cp, nil
@@ -309,6 +332,10 @@ func (s *Service) GetProjectByID(ctx context.Context, id uuid.UUID, viewerID *st
 		if viewerID == nil || *viewerID != p.OwnerMemberID {
 			return nil, ErrUnauthorized
 		}
+	}
+
+	if s.views != nil {
+		s.views.RecordView(p.ID)
 	}
 
 	cp := *p
