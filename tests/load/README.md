@@ -6,7 +6,7 @@ This directory contains the automated protocol-level load testing suite for the 
 
 ## 1. Test Architecture & Stages
 
-The test suite is orchestrated sequentially by `tests/load/run_all.js` across 4 progressive stages:
+The test suite is orchestrated sequentially by `tests/load/run_all.js` across 6 progressive stages:
 
 | Stage | Script | Objective | Target Invariant |
 | :--- | :--- | :--- | :--- |
@@ -14,6 +14,10 @@ The test suite is orchestrated sequentially by `tests/load/run_all.js` across 4 
 | **Stage 2** | `scripts/02_cache_benchmark.js` | Read throughput and search performance | Evaluates latency across discovery feed and search |
 | **Stage 3** | `scripts/03_pool_saturation.js` | PostgreSQL pool contention | Verifies Go worker queue stability above 25 connections |
 | **Stage 4** | `scripts/04_user_concurrency.js` | Max user breakpoint test | Progressive ramp up to 350 VUs with realistic think times |
+| **Stage 5** | `scripts/05_high_concurrency_stress.js` | High-concurrency stress | 1,000 VUs exercising PgBouncer, Redis cache, covering indexes |
+| **Stage 6** | `scripts/06_ultra_concurrency_stress.js` | Ultra-concurrency stress | 2,500 VUs exercising Nginx micro-caching, sharded L1 cache, DB buffers |
+
+The two heavy stages (05, 06) cover the merged high-throughput integration: the sharded L1 cache, SingleFlight request coalescing, Redis L2 with the invalidation bus, keyset pagination, capacity leases, and the safe-method session fast path. Measured results for the current build are recorded in `tests/load/results/REPORT.md`; the architecture behind them is in `docs/architecture/SCALABILITY.md`.
 
 ---
 
@@ -39,13 +43,18 @@ Ensure the Go backend and PostgreSQL database are running:
 docker compose up -d
 ```
 
-### Execute Complete Load Suite (All 4 Stages Sequentially):
+### Execute Complete Load Suite (All 6 Stages Sequentially):
 ```bash
 make load-test
 ```
 or directly with Node.js:
 ```bash
 node tests/load/run_all.js
+```
+
+To run a single stage (for example the peak stress stage):
+```bash
+node tests/load/run_all.js --stage=06_ultra_concurrency_stress
 ```
 
 ### Run Individual Stages:
@@ -77,4 +86,4 @@ make load-test-concurrency
 
 ## 5. Artifacts & Reports
 
-Every run generates individual stage outputs in `tests/load/results/*.json` and produces a consolidated summary report at `tests/load/results/SUMMARY.md`.
+Every run generates individual stage outputs in `tests/load/results/*.json` and produces a consolidated summary report at `tests/load/results/SUMMARY.md`. The full write-up for the current build, including the compute profile and measured RPS/VU/latency table, lives at `tests/load/results/REPORT.md`, and the architecture it validates is documented in `docs/architecture/SCALABILITY.md`.
