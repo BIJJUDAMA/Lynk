@@ -115,7 +115,7 @@ func (r *pgxRepository) UpsertSections(ctx context.Context, projectID uuid.UUID,
 		query := `
 			INSERT INTO project_sections (
 				id, project_id, section_type, title, enabled, position, config, content, created_at, updated_at
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)
 			ON CONFLICT (project_id, section_type) DO UPDATE
 			SET title = EXCLUDED.title,
 			    enabled = EXCLUDED.enabled,
@@ -131,7 +131,7 @@ func (r *pgxRepository) UpsertSections(ctx context.Context, projectID uuid.UUID,
 			s.Title,
 			s.Enabled,
 			s.Position,
-			configBytes,
+			string(configBytes),
 			s.Content,
 			s.CreatedAt,
 			s.UpdatedAt,
@@ -253,14 +253,14 @@ func (r *pgxRepository) RecordActivity(ctx context.Context, act *ProjectActivity
 	query := `
 		INSERT INTO project_activity (
 			id, project_id, actor_id, event_type, metadata, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6)
+		) VALUES ($1, $2, $3, $4, $5::jsonb, $6)
 	`
 	_, err = r.db.Exec(ctx, query,
 		act.ID,
 		act.ProjectID,
 		act.ActorID,
 		act.EventType,
-		metaBytes,
+		string(metaBytes),
 		act.CreatedAt,
 	)
 	if err != nil {

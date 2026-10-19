@@ -55,7 +55,7 @@ func (r *pgxRepository) CreateProject(ctx context.Context, p *Project) error {
 			id, slug, owner_member_id, title, description, category,
 			visibility, recruitment_status, lifecycle_status, settings,
 			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
 		RETURNING created_at, updated_at
 	`
 	err = r.db.QueryRow(ctx, query,
@@ -68,7 +68,7 @@ func (r *pgxRepository) CreateProject(ctx context.Context, p *Project) error {
 		string(p.Visibility),
 		string(p.RecruitmentStatus),
 		string(p.LifecycleStatus),
-		settingsBytes,
+		string(settingsBytes),
 		p.CreatedAt,
 		p.UpdatedAt,
 	).Scan(&p.CreatedAt, &p.UpdatedAt)
@@ -270,7 +270,7 @@ func (r *pgxRepository) UpdateProject(ctx context.Context, p *Project) error {
 		    visibility = $5,
 		    recruitment_status = $6,
 		    lifecycle_status = $7,
-		    settings = $8,
+		    settings = $8::jsonb,
 		    updated_at = $9
 		WHERE id = $1
 		RETURNING updated_at
@@ -284,7 +284,7 @@ func (r *pgxRepository) UpdateProject(ctx context.Context, p *Project) error {
 		string(p.Visibility),
 		string(p.RecruitmentStatus),
 		string(p.LifecycleStatus),
-		settingsBytes,
+		string(settingsBytes),
 		p.UpdatedAt,
 	).Scan(&p.UpdatedAt)
 
