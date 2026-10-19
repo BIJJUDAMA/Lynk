@@ -2,7 +2,10 @@ package project_test
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lynk/backend/internal/cache"
 	"github.com/lynk/backend/internal/project"
@@ -137,3 +140,152 @@ func TestProjectService_CacheAside(t *testing.T) {
 		t.Fatalf("expected get without cache to succeed, got %v (err: %v)", noCacheDetail, err)
 	}
 }
+
+type countingMockProjectRepo struct {
+	*mockProjectRepo
+	slugCalls atomic.Int64
+	listCalls atomic.Int64
+	delay     time.Duration
+}
+
+func newCountingMockProjectRepo(delay time.Duration) *countingMockProjectRepo {
+	return &countingMockProjectRepo{
+		mockProjectRepo: newMockProjectRepo(),
+		delay:           delay,
+	}
+}
+
+func (c *countingMockProjectRepo) GetProjectBySlug(ctx context.Context, slug string) (*project.Project, error) {
+	c.slugCalls.Add(1)
+	if c.delay > 0 {
+		time.Sleep(c.delay)
+	}
+	return c.mockProjectRepo.GetProjectBySlug(ctx, slug)
+}
+
+func (c *countingMockProjectRepo) ListPublic(ctx context.Context, filter project.ListFilter) ([]project.Project, error) {
+	c.listCalls.Add(1)
+	if c.delay > 0 {
+		time.Sleep(c.delay)
+	}
+	return c.mockProjectRepo.ListPublic(ctx, filter)
+}
+
+func TestService_GetProjectBySlug_SingleFlight(t *testing.T) {
+	repo := newCountingMockProjectRepo(40 * time.Millisecond)
+	svc := project.NewService(repo)
+
+	ctx := context.Background()
+	ownerID := "usr_singleflight_test"
+	p, err := svc.CreateProject(ctx, ownerID, project.CreateProjectInput{
+		Title:       "High Concurrency In-Flight SingleFlight",
+		Description: "SingleFlight request deduplication test exceeding min length requirements.",
+		Category:    "Engineering",
+		Visibility:  project.VisibilityPublic,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating project: %v", err)
+	}
+
+	// Reset counter after CreateProject (which checks slug uniqueness via GetProjectBySlug)
+	repo.slugCalls.Store(0)
+
+	const concurrency = 20
+	var wg sync.WaitGroup
+	wg.Add(concurrency)
+
+	startBarrier := make(chan struct{})
+	type callResult struct {
+		proj *project.Project
+		err  error
+	}
+	results := make([]callResult, concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			<-startBarrier
+			proj, err := svc.GetProjectBySlug(ctx, p.Slug)
+			results[idx] = callResult{proj: proj, err: err}
+		}(i)
+	}
+
+	// Release all 20 goroutines at once to cause simultaneous uncached in-flight requests
+	close(startBarrier)
+	wg.Wait()
+
+	for i, r := range results {
+		if r.err != nil {
+			t.Fatalf("goroutine %d returned error: %v", i, r.err)
+		}
+		if r.proj == nil {
+			t.Fatalf("goroutine %d received nil project", i)
+		}
+		if r.proj.Slug != p.Slug {
+			t.Fatalf("goroutine %d received unexpected slug: got %s, want %s", i, r.proj.Slug, p.Slug)
+		}
+		if r.proj.ID != p.ID {
+			t.Fatalf("goroutine %d received unexpected ID: got %s, want %s", i, r.proj.ID, p.ID)
+		}
+	}
+
+	actualCalls := repo.slugCalls.Load()
+	if actualCalls != 1 {
+		t.Fatalf("expected exactly 1 repository invocation, got %d", actualCalls)
+	}
+}
+
+func TestService_ListPublicProjects_SingleFlight(t *testing.T) {
+	repo := newCountingMockProjectRepo(40 * time.Millisecond)
+	svc := project.NewService(repo)
+
+	ctx := context.Background()
+	ownerID := "usr_singleflight_list_test"
+	_, err := svc.CreateProject(ctx, ownerID, project.CreateProjectInput{
+		Title:       "Public Project Feed Entry",
+		Description: "Project feed deduplication test exceeding min length requirements.",
+		Category:    "Engineering",
+		Visibility:  project.VisibilityPublic,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating project: %v", err)
+	}
+
+	const concurrency = 20
+	var wg sync.WaitGroup
+	wg.Add(concurrency)
+
+	startBarrier := make(chan struct{})
+	type callResult struct {
+		projects []project.Project
+		err      error
+	}
+	results := make([]callResult, concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			<-startBarrier
+			projs, err := svc.ListPublicProjects(ctx, project.ListFilter{Category: "Engineering", Limit: 10})
+			results[idx] = callResult{projects: projs, err: err}
+		}(i)
+	}
+
+	close(startBarrier)
+	wg.Wait()
+
+	for i, r := range results {
+		if r.err != nil {
+			t.Fatalf("goroutine %d returned error: %v", i, r.err)
+		}
+		if len(r.projects) == 0 {
+			t.Fatalf("goroutine %d received empty projects slice", i)
+		}
+	}
+
+	actualCalls := repo.listCalls.Load()
+	if actualCalls != 1 {
+		t.Fatalf("expected exactly 1 repository invocation for ListPublic, got %d", actualCalls)
+	}
+}
+
