@@ -228,3 +228,56 @@ func TestMigration000019_FilesExistAndSyntaxValid(t *testing.T) {
 		}
 	}
 }
+
+func TestMigration000020_FilesExistAndSyntaxValid(t *testing.T) {
+	upPath := filepath.Clean(filepath.Join("..", "..", "migrations", "000020_project_feed_covering_indexes.up.sql"))
+	downPath := filepath.Clean(filepath.Join("..", "..", "migrations", "000020_project_feed_covering_indexes.down.sql"))
+
+	// #nosec G304 -- test file path is fixed and internal
+	upBytes, err := os.ReadFile(upPath) //nolint:gosec
+	if err != nil {
+		t.Fatalf("failed to read 000020 up migration: %v", err)
+	}
+	upContent := string(upBytes)
+	if len(strings.TrimSpace(upContent)) == 0 {
+		t.Fatalf("000020 up migration file is empty")
+	}
+
+	// #nosec G304 -- test file path is fixed and internal
+	downBytes, err := os.ReadFile(downPath) //nolint:gosec
+	if err != nil {
+		t.Fatalf("failed to read 000020 down migration: %v", err)
+	}
+	downContent := string(downBytes)
+	if len(strings.TrimSpace(downContent)) == 0 {
+		t.Fatalf("000020 down migration file is empty")
+	}
+
+	expectedUpSubstrings := []string{
+		"CREATE INDEX IF NOT EXISTS idx_projects_feed_covering",
+		"ON projects (visibility, recruitment_status, category, created_at DESC)",
+		"INCLUDE (id, slug, title, description, owner_member_id, lifecycle_status);",
+		"CREATE INDEX IF NOT EXISTS idx_projects_active_feed",
+		"ON projects (visibility, created_at DESC)",
+		"WHERE visibility = 'public';",
+		"CREATE INDEX IF NOT EXISTS idx_project_members_lookup",
+		"ON project_members (project_id, role, status);",
+	}
+	for _, substr := range expectedUpSubstrings {
+		if !strings.Contains(upContent, substr) {
+			t.Errorf("000020 up migration missing expected substring: %s", substr)
+		}
+	}
+
+	expectedDownSubstrings := []string{
+		"DROP INDEX IF EXISTS idx_project_members_lookup;",
+		"DROP INDEX IF EXISTS idx_projects_active_feed;",
+		"DROP INDEX IF EXISTS idx_projects_feed_covering;",
+	}
+	for _, substr := range expectedDownSubstrings {
+		if !strings.Contains(downContent, substr) {
+			t.Errorf("000020 down migration missing expected substring: %s", substr)
+		}
+	}
+}
+
