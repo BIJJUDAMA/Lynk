@@ -195,6 +195,7 @@ func BuildRouter(
 	// a reverse proxy is part of the deployment topology.
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
+	r.Use(chimiddleware.Compress(5, "application/json", "text/plain"))
 	r.Use(metrics.Middleware)
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

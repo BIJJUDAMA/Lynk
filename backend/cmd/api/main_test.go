@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1390,6 +1391,174 @@ func TestBuildRouter_ETagMiddleware(t *testing.T) {
 	if rec2.Body.Len() != 0 {
 		t.Fatalf("expected empty body on 304, got %q", rec2.Body.String())
 	}
+}
+
+func TestBuildRouter_ResponseCompression(t *testing.T) {
+	jobRepo := &mockJobRepo{}
+	jobService := job.NewService(jobRepo)
+	jobHandler := job.NewHandler(jobService, jobRepo)
+
+	sseBroker := sse.NewBroker()
+	defer func() { _ = sseBroker.Close() }()
+
+	authMW := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := auth.WithUserContext(r.Context(), &auth.UserClaims{
+				UserID:        "test-user-id",
+				Email:         "test@university.edu",
+				EmailVerified: true,
+			})
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+
+	router := BuildRouter(
+		DefaultTestConfig(),
+		nil,
+		nil,
+		jobHandler,
+		nil,
+		nil,
+		nil,
+		authMW,
+		stubStore{},
+		sseBroker,
+	)
+
+	router.Get("/test-plain", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("plain text content for compression test"))
+	})
+	router.Get("/test-image", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("fake-png-binary-data"))
+	})
+
+	t.Run("GET /api/v1/jobs with Accept-Encoding gzip returns compressed JSON", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Content-Encoding"); got != "gzip" {
+			t.Fatalf("expected Content-Encoding header 'gzip', got %q", got)
+		}
+
+		gzReader, err := gzip.NewReader(rec.Body)
+		if err != nil {
+			t.Fatalf("failed to create gzip reader from response: %v", err)
+		}
+		defer gzReader.Close()
+
+		decompressed, err := io.ReadAll(gzReader)
+		if err != nil {
+			t.Fatalf("failed to decompress response: %v", err)
+		}
+
+		var resp map[string]any
+		if err := json.Unmarshal(decompressed, &resp); err != nil {
+			t.Fatalf("failed to parse decompressed JSON: %v, body=%s", err, string(decompressed))
+		}
+		if _, ok := resp["data"]; !ok {
+			t.Fatalf("expected data field in decompressed response, got: %v", resp)
+		}
+	})
+
+	t.Run("GET /api/v1/jobs without Accept-Encoding returns raw uncompressed JSON", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Content-Encoding"); got != "" {
+			t.Fatalf("expected empty Content-Encoding, got %q", got)
+		}
+
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to parse raw JSON: %v, body=%s", err, rec.Body.String())
+		}
+		if _, ok := resp["data"]; !ok {
+			t.Fatalf("expected data field in response, got: %v", resp)
+		}
+	})
+
+	t.Run("GET /test-plain with Accept-Encoding gzip compresses text/plain", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test-plain", nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+		if got := rec.Header().Get("Content-Encoding"); got != "gzip" {
+			t.Fatalf("expected Content-Encoding 'gzip', got %q", got)
+		}
+
+		gzReader, err := gzip.NewReader(rec.Body)
+		if err != nil {
+			t.Fatalf("failed to create gzip reader: %v", err)
+		}
+		defer gzReader.Close()
+
+		decompressed, err := io.ReadAll(gzReader)
+		if err != nil {
+			t.Fatalf("failed to read decompressed text: %v", err)
+		}
+		if string(decompressed) != "plain text content for compression test" {
+			t.Fatalf("unexpected decompressed body: %s", string(decompressed))
+		}
+	})
+
+	t.Run("GET /test-image with Accept-Encoding gzip does NOT compress non-matching types", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test-image", nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d", rec.Code)
+		}
+		if got := rec.Header().Get("Content-Encoding"); got != "" {
+			t.Fatalf("expected empty Content-Encoding for image/png, got %q", got)
+		}
+		if rec.Body.String() != "fake-png-binary-data" {
+			t.Fatalf("expected raw body, got %q", rec.Body.String())
+		}
+	})
+
+	t.Run("GET /api/v1/events/stream SSE stream is not compressed despite Accept-Encoding gzip", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/events/stream", nil).WithContext(ctx)
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Content-Encoding"); got != "" {
+			t.Fatalf("expected SSE stream to NOT be compressed, got Content-Encoding: %q", got)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+			t.Fatalf("expected Content-Type text/event-stream, got %q", ct)
+		}
+		bodyStr := rec.Body.String()
+		if !strings.Contains(bodyStr, "event: connected") {
+			t.Fatalf("expected SSE initial connection message in body, got %q", bodyStr)
+		}
+	})
 }
 
 func TestTwoTierCache_WiringIntegration(t *testing.T) {
