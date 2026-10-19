@@ -42,6 +42,7 @@ import (
 	"github.com/lynk/backend/internal/workspace"
 	"github.com/redis/go-redis/v9"
 	"github.com/supertokens/supertokens-golang/supertokens"
+	_ "go.uber.org/automaxprocs"
 )
 
 // ProjectRouterOptions groups optional handlers for project-first domains.

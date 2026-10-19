@@ -10,7 +10,9 @@ require (
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.5.5
+	github.com/redis/go-redis/v9 v9.22.0
 	github.com/supertokens/supertokens-golang v0.26.0
+	go.uber.org/automaxprocs v1.6.0
 )
 
 require (
@@ -38,7 +40,6 @@ require (
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/redis/go-redis/v9 v9.22.0 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
