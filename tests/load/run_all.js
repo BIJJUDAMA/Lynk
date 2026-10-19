@@ -48,6 +48,13 @@ const STAGES = [
     resultFile: path.join(RESULTS_DIR, '05_high_concurrency_stress.json'),
     description: 'Pushes concurrency to 1,000 VUs evaluating PgBouncer, Redis cache, and covering indexes',
   },
+  {
+    id: '06_ultra_concurrency_stress',
+    name: '06. Ultra-Concurrency Stress (2,500 VUs)',
+    script: path.join(SCRIPTS_DIR, '06_ultra_concurrency_stress.js'),
+    resultFile: path.join(RESULTS_DIR, '06_ultra_concurrency_stress.json'),
+    description: 'Pushes concurrency to 2,500 VUs to evaluate Nginx micro-caching, L1 cache, and DB buffers',
+  },
 ];
 
 // Ensure Windows default install paths for k6 and winget links are in PATH
@@ -325,6 +332,7 @@ The Lynk backend test suite executed ${rows.length} sequential load stage(s) eva
 3. **Database Connection Queuing** (\`pgxpool.MaxConns = 25\` under contention).
 4. **Max Virtual User Concurrency** (Progressive multi-VU ramping to find the capacity cliff).
 5. **High-Concurrency Stress** (1,000 VUs evaluating PgBouncer, Redis cache, and covering indexes).
+6. **Ultra-Concurrency Stress** (2,500 VUs evaluating Nginx micro-caching, L1 cache, and DB buffers).
 
 ---
 

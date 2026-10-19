@@ -1,4 +1,4 @@
-.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check load-test load-test-rate-limit load-test-cache load-test-pool load-test-concurrency load-test-stress
+.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check load-test load-test-rate-limit load-test-cache load-test-pool load-test-concurrency load-test-stress load-test-ultra
 
 help:
 	@echo "Available commands:"
@@ -12,6 +12,7 @@ help:
 	@echo "  make format         - Auto-format Go, Python, and TypeScript code"
 	@echo "  make format-check   - Verify code formatting across all services"
 	@echo "  make load-test      - Run complete sequential k6 backend load test suite"
+	@echo "  make load-test-ultra - Run Stage 6 ultra-concurrency stress test (2,500 VUs)"
 
 setup-hooks:
 	@echo "==> Installing pre-commit hooks..."
@@ -118,5 +119,9 @@ load-test-concurrency:
 load-test-stress:
 	@echo "==> Running Stage 5: High-concurrency stress test (1,000 VUs)..."
 	k6 run tests/load/scripts/05_high_concurrency_stress.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/05_high_concurrency_stress.js
+
+load-test-ultra:
+	@echo "==> Running Stage 6: Ultra-concurrency stress test (2,500 VUs)..."
+	node tests/load/run_all.js --stage=06_ultra_concurrency_stress
 
 
