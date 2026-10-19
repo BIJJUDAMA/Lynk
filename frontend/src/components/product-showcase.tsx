@@ -45,7 +45,13 @@ const RESOURCE_DATA: ResourceRow[] = [
 const MILESTONE_DATA: MilestoneRow[] = [
   { timeline: "Phase 01", deliverable: "Workspace Design", status: "Established" },
   { timeline: "Phase 02", deliverable: "Core Architecture", status: "In development" },
-  { timeline: "+ Next", deliverable: "AI-Powered Features", status: "Planned", isNew: true, isPulsing: true },
+  {
+    timeline: "+ Next",
+    deliverable: "AI-Powered Features",
+    status: "Planned",
+    isNew: true,
+    isPulsing: true,
+  },
 ];
 
 const TABS = [
@@ -115,7 +121,8 @@ export default function ProductShowcase() {
             viewport={{ once: true }}
             className="text-sm sm:text-base text-ink-secondary leading-relaxed max-w-2xl mx-auto [text-wrap:balance]"
           >
-            Project discovery, student identities, modular team workspaces, and transparent campus portfolios. Built for real academic collaboration.
+            Project discovery, student identities, modular team workspaces, and transparent campus
+            portfolios. Built for real academic collaboration.
           </motion.p>
         </div>
 
@@ -131,15 +138,26 @@ export default function ProductShowcase() {
           <div className="flex items-center justify-between px-5 sm:px-6 py-2.5 border-b border-line bg-surface/80">
             <div className="flex items-center gap-2 font-mono text-xs text-ink">
               <span className="font-medium text-ink">market-engine-core</span>
-              <span className="text-line-strong text-ink-secondary/50" aria-hidden="true">&bull;</span>
+              <span className="text-line-strong text-ink-secondary/50" aria-hidden="true">
+                &bull;
+              </span>
               <span className="text-ink-secondary">main</span>
-              <span className="text-line-strong text-ink-secondary/50 hidden sm:inline" aria-hidden="true">&bull;</span>
-              <span className="text-ink-secondary text-[11px] hidden sm:inline">synced 14m ago</span>
+              <span
+                className="text-line-strong text-ink-secondary/50 hidden sm:inline"
+                aria-hidden="true"
+              >
+                &bull;
+              </span>
+              <span className="text-ink-secondary text-[11px] hidden sm:inline">
+                synced 14m ago
+              </span>
             </div>
 
             <div className="flex items-center gap-2 font-mono text-xs text-ink-secondary">
               <span>3 Contributors</span>
-              <span className="text-line-strong text-ink-secondary/50" aria-hidden="true">&bull;</span>
+              <span className="text-line-strong text-ink-secondary/50" aria-hidden="true">
+                &bull;
+              </span>
               <span className="text-ink text-[11px]">Public Workspace</span>
             </div>
           </div>
@@ -203,7 +221,10 @@ export default function ProductShowcase() {
                         >
                           <div className="col-span-5 sm:col-span-4 font-medium text-ink flex items-center gap-1.5">
                             {row.isNew && (
-                              <span className="text-accent-deep font-mono text-xs shrink-0" aria-hidden="true">
+                              <span
+                                className="text-accent-deep font-mono text-xs shrink-0"
+                                aria-hidden="true"
+                              >
                                 &bull;
                               </span>
                             )}
@@ -235,7 +256,9 @@ export default function ProductShowcase() {
                   <div className="grid grid-cols-12 pb-2 border-b border-line font-mono text-[10px] sm:text-[11px] uppercase tracking-wider text-ink-secondary">
                     <div className="col-span-5 sm:col-span-4">Resource</div>
                     <div className="col-span-4 sm:col-span-4">Target</div>
-                    <div className="col-span-3 sm:col-span-4 text-right sm:text-left">Sync Status</div>
+                    <div className="col-span-3 sm:col-span-4 text-right sm:text-left">
+                      Sync Status
+                    </div>
                   </div>
 
                   <div className="divide-y divide-line/40">
@@ -253,7 +276,10 @@ export default function ProductShowcase() {
                         >
                           <div className="col-span-5 sm:col-span-4 font-medium text-ink flex items-center gap-1.5">
                             {row.isNew && (
-                              <span className="text-accent-deep font-mono text-xs shrink-0" aria-hidden="true">
+                              <span
+                                className="text-accent-deep font-mono text-xs shrink-0"
+                                aria-hidden="true"
+                              >
                                 &bull;
                               </span>
                             )}
@@ -303,7 +329,10 @@ export default function ProductShowcase() {
                         >
                           <div className="col-span-4 sm:col-span-3 font-medium text-ink flex items-center gap-1.5">
                             {row.isPulsing && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-accent-deep animate-ping shrink-0" aria-hidden="true" />
+                              <span
+                                className="w-1.5 h-1.5 rounded-full bg-accent-deep animate-ping shrink-0"
+                                aria-hidden="true"
+                              />
                             )}
                             <span className="truncate">{row.timeline}</span>
                           </div>

@@ -69,10 +69,7 @@ export default function HeroSection() {
       </motion.div>
 
       {/* Main Hero Content - Positioned Left, Right side completely open */}
-      <motion.div
-        style={{ y: textY }}
-        className="relative z-10 w-full max-w-7xl mx-auto"
-      >
+      <motion.div style={{ y: textY }} className="relative z-10 w-full max-w-7xl mx-auto">
         <div className="max-w-2xl text-left flex flex-col items-start">
           {/* Main Headline */}
           <motion.h1
@@ -91,7 +88,8 @@ export default function HeroSection() {
             transition={{ duration: 0.5, delay: 0.1, ease: EDITORIAL_EASE }}
             className="mt-6 text-lg sm:text-xl text-ink-secondary leading-relaxed max-w-xl [text-wrap:balance]"
           >
-            Connect with university peers, discover student initiatives, and collaborate in lightweight team workspaces.
+            Connect with university peers, discover student initiatives, and collaborate in
+            lightweight team workspaces.
           </motion.p>
 
           {/* Actions & Centered Scroll Anchor */}

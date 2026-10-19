@@ -82,7 +82,8 @@ export default function FindWorkSection() {
           viewport={{ once: true, margin: "0px" }}
           className="mt-6 text-base sm:text-lg md:text-xl text-ink font-medium leading-relaxed [text-wrap:balance] text-center mx-auto max-w-xl drop-shadow-[0_1px_6px_rgba(244,241,234,0.85)]"
         >
-          Discover student projects and initiatives across campus looking for collaborators to build together.
+          Discover student projects and initiatives across campus looking for collaborators to build
+          together.
         </motion.p>
 
         <motion.div

@@ -97,8 +97,12 @@ export default function FindPeopleSection() {
                   {step.num}
                 </span>
                 <div>
-                  <p className="font-display text-lg sm:text-xl text-ink leading-snug">{step.label}</p>
-                  <p className="mt-1 text-xs sm:text-sm text-ink-secondary leading-relaxed">{step.body}</p>
+                  <p className="font-display text-lg sm:text-xl text-ink leading-snug">
+                    {step.label}
+                  </p>
+                  <p className="mt-1 text-xs sm:text-sm text-ink-secondary leading-relaxed">
+                    {step.body}
+                  </p>
                 </div>
               </motion.div>
             ))}

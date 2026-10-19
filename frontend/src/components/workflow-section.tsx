@@ -109,20 +109,30 @@ export default function WorkflowSection() {
 
     // 1 -> 2 (left to right)
     path1to2 = `M ${p1.x + offset} ${p1.y} L ${p2.x - offset} ${p2.y}`;
-    arrow1to2 = `M ${p2.x - offset - 6} ${p2.y - 4} L ${p2.x - offset} ${p2.y} L ${p2.x - offset - 6} ${p2.y + 4}`;
+    arrow1to2 = `M ${p2.x - offset - 6} ${p2.y - 4} L ${p2.x - offset} ${p2.y} L ${
+      p2.x - offset - 6
+    } ${p2.y + 4}`;
 
     // 2 -> 3 (left to right)
     path2to3 = `M ${p2.x + offset} ${p2.y} L ${p3.x - offset} ${p3.y}`;
-    arrow2to3 = `M ${p3.x - offset - 6} ${p3.y - 4} L ${p3.x - offset} ${p3.y} L ${p3.x - offset - 6} ${p3.y + 4}`;
+    arrow2to3 = `M ${p3.x - offset - 6} ${p3.y - 4} L ${p3.x - offset} ${p3.y} L ${
+      p3.x - offset - 6
+    } ${p3.y + 4}`;
 
     // 3 -> 4 (turnaround curve in right margin, completely clear of Step 03's text, entering Step 04 from the right)
     const turnX = width - 10;
-    path3to4 = `M ${p3.x + offset} ${p3.y} H ${turnX - cornerR} Q ${turnX} ${p3.y} ${turnX} ${p3.y + cornerR} V ${p4.y - cornerR} Q ${turnX} ${p4.y} ${turnX - cornerR} ${p4.y} H ${p4.x + offset}`;
-    arrow3to4 = `M ${p4.x + offset + 6} ${p4.y - 4} L ${p4.x + offset} ${p4.y} L ${p4.x + offset + 6} ${p4.y + 4}`;
+    path3to4 = `M ${p3.x + offset} ${p3.y} H ${turnX - cornerR} Q ${turnX} ${p3.y} ${turnX} ${
+      p3.y + cornerR
+    } V ${p4.y - cornerR} Q ${turnX} ${p4.y} ${turnX - cornerR} ${p4.y} H ${p4.x + offset}`;
+    arrow3to4 = `M ${p4.x + offset + 6} ${p4.y - 4} L ${p4.x + offset} ${p4.y} L ${
+      p4.x + offset + 6
+    } ${p4.y + 4}`;
 
     // 4 -> 5 (right to left)
     path4to5 = `M ${p4.x - offset} ${p4.y} L ${p5.x + offset} ${p5.y}`;
-    arrow4to5 = `M ${p5.x + offset + 6} ${p5.y - 4} L ${p5.x + offset} ${p5.y} L ${p5.x + offset + 6} ${p5.y + 4}`;
+    arrow4to5 = `M ${p5.x + offset + 6} ${p5.y - 4} L ${p5.x + offset} ${p5.y} L ${
+      p5.x + offset + 6
+    } ${p5.y + 4}`;
   }
 
   return (
@@ -312,7 +322,8 @@ export default function WorkflowSection() {
                 Initiate
               </h3>
               <p className="text-xs sm:text-[13px] md:text-sm text-ink-secondary leading-relaxed max-w-[270px]">
-                Turn an idea into a project. Define your vision, outline the scope, and share what you want to build.
+                Turn an idea into a project. Define your vision, outline the scope, and share what
+                you want to build.
               </p>
             </motion.div>
 
@@ -336,7 +347,8 @@ export default function WorkflowSection() {
                 Find Your Team
               </h3>
               <p className="text-xs sm:text-[13px] md:text-sm text-ink-secondary leading-relaxed max-w-[270px]">
-                Bring the right people together. Discover collaborators, review applications, and build a team around your vision.
+                Bring the right people together. Discover collaborators, review applications, and
+                build a team around your vision.
               </p>
             </motion.div>
 
@@ -360,7 +372,8 @@ export default function WorkflowSection() {
                 Build Together
               </h3>
               <p className="text-xs sm:text-[13px] md:text-sm text-ink-secondary leading-relaxed max-w-[270px]">
-                Give your team a space to grow. Manage members, connect repositories, share updates, and link live deployments.
+                Give your team a space to grow. Manage members, connect repositories, share updates,
+                and link live deployments.
               </p>
             </motion.div>
           </div>
@@ -387,7 +400,8 @@ export default function WorkflowSection() {
                 Put Your Work Out There
               </h3>
               <p className="text-xs sm:text-[13px] md:text-sm text-ink-secondary leading-relaxed">
-                Show what you have built. Showcase projects, contributions, and real work to the campus community.
+                Show what you have built. Showcase projects, contributions, and real work to the
+                campus community.
               </p>
             </motion.div>
 
@@ -411,7 +425,8 @@ export default function WorkflowSection() {
                 Make It Yours
               </h3>
               <p className="text-xs sm:text-[13px] md:text-sm text-ink-secondary leading-relaxed">
-                Every project is different. Customize your workspace, choose your tools, and collaborate on your own terms.
+                Every project is different. Customize your workspace, choose your tools, and
+                collaborate on your own terms.
               </p>
             </motion.div>
           </div>
@@ -432,9 +447,7 @@ export default function WorkflowSection() {
                 {stage.num}
               </div>
               <div>
-                <h3 className="font-display text-lg font-normal text-ink">
-                  {stage.label}
-                </h3>
+                <h3 className="font-display text-lg font-normal text-ink">{stage.label}</h3>
                 <p className="mt-0.5 text-xs sm:text-sm text-ink-secondary leading-snug">
                   {stage.desc}
                 </p>

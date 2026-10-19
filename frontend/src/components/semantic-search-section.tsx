@@ -155,7 +155,8 @@ export default function SemanticSearchSection() {
             viewport={{ once: true }}
             className="mt-5 text-base sm:text-lg text-ink-secondary leading-relaxed max-w-xl [text-wrap:balance]"
           >
-            Describe the skills, research topics, or stack you need. Search connects your natural language query with active student projects and team rosters across campus.
+            Describe the skills, research topics, or stack you need. Search connects your natural
+            language query with active student projects and team rosters across campus.
           </motion.p>
 
           <motion.div
