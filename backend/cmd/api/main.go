@@ -830,6 +830,8 @@ func main() {
 	workspaceService := workspace.NewService(workspaceRepo, projectRepo, teamRepo)
 	workspaceHandler := workspace.NewHandler(workspaceService)
 
+	tokenCache := auth.NewTokenCache(10 * time.Second)
+
 	router := BuildRouter(
 		cfg,
 		pool,
@@ -838,7 +840,7 @@ func main() {
 		appHandler,
 		contractHandler,
 		reviewHandler,
-		middleware.SessionMiddleware(),
+		middleware.SessionMiddlewareWithTokenCache(tokenCache),
 		s3Client,
 		sseBroker,
 		aiHandler,

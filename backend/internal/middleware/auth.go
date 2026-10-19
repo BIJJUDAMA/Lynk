@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/lynk/backend/internal/auth"
 	"github.com/supertokens/supertokens-golang/recipe/emailpassword"
@@ -86,11 +87,40 @@ func ParseSessionPayload(payload map[string]interface{}) (email string, verified
 	return email, verified, roles, complete
 }
 
+// isSafeMethod reports whether method is safe for the token-cache fast path.
+// Mutating methods must always run the full SuperTokens session check so that
+// anti-CSRF protections are never skipped.
+func isSafeMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
 // SessionMiddleware verifies the SuperTokens session and injects UserClaims into the request context.
 func SessionMiddleware() func(http.Handler) http.Handler {
+	return SessionMiddlewareWithTokenCache(nil)
+}
+
+// SessionMiddlewareWithTokenCache verifies the SuperTokens session and injects
+// UserClaims into the request context. When tc is non-nil, safe-method requests
+// with a cached access token are authenticated without contacting SuperTokens.
+func SessionMiddlewareWithTokenCache(tc *auth.TokenCache) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tw := newStatusTrackingWriter(w)
+			token := auth.ExtractAccessToken(r)
+
+			if tc != nil && isSafeMethod(r.Method) && token != "" {
+				if cachedClaims, ok := tc.Get(token); ok {
+					ctx := auth.WithUserContext(r.Context(), cachedClaims)
+					next.ServeHTTP(tw, r.WithContext(ctx))
+					return
+				}
+			}
+
 			sessionContainer, err := session.GetSession(r, tw, &sessmodels.VerifySessionOptions{
 				OverrideGlobalClaimValidators: func(globalClaimValidators []claims.SessionClaimValidator, sessionContainer sessmodels.SessionContainer, userContext supertokens.UserContext) ([]claims.SessionClaimValidator, error) {
 					return []claims.SessionClaimValidator{}, nil
@@ -132,6 +162,9 @@ func SessionMiddleware() func(http.Handler) http.Handler {
 						Email:         email,
 						EmailVerified: isVerified,
 						Roles:         roles,
+					}
+					if tc != nil && isSafeMethod(r.Method) && token != "" {
+						tc.Set(token, claims, 10*time.Second)
 					}
 					ctx := auth.WithUserContext(r.Context(), claims)
 					next.ServeHTTP(tw, r.WithContext(ctx))
@@ -183,6 +216,10 @@ func SessionMiddleware() func(http.Handler) http.Handler {
 				Email:         email,
 				EmailVerified: isVerified,
 				Roles:         roles,
+			}
+
+			if tc != nil && isSafeMethod(r.Method) && token != "" {
+				tc.Set(token, claims, 10*time.Second)
 			}
 
 			ctx := auth.WithUserContext(r.Context(), claims)
