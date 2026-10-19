@@ -329,7 +329,9 @@ func (s *Service) AcceptApplication(ctx context.Context, claims *auth.UserClaims
 				}
 
 				if err := s.repo.AcceptApplicationTx(ctx, appID, claims.UserID); err != nil {
-					_ = s.leaser.ReleaseLease(ctx, app.ProjectID)
+					releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+					defer cancel()
+					_ = s.leaser.ReleaseLease(releaseCtx, app.ProjectID)
 					return err
 				}
 				return nil

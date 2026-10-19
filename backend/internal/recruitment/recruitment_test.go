@@ -29,6 +29,7 @@ type mockRecruitmentRepo struct {
 	members      map[string]*team.ProjectMember
 	projects     map[uuid.UUID]*project.Project
 	acceptErr    error
+	acceptCalls  int
 }
 
 func newMockRecruitmentRepo() *mockRecruitmentRepo {
@@ -156,6 +157,8 @@ func (m *mockRecruitmentRepo) AcceptApplicationTx(ctx context.Context, appID uui
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.acceptCalls++
+
 	if m.acceptErr != nil {
 		return m.acceptErr
 	}
@@ -231,6 +234,12 @@ func (m *mockRecruitmentRepo) AcceptApplicationTx(ctx context.Context, appID uui
 	}
 
 	return nil
+}
+
+func (m *mockRecruitmentRepo) acceptCallCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.acceptCalls
 }
 
 func (m *mockRecruitmentRepo) ListQuestions(ctx context.Context, projectID uuid.UUID) ([]recruitment.ApplicationQuestion, error) {
@@ -1030,6 +1039,132 @@ func TestRecruitmentService_ConcurrentCapacityRaceCondition(t *testing.T) {
 	}
 	if activeMemberCount != 1 {
 		t.Errorf("expected exactly 1 active member in repo, got %d", activeMemberCount)
+	}
+}
+
+type spyCapacityLeaser struct {
+	mu           sync.Mutex
+	acquireOK    bool
+	releaseCalls int
+	releaseCtx   error
+	releaseSeen  bool
+}
+
+func (s *spyCapacityLeaser) AcquireLease(ctx context.Context, projectID uuid.UUID, maxMembers int) (bool, error) {
+	return s.acquireOK, nil
+}
+
+func (s *spyCapacityLeaser) ReleaseLease(ctx context.Context, projectID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.releaseCalls++
+	s.releaseCtx = ctx.Err()
+	s.releaseSeen = true
+	return nil
+}
+
+func (s *spyCapacityLeaser) releaseCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.releaseCalls
+}
+
+func (s *spyCapacityLeaser) releaseContextErr() (error, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.releaseCtx, s.releaseSeen
+}
+
+func TestAcceptApplication_LeaseRefusalSkipsTransactionalAccept(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRecruitmentRepo()
+	projReader := newMockProjectReader()
+	memReader := newMockMembershipReader()
+	leaser := &spyCapacityLeaser{acquireOK: false}
+	svc := recruitment.NewService(repo, projReader, memReader).WithCapacityLeaser(leaser)
+
+	projectID := uuid.New()
+	leadID := "lead-refusal-skip"
+	appID := "applicant-refusal-skip"
+	proj := &project.Project{
+		ID:                projectID,
+		Title:             "Refusal Skip Project",
+		RecruitmentStatus: project.RecruitmentOpen,
+		OwnerMemberID:     leadID,
+		Settings:          map[string]any{"max_members": 1},
+	}
+	projReader.projects[projectID] = proj
+	repo.projects[projectID] = proj
+
+	leadClaims := &auth.UserClaims{UserID: leadID, Email: "lead@mit.edu", EmailVerified: true}
+	appClaims := &auth.UserClaims{UserID: appID, Email: "skip@mit.edu", EmailVerified: true}
+
+	app, err := svc.SubmitApplication(ctx, appClaims, projectID, recruitment.SubmitApplicationInput{
+		Statement: "Applicant refused by the lease before the transaction.",
+	})
+	if err != nil {
+		t.Fatalf("failed to submit app: %v", err)
+	}
+
+	err = svc.AcceptApplication(ctx, leadClaims, app.ID)
+	if !errors.Is(err, recruitment.ErrTeamCapacityExceeded) {
+		t.Fatalf("expected ErrTeamCapacityExceeded, got: %v", err)
+	}
+	if got := repo.acceptCallCount(); got != 0 {
+		t.Fatalf("expected AcceptApplicationTx not to be called, got %d calls", got)
+	}
+}
+
+func TestAcceptApplication_ReleaseUsesDetachedContext(t *testing.T) {
+	repo := newMockRecruitmentRepo()
+	projReader := newMockProjectReader()
+	memReader := newMockMembershipReader()
+	leaser := &spyCapacityLeaser{acquireOK: true}
+	svc := recruitment.NewService(repo, projReader, memReader).WithCapacityLeaser(leaser)
+
+	projectID := uuid.New()
+	leadID := "lead-detached-release"
+	appID := "applicant-detached-release"
+	proj := &project.Project{
+		ID:                projectID,
+		Title:             "Detached Release Project",
+		RecruitmentStatus: project.RecruitmentOpen,
+		OwnerMemberID:     leadID,
+		Settings:          map[string]any{"max_members": 1},
+	}
+	projReader.projects[projectID] = proj
+	repo.projects[projectID] = proj
+
+	leadClaims := &auth.UserClaims{UserID: leadID, Email: "lead@mit.edu", EmailVerified: true}
+	appClaims := &auth.UserClaims{UserID: appID, Email: "detached@mit.edu", EmailVerified: true}
+
+	app, err := svc.SubmitApplication(context.Background(), appClaims, projectID, recruitment.SubmitApplicationInput{
+		Statement: "Applicant whose request context gets canceled before release.",
+	})
+	if err != nil {
+		t.Fatalf("failed to submit app: %v", err)
+	}
+
+	txErr := errors.New("transactional accept failed")
+	repo.acceptErr = txErr
+
+	reqCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = svc.AcceptApplication(reqCtx, leadClaims, app.ID)
+	if !errors.Is(err, txErr) {
+		t.Fatalf("expected transactional accept error, got: %v", err)
+	}
+
+	if got := leaser.releaseCount(); got != 1 {
+		t.Fatalf("expected exactly 1 ReleaseLease call, got %d", got)
+	}
+	releaseErr, seen := leaser.releaseContextErr()
+	if !seen {
+		t.Fatal("expected ReleaseLease to be called")
+	}
+	if releaseErr != nil {
+		t.Fatalf("expected detached release context to be live, got ctx.Err()=%v", releaseErr)
 	}
 }
 
