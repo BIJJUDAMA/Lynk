@@ -82,9 +82,15 @@ func TestKubernetesManifests_ProductionWiring(t *testing.T) {
 	if !strings.Contains(deployment, "tcpSocket") {
 		t.Fatalf("deployment liveness probe must use tcpSocket")
 	}
+	if !strings.Contains(deployment, "/readyz") {
+		t.Fatalf("deployment readiness probe must point at /readyz")
+	}
 
 	ingress := read("base/ingress.yaml")
 	if !strings.Contains(ingress, "tls:") {
 		t.Fatalf("ingress must define a tls block")
+	}
+	if !strings.Contains(ingress, `proxy-read-timeout: "3600"`) {
+		t.Fatalf(`ingress must set proxy-read-timeout: "3600" for SSE streams`)
 	}
 }

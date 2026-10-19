@@ -15,7 +15,3 @@ data:
   WEBSITE_DOMAIN: "https://campus.edu"
   CORS_ALLOWED_ORIGINS: "https://campus.edu"
   RATE_LIMIT_PER_MINUTE: "2000"
-  CACHE_DEFAULT_TTL: "60s"
-  L1_SHARDS: "64"
-  DB_MAX_CONNS: "50"
-  DB_MIN_CONNS: "10"
