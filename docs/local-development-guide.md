@@ -60,7 +60,7 @@ All 8 services should report `[PASS]`:
 | **Auth & Registration** | `http://localhost:3000/register` | Requires valid institutional `.edu` email |
 | **Login** | `http://localhost:3000/login` | Direct login with credentials |
 | **MinIO S3 Console** | `http://localhost:9001` | Username: `minio_admin`<br/>Password: `minio_password` |
-| **Go API Healthcheck** | `http://localhost:8080/health` | Status and UTC timestamp |
+| **Gateway / Go API** | `http://localhost:8080/health` | High-performance Nginx reverse proxy & Go API health |
 | **Prometheus Metrics** | `http://localhost:8080/metrics` | Prometheus scrape target |
 | **FastAPI AI Docs** | `http://localhost:8000/docs` | Swagger documentation for AI endpoints |
 
@@ -158,6 +158,8 @@ make test           # Runs backend, frontend, and AI test suites
 make lint           # Runs golangci-lint, oxlint, and ruff check
 make format         # Formats Go (gofmt), frontend (prettier), and Python (ruff)
 make format-check   # Checks formatting across all services (identical to CI)
+make load-test      # Executes 5-stage k6 load test suite (up to 1,000 VUs)
+make load-test-ultra # Executes 6-stage ultra-scale k6 suite (up to 2,500 VUs)
 ```
 
 ### Via Direct CLI Commands

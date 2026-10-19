@@ -5,9 +5,10 @@
 > **Status:** Active Baseline (Phase 1 MVP & Phase 1.5 Production Hardening Complete)
 > **IAM Specification:** Self-Hosted SuperTokens Core 9.3 (`:3567`)
 > **Object Storage:** MinIO S3 (`:9000` API / `:9001` Web Console) - Exclusively for Resumes
-> **Caching & Rate Limiting:** Redis 7+ (`:6379`)
+> **Caching & Rate Limiting:** TwoTierCache (L1 In-Memory LRU + L2 Redis 7+ `:6379`) & Sliding Window Limiter
 > **Connection Pooling:** PgBouncer (`:6432`) in transaction pooling mode
-> **Container Boundary:** Docker Compose (`backend/`, PostgreSQL, PgBouncer, Redis, SuperTokens Core, MinIO, FastAPI AI, AI Worker) + Host (`frontend/`)
+> **High-Performance Ingress:** Nginx 1.25 Reverse Proxy (`:8080`) with 5s Micro-Caching & Request Collapsing
+> **Container Boundary:** Docker Compose (`lynk-gateway`, `lynk-api`, PostgreSQL 16 tuned, PgBouncer, Redis, SuperTokens Core, MinIO, FastAPI AI, AI Worker) + Host (`frontend/`)
 
 ---
 
@@ -20,7 +21,7 @@
 2. **Institutional Email Verification Gate:** Registration is strictly restricted to institutional `.edu` domains. Critical marketplace actions (posting opportunities, submitting applications, uploading resumes, accepting contracts) are gated behind email verification.
 3. **Self-Hosted IAM (SuperTokens Core):** Fully self-hosted identity engine running inside Docker Compose on port 3567. Manages session tokens (`sAccessToken`, `sRefreshToken`), credential hashing, and email verification.
 4. **Dedicated Object Storage (MinIO S3):** Student resumes are stored exclusively in an S3-compatible MinIO bucket (`resumes`) via direct pre-signed upload URLs and secure download streaming.
-5. **Clean Layered Backend:** Go REST API following idiomatic `Handler -> Service -> Repository` separation with `pgx/v5` connection pooling, Redis sliding-window rate limiting, cache-aside layer, transactional outbox worker, and real-time SSE stream.
+5. **Clean Layered Backend & High-Concurrency Scale:** Go REST API following idiomatic `Handler -> Service -> Repository` separation with `pgx/v5` connection pooling, TwoTierCache (L1 in-memory + L2 Redis), Redis sliding-window rate limiting, transactional outbox worker, and real-time SSE stream, protected by an Nginx micro-caching gateway and PgBouncer connection multiplexer.
 6. **Decoupled Frontend Development:** Next.js 16 App Router executes directly on the developer's host machine (`npm run dev`) for instant Hot Module Replacement (HMR), backed by React 19 and TanStack Query for cache synchronization and optimistic UI updates.
 
 ---
@@ -38,14 +39,18 @@ flowchart TB
     end
 
     subgraph DockerBridge["DOCKER COMPOSE NETWORK (lynk-net)"]
+        subgraph IngressGateway["Nginx Gateway Ingress (lynk-gateway)"]
+            Nginx["Nginx 1.25 Reverse Proxy<br/>Port: 8080:8080<br/>Worker Conns: 8192 | Keepalive: 128<br/>5s Micro-Cache & proxy_cache_lock"]
+        end
+
         subgraph APIService["Go REST API - Authoritative (lynk-api)"]
-            GoAPI["Go 1.25 REST API<br/>Port: 8080:8080<br/>Handler -> Service -> Repository<br/>Outbox Worker + SSE Broker"]
+            GoAPI["Go 1.25 REST API<br/>Internal Port: 8080<br/>Handler -> Service -> Repository<br/>TwoTierCache (L1 Mem + L2 Redis)<br/>Outbox Worker + SSE Broker"]
             Orchestrator["AI Orchestrator<br/>Feature Flags + SQL Fallback"]
             GoAPI --> Orchestrator
         end
 
         subgraph RedisService["Redis 7 (lynk-redis)"]
-            Redis["Redis 7 Cache & Rate Limiting<br/>Port: 6379:6379<br/>Sliding-Window Counter & Cache-Aside"]
+            Redis["Redis 7 Cache & Rate Limiting<br/>Port: 6379:6379<br/>Sliding-Window Counter & L2 Cache-Aside"]
         end
 
         subgraph AIService["FastAPI AI Backend (ai-api)"]
@@ -61,11 +66,11 @@ flowchart TB
         end
 
         subgraph PoolService["PgBouncer Connection Pooler (lynk-pgbouncer)"]
-            PGB["PgBouncer 1.22<br/>Port: 6432:6432<br/>Transaction Pooling Mode"]
+            PGB["PgBouncer 1.22<br/>Port: 6432:6432<br/>Transaction Pooling Mode (20 Backends)"]
         end
 
         subgraph DBService["PostgreSQL 16 + pgvector (lynk-postgres)"]
-            PG["PostgreSQL 16 Alpine + pgvector<br/>Port: 5432:5432<br/>lynk_db (vector(384)) & supertokens_db"]
+            PG["PostgreSQL 16 Alpine + pgvector<br/>Port: 5432:5432<br/>1GB shared_buffers | 3GB cache<br/>lynk_db & supertokens_db"]
         end
 
         subgraph StorageService["MinIO S3 Storage (lynk-minio)"]
@@ -74,11 +79,12 @@ flowchart TB
     end
 
     %% Network Connections
-    Browser -->|HTTP REST / SSE Stream / Cookies| GoAPI
-    NextHost -->|Server-Side Fetch / Cookie Relay| GoAPI
-    GoAPI -->|Rate Limiting & Cache-Aside| Redis
+    Browser -->|HTTP REST / SSE / Cookies| Nginx
+    NextHost -->|Server-Side Fetch / Cookie Relay| Nginx
+    Nginx -->|Keepalive HTTP Proxy (:8080)| GoAPI
+    GoAPI -->|TwoTier L2 & Rate Limiting| Redis
     GoAPI -->|Session Verification & Claims| ST
-    GoAPI -->|Pooled Queries (:6432)| PGB
+    GoAPI -->|Multiplexed Queries (:6432)| PGB
     PGB -->|Transaction Connections| PG
     ST -->|Auth State Persistence| PG
     GoAPI -->|Direct Presigned S3 URLs| MinIO
@@ -92,13 +98,14 @@ flowchart TB
 | Service | Container Name | Host Port | Internal Port | Protocol | Purpose |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Frontend** | *Host Process* | `3000` | N/A | HTTP | Next.js 16 App Router (React 19, TypeScript 5.8, Tailwind v4, TanStack Query 5) |
-| **Go REST API** | `lynk-api` | `8080` | `8080` | HTTP | Authoritative Go HTTP service (Chi router, SSE stream, `/metrics`) |
-| **Redis 7** | `lynk-redis` | `6379` | `6379` | TCP | Sliding-window rate limiter & high-throughput cache-aside store |
-| **PgBouncer** | `lynk-pgbouncer` | `6432` | `6432` | TCP | PostgreSQL transaction connection pooling |
+| **Nginx Gateway** | `lynk-gateway` | `8080` | `8080` | HTTP | High-concurrency edge reverse proxy (8,192 worker conns, 5s micro-cache, request collapsing) |
+| **Go REST API** | `lynk-api` | N/A (Proxied) | `8080` | HTTP | Authoritative Go HTTP service (Chi router, TwoTierCache, SSE stream, `/metrics`) |
+| **Redis 7** | `lynk-redis` | `6379` | `6379` | TCP | L2 distributed cache-aside store & sliding-window rate limiter |
+| **PgBouncer** | `lynk-pgbouncer` | `6432` | `6432` | TCP | PostgreSQL transaction connection pooling multiplexing thousands of client connections onto 20 backends |
 | **FastAPI AI Backend** | `ai-api` | N/A (Internal) | `8000` | HTTP | Internal ML/embedding service (CPU ONNX INT8, `X-Internal-AI-Secret`) |
 | **AI Worker Daemon** | `ai-worker` | N/A | N/A | Background | Concurrent queue worker (`FOR UPDATE SKIP LOCKED`) |
 | **SuperTokens Core** | `lynk-supertokens` | `3567` | `3567` | HTTP | Self-hosted IAM engine & session verifier |
-| **PostgreSQL + pgvector** | `lynk-postgres` | `5432` | `5432` | TCP | Relational & 384-dim vector storage (`lynk_db`, `supertokens_db`) |
+| **PostgreSQL + pgvector** | `lynk-postgres` | `5432` | `5432` | TCP | Relational & 384-dim vector storage (1GB `shared_buffers`, 3GB `effective_cache_size`, `lynk_db`, `supertokens_db`) |
 | **MinIO S3 API** | `lynk-minio` | `9000` | `9000` | HTTP/S3 | AWS S3 v4 compatible object storage for student resumes |
 | **MinIO Web Console** | `lynk-minio` | `9001` | `9001` | HTTP | Storage management web user interface |
 
@@ -106,53 +113,65 @@ flowchart TB
 
 ## 3. Layered Go Backend Architecture
 
-The backend (`backend/`) avoids bloated enterprise frameworks in favor of Go standard library idioms and the lightweight Chi router (`v5`).
+The backend (`backend/`) avoids bloated enterprise frameworks in favor of Go standard library idioms and the lightweight Chi router (`v5`), protected at the boundary by an Nginx micro-caching gateway.
 
 ```
-                    HTTP Request (:8080)
-                             |
-                             v
-+--------------------------------------------------------+
-|                   Middleware Pipeline                  |
-|  RequestID -> RealIP -> Logger -> Recoverer -> CORS    |
-|  -> Metrics -> SlidingWindowRateLimiter -> 1MB Limit   |
-|  -> SessionMiddleware -> RequireVerifiedEmail          |
-+----------------------------+---------------------------+
-                             |
-                             v
-+--------------------------------------------------------+
-|                      Handler Layer                     |
-|  - Decode JSON / multipart request payloads            |
-|  - Validate schema bounds (e.g. 5,000-char job desc)   |
-|  - Input Sanitization (microcosm-cc/bluemonday)        |
-|  - Map domain errors to HTTP status codes              |
-|  - Render standardized JSON envelopes                  |
-+----------------------------+---------------------------+
-                             |
-                             v
-+--------------------------------------------------------+
-|                      Service Layer                     |
-|  - Business logic & state machine invariants           |
-|  - Cache-Aside reading (Redis / In-Memory fallback)    |
-|  - Transactional Outbox Event publishing               |
-|  - SSE Broker notification dispatching                 |
-|  - Calendar-day deadline normalization                 |
-|  - S3 presigned upload & download streaming            |
-|  - URL scheme sanitization (HTTP/HTTPS only)           |
-+----------------------------+---------------------------+
-                             |
-                             v
-+--------------------------------------------------------+
-|                    Repository Layer                    |
-|  - Parameterized SQL via pgx/v5 (PgBouncer :6432 pool) |
-|  - Transaction isolation (pgx.Tx)                      |
-|  - Deadlock-free lock ordering (jobs -> apps -> contr) |
-|  - Safe application restoration on cancellation        |
-|  - Referenced resume retention checking                |
-+----------------------------+---------------------------+
-                             |
-                             v
-            PostgreSQL 16 Database + pgvector
+                    Client HTTP Request (:8080)
+                                 |
+                                 v
++----------------------------------------------------------------+
+|                 Nginx Ingress Gateway (lynk-gateway)           |
+|  - 8,192 worker connections & upstream keepalive 128           |
+|  - 5s RFC micro-cache for public feeds (proxy_cache_lock on)   |
+|  - Request collapsing (stamps out cache stampedes)             |
+|  - Direct unbuffered passthrough for SSE stream & mutations    |
++--------------------------------+-------------------------------+
+                                 |
+                                 v
++----------------------------------------------------------------+
+|                      Middleware Pipeline                       |
+|  RequestID -> RealIP -> Logger -> Recoverer -> CORS            |
+|  -> Metrics -> SlidingWindowRateLimiter -> 1MB Body Limit      |
+|  -> SessionMiddleware -> RequireVerifiedEmail                  |
++--------------------------------+-------------------------------+
+                                 |
+                                 v
++----------------------------------------------------------------+
+|                         Handler Layer                          |
+|  - Decode JSON / multipart request payloads                    |
+|  - Validate schema bounds (e.g. 5,000-char project desc)       |
+|  - Input Sanitization (microcosm-cc/bluemonday)                |
+|  - Map domain errors to standardized HTTP status codes         |
+|  - Render standardized JSON envelopes                          |
++--------------------------------+-------------------------------+
+                                 |
+                                 v
++----------------------------------------------------------------+
+|                         Service Layer                          |
+|  - Business logic & state machine invariants                   |
+|  - TwoTierCache (L1 In-Memory LRU + L2 Redis Distributed)      |
+|  - Sub-microsecond local hits (< 1us) & Redis fallback         |
+|  - Transactional Outbox Event publishing                       |
+|  - SSE Broker notification dispatching                         |
+|  - Calendar-day deadline normalization                         |
+|  - S3 presigned upload & download streaming                    |
+|  - URL scheme sanitization (HTTP/HTTPS only)                   |
++--------------------------------+-------------------------------+
+                                 |
+                                 v
++----------------------------------------------------------------+
+|                       Repository Layer                         |
+|  - Primary / Replica Database Pool Router                      |
+|  - Parameterized SQL via pgx/v5 (PgBouncer :6432 pool)         |
+|  - Transaction isolation (pgx.Tx)                              |
+|  - Deadlock-free lock ordering (projects -> apps -> contr)     |
+|  - Compound covering indexes (idx_projects_feed_covering)      |
+|  - Safe application restoration on cancellation                |
+|  - Referenced resume retention checking                        |
++--------------------------------+-------------------------------+
+                                 |
+                                 v
+           PostgreSQL 16 Database (1GB RAM Buffer) + pgvector
 ```
 
 ### 3.1 Layer Responsibilities & Boundaries
@@ -167,10 +186,10 @@ The backend (`backend/`) avoids bloated enterprise frameworks in favor of Go sta
 2. **Handlers (`internal/<domain>/`):**
    - Strictly responsible for HTTP deserialization, input bounds validation, HTML/XSS sanitization, and HTTP response encoding. Zero direct database queries or S3 API calls.
 3. **Services (`internal/<domain>/`):**
-   - Contains all business rules, domain invariants, cache-aside orchestration, and external coordinator logic.
+   - Contains all business rules, domain invariants, TwoTierCache orchestration, and external coordinator logic.
    - Example: Decoupled S3 resume uploads from PostgreSQL advisory locks (`WithProfileLock`), executing S3 streaming first and retaining referenced resumes on profile updates.
 4. **Repositories (`internal/<domain>/`):**
-   - Manages relational queries using raw parameterized SQL. Strictly encapsulates transaction management (`pgx.Tx`), row scanning, and lock hierarchies.
+   - Manages relational queries using raw parameterized SQL over PgBouncer transaction pools (:6432) with dual-pool read/write router fallback. Strictly encapsulates transaction management (`pgx.Tx`), row scanning, and lock hierarchies.
 5. **Transactional Outbox Worker (`internal/outbox/`):**
    - Background worker polling `outbox_events` with `SELECT ... FOR UPDATE SKIP LOCKED` and dispatching domain events (`application_submitted`, `contract_status_changed`, `review_created`) to SSE broker and event handlers with exponential retry backoff.
 6. **Server-Sent Events Broker (`internal/sse/`):**
@@ -315,7 +334,7 @@ flowchart TD
 
 ### Phase Descriptions
 - **Phase 1 (MVP Baseline - Completed):** Synchronous Go API, self-hosted SuperTokens Core, PostgreSQL 16, MinIO S3, Next.js host frontend.
-- **Phase 1.5 (Production Hardening - Completed):** Redis 7 sliding-window rate limiting, Redis cache-aside layer, Transactional Outbox pattern & worker, Server-Sent Events realtime stream, PgBouncer transaction pooling, CPU ONNX INT8 AI embeddings with SHA-256 deduplication cache, Prometheus `/metrics` endpoint.
+- **Phase 1.5 (Production Hardening & Ultra-Scale Optimization - Completed):** Redis 7 sliding-window rate limiting, TwoTierCache (L1 in-memory LRU + L2 Redis), Nginx edge gateway with 5s micro-caching (`proxy_cache_lock on`), PgBouncer transaction pooling, compound covering database indexes, PostgreSQL 1GB RAM buffers & NVMe I/O tuning, Transactional Outbox pattern & worker, Server-Sent Events realtime stream, CPU ONNX INT8 AI embeddings with SHA-256 deduplication cache, Prometheus `/metrics` endpoint.
 - **Phase 2.0 (Campus Work Platform - Planned):** Student ID OCR verification, milestone deliverable escrow, multi-campus tenancy, WebSockets, SOW generator, FERPA compliance shield.
 - **Phase 3 (Async Processing & Workers - Planned):** RabbitMQ message broker and distributed worker pools for heavy background asynchronous tasks.
-- **Phase 4 (Enterprise & Scale - Planned):** Continuous k6 load regression automation and production Grafana telemetry.
+- **Phase 4 (Reliability, Benchmarking & Scale - Active Baseline Established):** Complete 6-stage k6 load test suite (`make load-test-ultra`) stress testing up to 2,500 concurrent Virtual Users (VUs) and 1,453.9 req/s peak throughput with 0.00% error rate and sub-13ms p95 latencies. See complete metrics in [`performance-and-scale.md`](performance-and-scale.md). Planned expansion: Grafana production dashboards and automated CI regressions.

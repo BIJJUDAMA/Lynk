@@ -59,16 +59,17 @@ Lynk completely replaces the fragmented dual-account paradigm with the **Unified
 | **Monorepo Topology** | Polyglot monorepo (`frontend/`, `backend/`, `ai/`, `docs/`) | Co-located frontend, authoritative backend, and internal AI subsystems unified via root `Makefile`. |
 | **Frontend Stack** | Next.js 16 (App Router), React 19, TypeScript 5.8, Tailwind CSS v4, TanStack Query 5 | **Runs on host (`npm run dev`) at `http://localhost:3000`**. NOT dockerised for instant HMR. |
 | **Frontend Auth Client** | `supertokens-web-js` 0.16.0 | Handles session tokens (`sAccessToken`, `sRefreshToken`), direct login, and email verification. |
-| **Authoritative Backend** | Go 1.25, Chi Router v5.3, `pgx/v5` 5.5, AWS SDK Go v2 (S3) | **Dockerised (`lynk-api`) at `http://localhost:8080`**. Layered architecture: Handler -> Service -> Repository. |
-| **Caching & Rate Limiting** | Redis 7+ (`lynk-redis` on port `6379`) | Sliding-window rate limiter & cache-aside read layer with in-memory fallback. |
-| **Connection Pooling** | PgBouncer (`lynk-pgbouncer` on port `6432`) | Transaction connection pooling for high-concurrency database throughput. |
+| **Authoritative Backend** | Go 1.25, Chi Router v5.3, `pgx/v5` 5.5, AWS SDK Go v2 (S3) | **Dockerised (`lynk-api`) at `http://localhost:8080`**. Layered architecture: Handler -> Service -> Repository. TwoTierCache (L1 Mem + L2 Redis). |
+| **High-Performance Ingress** | Nginx 1.25 (`lynk-gateway` on port `8080`) | Reverse proxy with 8,192 worker connections, 5s micro-caching, and request collapsing. |
+| **Caching & Rate Limiting** | TwoTierCache (L1 In-Memory LRU + L2 Redis 7+ on port `6379`) | Sub-microsecond local reads, distributed Redis L2 cache, and sliding-window rate limiter. |
+| **Connection Pooling** | PgBouncer (`lynk-pgbouncer` on port `6432`) | Transaction connection pooling multiplexing client connections onto 20 PostgreSQL backends. |
 | **AI Backend (Internal)** | Python 3.11, FastAPI, CPU ONNX INT8, sentence-transformers, scikit-learn | **Dockerised (`ai-api`) at `http://ai-api:8000`**. Protected via `X-Internal-AI-Secret`. |
 | **AI Worker Daemon** | Python 3.11 (`ai-worker`) | Background worker consuming `ai_jobs` using PostgreSQL `FOR UPDATE SKIP LOCKED`. |
-| **Database** | PostgreSQL 16 (`pgvector/pgvector:pg16` on port `5432`) | Two logical databases: `lynk_db` (relational schema + `vector(384)`) and `supertokens_db`. |
-| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000019`) | Forward and rollback migrations. Migrations 000016-000019 establish Project-First Workspace architecture and semantic embeddings. |
+| **Database** | PostgreSQL 16 (`pgvector/pgvector:pg16` on port `5432`) | Two logical databases: `lynk_db` (relational schema + `vector(384)`) and `supertokens_db`. Tuned with 1GB `shared_buffers` and 3GB `effective_cache_size`. |
+| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000020`) | Forward and rollback migrations. Migrations 000016-000020 establish Project Workspaces, semantic embeddings, and compound covering indexes. |
 | **Identity & Access (IAM)** | Self-hosted SuperTokens Core 9.3 (`lynk-supertokens` on port `3567`) | Recipes: `EmailPassword`, `Session`, `EmailVerification`. Direct HTTP integration with Go API. |
 | **Object Storage** | MinIO S3 (`lynk-minio` on port `9000` API, `9001` Web Console) | Dedicated exclusively to the `resumes` bucket. Direct pre-signed upload URLs and streaming. |
-| **Local Network** | Docker Compose bridge network (`lynk-net`) | Internal container DNS: `postgres:5432`, `pgbouncer:6432`, `redis:6379`, `supertokens:3567`, `minio:9000`, `api:8080`, `ai-api:8000`. |
+| **Local Network** | Docker Compose bridge network (`lynk-net`) | Internal container DNS: `gateway:8080`, `api:8080`, `postgres:5432`, `pgbouncer:6432`, `redis:6379`, `supertokens:3567`, `minio:9000`, `ai-api:8000`. |
 | **Scope & Boundaries** | Go backend is authoritative; AI is enhancement | Full graceful degradation: Go handlers fall back to SQL if the AI backend is unreachable. |
 
 ---
@@ -86,17 +87,21 @@ flowchart TB
     end
 
     subgraph DockerBridge["DOCKER COMPOSE BRIDGE NETWORK (lynk-net)"]
+        subgraph GatewayContainer["Edge Gateway Container (lynk-gateway)"]
+            Nginx["Nginx 1.25 Reverse Proxy (Port: 8080)<br/>8192 Worker Conns | Upstream Keepalive 128<br/>5s Micro-Cache with proxy_cache_lock"]
+        end
+
         subgraph APIContainer["Authoritative API Container (lynk-api)"]
-            Router["Chi Router v5.3<br/>(Port: 8080)"]
+            Router["Chi Router v5.3<br/>Internal Port: 8080"]
             Middlewares["Middlewares: CORS, RequestID, Logger, RateLimiter,<br/>Metrics, 1MB Body Limit, Supertokens Middleware, Verified Email Gate"]
-            Handlers["Layered Core:<br/>Handler -> Service -> Repository<br/>Outbox Worker + SSE Broker"]
+            Handlers["Layered Core:<br/>Handler -> Service -> Repository<br/>TwoTierCache (L1 In-Memory + L2 Redis)<br/>Outbox Worker + SSE Broker"]
             Orchestrator["AI Orchestrator<br/>(Feature Flags + Graceful SQL Fallback)"]
             Router --> Middlewares --> Handlers
             Handlers --> Orchestrator
         end
 
         subgraph RedisContainer["Redis 7 (lynk-redis)"]
-            Redis["Redis 7 (Port: 6379)<br/>Sliding-Window Rate Limiting & Cache-Aside"]
+            Redis["Redis 7 (Port: 6379)<br/>Sliding-Window Rate Limiting & L2 Distributed Cache"]
         end
 
         subgraph AIContainer["Internal AI Backend (ai-api)"]
@@ -112,12 +117,12 @@ flowchart TB
         end
 
         subgraph PoolContainer["PgBouncer Container (lynk-pgbouncer)"]
-            PGB["PgBouncer (Port: 6432)<br/>Transaction Mode Pooling"]
+            PGB["PgBouncer (Port: 6432)<br/>Transaction Mode Pooling (20 Backends)"]
         end
 
         subgraph DBContainer["PostgreSQL Container (lynk-postgres)"]
-            Postgres["PostgreSQL 16 + pgvector<br/>(Port: 5432)"]
-            AppDB[("lynk_db<br/>(Relational Tables + vector(384) HNSW Indexes<br/>Projects, Workspaces, Teams)")]
+            Postgres["PostgreSQL 16 + pgvector<br/>(Port: 5432 - 1GB shared_buffers)"]
+            AppDB[("lynk_db<br/>(Relational Tables + vector(384) HNSW Indexes<br/>Covering Indexes & Workspaces)")]
             AuthDB[("supertokens_db<br/>(Users, Sessions, Verification Tokens)")]
             Postgres --> AppDB
             Postgres --> AuthDB
@@ -131,9 +136,10 @@ flowchart TB
     end
 
     %% Network Connections
-    FE -->|HTTP / Credentials & Session Handshake| Router
-    FE -->|SSE Realtime Stream /events/stream| Router
-    Handlers -->|Rate Limiting & Cache-Aside| Redis
+    FE -->|HTTP / Credentials & Session Handshake| Nginx
+    FE -->|SSE Realtime Stream /events/stream| Nginx
+    Nginx -->|Keepalive Proxy (:8080)| Router
+    Handlers -->|TwoTier L2 & Rate Limiting| Redis
     Handlers -->|Go SDK Session Verification| STCore
     STCore -->|Internal SQL Connection| AuthDB
     Handlers -->|Pooled Queries :6432| PGB
@@ -163,6 +169,7 @@ The documentation suite is structured into dedicated modular domains under [`arc
 | **Operations, Runbook & Local Developer Guide** | [`development/runbook-and-operations.md`](development/runbook-and-operations.md) | First-time setup, Docker Compose lifecycle, environment variable matrices, database seed scripts, troubleshooting runbook, disaster recovery, and operational procedures. | All Developers, DevOps, Site Reliability Engineers |
 | **Testing, Quality Assurance & Verification Strategy** | [`development/testing-strategy.md`](development/testing-strategy.md) | Testing pyramid (unit, integration, HTTP handler, frontend), test execution commands, coverage targets, CI/CD pipeline specifications, and pre-release gates. | QA Engineers, Backend Engineers, Frontend Engineers |
 | **Permanent Tooling Architecture & CI Strategy** | [`tooling.md`](tooling.md) | Universal multi-language linting, formatting, type checking, security scanning, root Makefile control plane, pre-commit activation, and parallel GitHub Actions matrix across Go, Python, and TypeScript. | All Developers, DevOps, Platform Engineers |
+| **Performance, Concurrency & Scale Benchmarks** | [`architecture/performance-and-scale.md`](architecture/performance-and-scale.md) | 6-stage k6 load test results, 2,500 VU ultra-stress ceiling, 1,453.9 req/s peak, sub-13ms p95 latencies, Little's Law campus capacity calculations (~21,800+ concurrent students), and multi-tier scaling architecture. | System Architects, DevOps, SREs, Backend Engineers |
 
 ---
 

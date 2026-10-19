@@ -3,7 +3,7 @@
 > **Authoritative Database Specification**
 > **Database Engine:** PostgreSQL 16 Alpine (`lynk-postgres` on port `5432`)
 > **Databases:** `lynk_db` (application data) & `supertokens_db` (IAM data)
-> **Schema Migrations:** Raw SQL (`backend/migrations/000001` through `000019`)
+> **Schema Migrations:** Raw SQL (`backend/migrations/000001` through `000020`)
 > **User Identity Type:** `VARCHAR(64)` (SuperTokens Core user identity format)
 
 ---
@@ -876,7 +876,7 @@ When an employer cancels an active contract:
 
 ---
 
-## 6. Raw SQL Migration Registry (000001-000015)
+## 6. Raw SQL Migration Registry (000001-000020)
 
 | Migration File | Purpose & Changes | Breaking? | Reversible? | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -899,3 +899,5 @@ When an employer cancels an active contract:
 | `000017_project_core_schema` | Creates core project workspace tables: `projects`, `project_members`, `project_sections`, `project_resources`, and `project_activity` with custom enums (`project_visibility`, `project_recruitment_status`, `project_lifecycle_status`, `project_member_role`). | No | Yes | Establishes foundational data layer for Project-First Workspace architecture. |
 | `000018_recruitment_and_applications` | Creates `application_questions`, `project_applications`, `application_answers`, and `project_invitations` with enum types (`project_application_status`, `invitation_status`). | No | Yes | Enables structured campus project applications, reviewer notes, and team invitations. |
 | `000019_project_vector_search` | Creates `project_embeddings` table storing 384-dimensional dense vectors with HNSW cosine distance index (`vector_cosine_ops`, m=16, ef_construction=64). | No | Yes | Powers sub-5ms semantic project discovery. |
+| `000020_project_feed_covering_indexes` | Adds compound covering index (`idx_projects_feed_covering`) on `projects` with `INCLUDE` clause, partial active feed index, and member lookup index. | No | Yes | Optimizes public feed filtering and search to execute via RAM-buffered index-only scans under extreme concurrency. |
+
