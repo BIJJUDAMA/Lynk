@@ -19,12 +19,13 @@ repos:
         args: [--config=ai/pyproject.toml]
         files: ^ai/
 
-  - repo: https://github.com/dnephin/pre-commit-golang
-    rev: v0.5.1
+  - repo: local
     hooks:
       - id: go-fmt
-        files: ^backend/
-      - id: go-imports
+        name: go fmt
+        entry: gofmt -w -s
+        language: system
+        types: [go]
         files: ^backend/
 
   - repo: https://github.com/pre-commit/mirrors-prettier
