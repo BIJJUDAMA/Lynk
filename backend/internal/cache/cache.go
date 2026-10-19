@@ -234,3 +234,118 @@ func New(redisURL string) Cacher {
 	slog.Info("connected to redis cache successfully")
 	return NewRedisCache(client)
 }
+
+// TwoTierCache provides a transparent two-tier cache architecture
+// combining an in-memory L1 cache with a remote L2 cache (such as Redis).
+type TwoTierCache struct {
+	l1    Cacher
+	l2    Cacher
+	l1TTL time.Duration
+}
+
+var _ Cacher = (*TwoTierCache)(nil)
+
+// NewTwoTierCache constructs a new TwoTierCache.
+// If l1TTL <= 0, it defaults to 10 seconds.
+func NewTwoTierCache(l1 Cacher, l2 Cacher, l1TTL time.Duration) *TwoTierCache {
+	if l1TTL <= 0 {
+		l1TTL = 10 * time.Second
+	}
+	return &TwoTierCache{
+		l1:    l1,
+		l2:    l2,
+		l1TTL: l1TTL,
+	}
+}
+
+// L1 returns the underlying L1 cache.
+func (c *TwoTierCache) L1() Cacher {
+	return c.l1
+}
+
+// L2 returns the underlying L2 cache.
+func (c *TwoTierCache) L2() Cacher {
+	return c.l2
+}
+
+// Get checks L1 first. If hit, returns (true, nil).
+// If miss, checks L2. If L2 hits, backfills L1 with l1TTL and returns (true, nil).
+// If miss in both, returns (false, nil).
+func (c *TwoTierCache) Get(ctx context.Context, key string, dest any) (bool, error) {
+	if c.l1 != nil {
+		hit, err := c.l1.Get(ctx, key, dest)
+		if err == nil && hit {
+			return true, nil
+		}
+	}
+
+	if c.l2 != nil {
+		hit, err := c.l2.Get(ctx, key, dest)
+		if err != nil {
+			return false, err
+		}
+		if !hit {
+			return false, nil
+		}
+		if c.l1 != nil {
+			_ = c.l1.Set(ctx, key, dest, c.l1TTL)
+		}
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// Set writes to L1 with min(ttl, l1TTL) and to L2 with full ttl.
+func (c *TwoTierCache) Set(ctx context.Context, key string, val any, ttl time.Duration) error {
+	effectiveL1TTL := c.l1TTL
+	if ttl > 0 && ttl < effectiveL1TTL {
+		effectiveL1TTL = ttl
+	}
+
+	var errs []error
+	if c.l1 != nil {
+		if err := c.l1.Set(ctx, key, val, effectiveL1TTL); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if c.l2 != nil {
+		if err := c.l2.Set(ctx, key, val, ttl); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// Delete removes one or more keys from both L1 and L2.
+func (c *TwoTierCache) Delete(ctx context.Context, keys ...string) error {
+	var errs []error
+	if c.l1 != nil {
+		if err := c.l1.Delete(ctx, keys...); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if c.l2 != nil {
+		if err := c.l2.Delete(ctx, keys...); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// DeletePattern purges keys matching pattern from both L1 and L2.
+func (c *TwoTierCache) DeletePattern(ctx context.Context, pattern string) error {
+	var errs []error
+	if c.l1 != nil {
+		if err := c.l1.DeletePattern(ctx, pattern); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if c.l2 != nil {
+		if err := c.l2.DeletePattern(ctx, pattern); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
