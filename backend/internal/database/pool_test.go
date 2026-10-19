@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -73,5 +74,76 @@ func TestRouter_NilReceiverSafety(t *testing.T) {
 
 	if got := r.Replica(); got != nil {
 		t.Errorf("nil receiver Replica() = %p; want nil", got)
+	}
+
+	if got := r.Route(context.Background()); got != nil {
+		t.Errorf("nil receiver Route() = %p; want nil", got)
+	}
+}
+
+func TestRouter_Route_DefaultContextReturnsReplica(t *testing.T) {
+	primary := &pgxpool.Pool{}
+	replica := &pgxpool.Pool{}
+	router := NewRouter(primary, replica)
+
+	ctx := context.Background()
+	if got := router.Route(ctx); got != replica {
+		t.Errorf("Route(default) = %p; want replica %p", got, replica)
+	}
+}
+
+func TestRouter_Route_StickyPrimaryReturnsPrimary(t *testing.T) {
+	primary := &pgxpool.Pool{}
+	replica := &pgxpool.Pool{}
+	router := NewRouter(primary, replica)
+
+	ctx := WithStickyPrimary(context.Background())
+	if got := router.Route(ctx); got != primary {
+		t.Errorf("Route(sticky) = %p; want primary %p", got, primary)
+	}
+}
+
+func TestRouter_Route_NilReplicaReturnsPrimary(t *testing.T) {
+	primary := &pgxpool.Pool{}
+	router := NewRouter(primary, nil)
+
+	ctxDefault := context.Background()
+	if got := router.Route(ctxDefault); got != primary {
+		t.Errorf("Route(default) with nil replica = %p; want primary %p", got, primary)
+	}
+
+	ctxSticky := WithStickyPrimary(context.Background())
+	if got := router.Route(ctxSticky); got != primary {
+		t.Errorf("Route(sticky) with nil replica = %p; want primary %p", got, primary)
+	}
+}
+
+func TestRouter_Route_NilContext(t *testing.T) {
+	primary := &pgxpool.Pool{}
+	replica := &pgxpool.Pool{}
+	router := NewRouter(primary, replica)
+
+	if got := router.Route(nil); got != replica {
+		t.Errorf("Route(nil) = %p; want replica %p", got, replica)
+	}
+}
+
+func TestIsStickyPrimary_EdgeCases(t *testing.T) {
+	if IsStickyPrimary(nil) {
+		t.Error("expected IsStickyPrimary(nil) == false")
+	}
+
+	if IsStickyPrimary(context.Background()) {
+		t.Error("expected IsStickyPrimary(Background) == false")
+	}
+
+	wrapped := WithStickyPrimary(nil)
+	if !IsStickyPrimary(wrapped) {
+		t.Error("expected IsStickyPrimary(WithStickyPrimary(nil)) == true")
+	}
+
+	customCtx := context.WithValue(context.Background(), stickyPrimaryKey{}, false)
+	if IsStickyPrimary(customCtx) {
+		t.Error("expected IsStickyPrimary(false) == false")
 	}
 }
