@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -94,5 +95,41 @@ func TestTokenCache_FastAuthenticateHitMiss(t *testing.T) {
 	cancel()
 	if _, err := tc.FastAuthenticate(canceled, token); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestTokenCache_SweepsExpiredEntriesOnSet(t *testing.T) {
+	tc := NewTokenCache(time.Minute)
+	claims := &UserClaims{
+		UserID:        "user-789",
+		Email:         "student@campus.edu",
+		EmailVerified: true,
+		Roles:         []string{"member"},
+	}
+
+	expiredToken := "sAccessToken=expired-entry"
+	tc.Set(expiredToken, claims, 10*time.Millisecond)
+
+	keepToken := "sAccessToken=unexpired-entry"
+	tc.Set(keepToken, claims, time.Minute)
+
+	time.Sleep(20 * time.Millisecond)
+
+	// One Set for the expired token and one for the unexpired token are already
+	// counted, so fill up to the sweep boundary.
+	for i := 0; i < tokenCacheSweepInterval-2; i++ {
+		tc.Set(fmt.Sprintf("sAccessToken=filler-%d", i), claims, time.Minute)
+	}
+
+	tc.mu.RLock()
+	_, expiredFound := tc.entries[tc.hashKey(expiredToken)]
+	_, keepFound := tc.entries[tc.hashKey(keepToken)]
+	tc.mu.RUnlock()
+
+	if expiredFound {
+		t.Fatal("expected opportunistic sweep to remove expired entry")
+	}
+	if !keepFound {
+		t.Fatal("sweep removed an unexpired entry")
 	}
 }

@@ -12,6 +12,10 @@ import (
 // ErrTokenCacheMiss is returned by FastAuthenticate when a token is not cached.
 var ErrTokenCacheMiss = errors.New("token cache miss")
 
+// tokenCacheSweepInterval is the number of Set calls between opportunistic
+// sweeps of expired entries.
+const tokenCacheSweepInterval = 256
+
 // tokenCacheEntry represents a cached parsed session claim.
 type tokenCacheEntry struct {
 	claims    UserClaims
@@ -23,6 +27,7 @@ type TokenCache struct {
 	mu         sync.RWMutex
 	entries    map[string]tokenCacheEntry
 	defaultTTL time.Duration
+	writes     uint64
 }
 
 // NewTokenCache creates a thread-safe token cache.
@@ -100,8 +105,21 @@ func (tc *TokenCache) Set(token string, claims *UserClaims, ttl time.Duration) {
 	}
 
 	tc.mu.Lock()
+	tc.writes++
 	tc.entries[key] = entry
+	if tc.writes%tokenCacheSweepInterval == 0 {
+		tc.sweepExpiredLocked(time.Now())
+	}
 	tc.mu.Unlock()
+}
+
+// sweepExpiredLocked removes expired entries. Callers must hold tc.mu.
+func (tc *TokenCache) sweepExpiredLocked(now time.Time) {
+	for key, entry := range tc.entries {
+		if now.After(entry.expiresAt) {
+			delete(tc.entries, key)
+		}
+	}
 }
 
 // Invalidate removes a token from the cache immediately upon logout.
