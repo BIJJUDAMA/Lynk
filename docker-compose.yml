@@ -3,6 +3,17 @@ services:
     image: pgvector/pgvector:pg16
     container_name: lynk-postgres
     restart: unless-stopped
+    command: >
+      postgres
+      -c shared_buffers=1GB
+      -c effective_cache_size=3GB
+      -c work_mem=16MB
+      -c maintenance_work_mem=256MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c max_connections=200
     environment:
       POSTGRES_USER: lynk_user
       POSTGRES_PASSWORD: lynk_password
