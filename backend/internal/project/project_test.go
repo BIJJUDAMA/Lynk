@@ -82,6 +82,16 @@ func (m *mockProjectRepo) GetProjectBySlug(ctx context.Context, slug string) (*p
 	return nil, project.ErrProjectNotFound
 }
 
+func (m *mockProjectRepo) GetByIDOrSlug(ctx context.Context, idOrSlug string) (*project.Project, error) {
+	trimmed := strings.TrimSpace(idOrSlug)
+	if id, err := uuid.Parse(trimmed); err == nil {
+		if p, err := m.GetProjectByID(ctx, id); err == nil {
+			return p, nil
+		}
+	}
+	return m.GetProjectBySlug(ctx, trimmed)
+}
+
 func (m *mockProjectRepo) ListProjects(ctx context.Context, filter project.ListFilter) ([]project.Project, int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -133,6 +143,15 @@ func (m *mockProjectRepo) ListProjects(ctx context.Context, filter project.ListF
 	}
 
 	return list[offset:end], total, nil
+}
+
+func (m *mockProjectRepo) ListPublic(ctx context.Context, filter project.ListFilter) ([]project.Project, error) {
+	filter.Visibility = project.VisibilityPublic
+	if filter.RecruitmentStatus == "" {
+		filter.RecruitmentStatus = project.RecruitmentOpen
+	}
+	projects, _, err := m.ListProjects(ctx, filter)
+	return projects, err
 }
 
 func (m *mockProjectRepo) UpdateProject(ctx context.Context, p *project.Project) error {

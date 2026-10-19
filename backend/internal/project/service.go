@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lynk/backend/internal/cache"
 )
 
 var slugNonAlphaRegex = regexp.MustCompile(`[^a-z0-9]+`)
@@ -31,12 +32,23 @@ func GenerateSlug(title string) string {
 
 // Service provides business logic operations for the project domain.
 type Service struct {
-	repo Repository
+	repo  Repository
+	cache cache.Cacher
 }
 
 // NewService constructs a project domain service.
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo Repository, cacher ...cache.Cacher) *Service {
+	var c cache.Cacher
+	if len(cacher) > 0 {
+		c = cacher[0]
+	}
+	return &Service{repo: repo, cache: c}
+}
+
+// WithCache sets the optional cache on the Service.
+func (s *Service) WithCache(c cache.Cacher) *Service {
+	s.cache = c
+	return s
 }
 
 // CreateProject validates input, generates a collision-free slug, and creates a project.
@@ -115,7 +127,58 @@ func (s *Service) CreateProject(ctx context.Context, ownerID string, input Creat
 		return nil, err
 	}
 
+	if s.cache != nil {
+		_ = s.cache.DeletePattern(ctx, "projects:*")
+	}
+
 	return p, nil
+}
+
+// ListPublicProjects returns public projects matching filter with cache-aside optimization.
+func (s *Service) ListPublicProjects(ctx context.Context, filter ListFilter) ([]Project, error) {
+	if filter.RecruitmentStatus == "" {
+		filter.RecruitmentStatus = RecruitmentOpen
+	}
+	cacheKey := fmt.Sprintf("projects:list:%s:%s:%d:%d", filter.Category, filter.RecruitmentStatus, filter.Limit, filter.Offset)
+	if s.cache != nil {
+		var cached []Project
+		if ok, err := s.cache.Get(ctx, cacheKey, &cached); err == nil && ok {
+			return cached, nil
+		}
+	}
+
+	projects, err := s.repo.ListPublic(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.cache != nil && len(projects) > 0 {
+		_ = s.cache.Set(ctx, cacheKey, projects, 45*time.Second)
+	}
+	return projects, nil
+}
+
+// GetProject retrieves a project by ID or slug with cache-aside optimization.
+func (s *Service) GetProject(ctx context.Context, idOrSlug string) (*Project, error) {
+	trimmed := strings.TrimSpace(idOrSlug)
+	cacheKey := fmt.Sprintf("projects:detail:%s", trimmed)
+	if s.cache != nil {
+		var cached Project
+		if ok, err := s.cache.Get(ctx, cacheKey, &cached); err == nil && ok {
+			return &cached, nil
+		}
+	}
+
+	project, err := s.repo.GetByIDOrSlug(ctx, trimmed)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.cache != nil && project != nil {
+		_ = s.cache.Set(ctx, fmt.Sprintf("projects:detail:%s", project.ID.String()), *project, 5*time.Minute)
+		_ = s.cache.Set(ctx, fmt.Sprintf("projects:detail:%s", project.Slug), *project, 5*time.Minute)
+	}
+	return project, nil
 }
 
 // GetProjectBySlug retrieves a project by slug with visibility access control.
@@ -246,6 +309,10 @@ func (s *Service) UpdateProject(ctx context.Context, id uuid.UUID, actorID strin
 		return nil, err
 	}
 
+	if s.cache != nil {
+		_ = s.cache.DeletePattern(ctx, "projects:*")
+	}
+
 	return p, nil
 }
 
@@ -274,7 +341,29 @@ func (s *Service) UpdateVisibility(ctx context.Context, id uuid.UUID, actorID st
 		return nil, err
 	}
 
+	if s.cache != nil {
+		_ = s.cache.DeletePattern(ctx, "projects:*")
+	}
+
 	return p, nil
+}
+
+// DeleteProject removes a project after verifying owner permissions and invalidating cache.
+func (s *Service) DeleteProject(ctx context.Context, id uuid.UUID, actorID string) error {
+	if strings.TrimSpace(actorID) == "" {
+		return ErrUnauthorized
+	}
+	p, err := s.repo.GetProjectByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if p.OwnerMemberID != actorID {
+		return ErrUnauthorized
+	}
+	if s.cache != nil {
+		_ = s.cache.DeletePattern(ctx, "projects:*")
+	}
+	return nil
 }
 
 func (s *Service) resolveUniqueSlug(ctx context.Context, title string) (string, error) {

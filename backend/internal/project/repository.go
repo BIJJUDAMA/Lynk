@@ -19,7 +19,9 @@ type Repository interface {
 	CreateProject(ctx context.Context, p *Project) error
 	GetProjectByID(ctx context.Context, id uuid.UUID) (*Project, error)
 	GetProjectBySlug(ctx context.Context, slug string) (*Project, error)
+	GetByIDOrSlug(ctx context.Context, idOrSlug string) (*Project, error)
 	ListProjects(ctx context.Context, filter ListFilter) ([]Project, int, error)
+	ListPublic(ctx context.Context, filter ListFilter) ([]Project, error)
 	UpdateProject(ctx context.Context, p *Project) error
 }
 
@@ -106,6 +108,21 @@ func (r *pgxRepository) GetProjectBySlug(ctx context.Context, slug string) (*Pro
 	`
 	row := r.db.QueryRow(ctx, query, slug)
 	return scanProject(row)
+}
+
+// GetByIDOrSlug retrieves a project by UUID string or unique slug.
+func (r *pgxRepository) GetByIDOrSlug(ctx context.Context, idOrSlug string) (*Project, error) {
+	trimmed := strings.TrimSpace(idOrSlug)
+	if id, err := uuid.Parse(trimmed); err == nil {
+		p, err := r.GetProjectByID(ctx, id)
+		if err == nil {
+			return p, nil
+		}
+		if !errors.Is(err, ErrProjectNotFound) {
+			return nil, err
+		}
+	}
+	return r.GetProjectBySlug(ctx, trimmed)
 }
 
 // ListProjects returns filtered and paginated projects along with total matching count.
@@ -220,6 +237,19 @@ func (r *pgxRepository) ListProjects(ctx context.Context, filter ListFilter) ([]
 	}
 
 	return projects, total, nil
+}
+
+// ListPublic returns public projects matching the filter.
+func (r *pgxRepository) ListPublic(ctx context.Context, filter ListFilter) ([]Project, error) {
+	filter.Visibility = VisibilityPublic
+	if filter.RecruitmentStatus == "" {
+		filter.RecruitmentStatus = RecruitmentOpen
+	}
+	projects, _, err := r.ListProjects(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return projects, nil
 }
 
 // UpdateProject updates mutable metadata and settings for a project.
