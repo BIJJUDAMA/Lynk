@@ -143,6 +143,7 @@ func BuildRouter(
 	var teamH *team.Handler
 	var recruitmentH *recruitment.Handler
 	var workspaceH *workspace.Handler
+	var appCache cache.Cacher
 
 	for _, extra := range extras {
 		switch v := extra.(type) {
@@ -156,6 +157,8 @@ func BuildRouter(
 			recruitmentH = v
 		case *workspace.Handler:
 			workspaceH = v
+		case cache.Cacher:
+			appCache = v
 		case ProjectRouterOptions:
 			if v.ProjectHandler != nil {
 				projectH = v.ProjectHandler
@@ -185,6 +188,10 @@ func BuildRouter(
 				}
 			}
 		}
+	}
+
+	if appCache == nil {
+		appCache = cache.NewMemoryCache()
 	}
 
 	r := chi.NewRouter()
@@ -242,6 +249,9 @@ func BuildRouter(
 	if _, err := supertokens.GetInstanceOrThrowError(); err == nil {
 		r.Use(supertokens.Middleware)
 	}
+
+	r.Use(middleware.StickyPrimary(2 * time.Second))
+	r.Use(middleware.Idempotency(appCache, 24*time.Hour))
 
 	// Health Check (deep probe: PostgreSQL pool + MinIO bucket readiness)
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
@@ -700,7 +710,19 @@ func main() {
 	memCache := cache.NewMemoryCache()
 	if redisClient != nil {
 		redisCache := cache.NewRedisCache(redisClient)
-		appCache = cache.NewTwoTierCache(memCache, redisCache, 10*time.Second)
+		ttc := cache.NewTwoTierCache(memCache, redisCache, 10*time.Second)
+		invalidationBus := cache.NewRedisInvalidationBus(redisClient, "lynk:cache:invalidation")
+		defer func() {
+			if err := invalidationBus.Close(); err != nil {
+				logger.Warn("failed to close cache invalidation bus", "error", err)
+			}
+		}()
+		if err := ttc.SetInvalidationBus(invalidationBus); err != nil {
+			logger.Warn("failed to subscribe to cache invalidation bus", "error", err)
+		} else {
+			logger.Info("initialized distributed L1 cache invalidation bus via Redis Pub/Sub")
+		}
+		appCache = ttc
 		logger.Info("initialized two-tier cache (L1 in-memory + L2 Redis)")
 	} else {
 		appCache = memCache
@@ -819,6 +841,7 @@ func main() {
 			RecruitmentHandler: recruitmentHandler,
 			WorkspaceHandler:   workspaceHandler,
 		},
+		appCache,
 	)
 
 	// 7. Start HTTP Server with Graceful Shutdown

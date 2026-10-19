@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1562,19 +1563,50 @@ func TestBuildRouter_ResponseCompression(t *testing.T) {
 }
 
 func TestTwoTierCache_WiringIntegration(t *testing.T) {
-	mem := cache.NewMemoryCache()
-	ttc := cache.NewTwoTierCache(mem, mem, 5*time.Second)
+	mem1 := cache.NewMemoryCache()
+	mem2 := cache.NewMemoryCache()
+	l2Shared := cache.NewMemoryCache()
+	bus := cache.NewInMemoryInvalidationBus()
+	defer func() { _ = bus.Close() }()
+
+	ttc1 := cache.NewTwoTierCache(mem1, l2Shared, 5*time.Second)
+	if err := ttc1.SetInvalidationBus(bus, "node-1"); err != nil {
+		t.Fatalf("failed to set invalidation bus on ttc1: %v", err)
+	}
+
+	ttc2 := cache.NewTwoTierCache(mem2, l2Shared, 5*time.Second)
+	if err := ttc2.SetInvalidationBus(bus, "node-2"); err != nil {
+		t.Fatalf("failed to set invalidation bus on ttc2: %v", err)
+	}
 
 	ctx := context.Background()
-	err := ttc.Set(ctx, "wiring:test", "ok", 30*time.Second)
+	err := ttc1.Set(ctx, "wiring:test", "ok", 30*time.Second)
 	if err != nil {
 		t.Fatalf("unexpected error setting two-tier cache: %v", err)
 	}
 
 	var res string
-	found, err := ttc.Get(ctx, "wiring:test", &res)
+	found, err := ttc1.Get(ctx, "wiring:test", &res)
 	if err != nil || !found || res != "ok" {
 		t.Fatalf("expected found=true res='ok', got found=%v res=%s", found, res)
+	}
+
+	// ttc2 should also see it via L2 backfill
+	res = ""
+	found, err = ttc2.Get(ctx, "wiring:test", &res)
+	if err != nil || !found || res != "ok" {
+		t.Fatalf("expected ttc2 found=true res='ok' via L2 backfill, got found=%v res=%s", found, res)
+	}
+
+	// ttc1 deletes the key; cross-node invalidation must evict from ttc2 L1
+	if err := ttc1.Delete(ctx, "wiring:test"); err != nil {
+		t.Fatalf("unexpected error deleting from ttc1: %v", err)
+	}
+
+	// Verify evicted from ttc2 L1
+	found, _ = mem2.Get(ctx, "wiring:test", &res)
+	if found {
+		t.Fatalf("expected key to be evicted from ttc2 L1 by invalidation bus")
 	}
 }
 
@@ -1602,5 +1634,230 @@ func TestInitRedisClient(t *testing.T) {
 		}
 	})
 }
+
+type callTrackingJobRepo struct {
+	mockJobRepo
+	mu          sync.Mutex
+	createCalls int
+	jobs        []*job.Job
+}
+
+func (c *callTrackingJobRepo) CreateJob(ctx context.Context, j *job.Job) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.createCalls++
+	c.jobs = append(c.jobs, j)
+	return nil
+}
+
+func TestBuildRouter_Idempotency(t *testing.T) {
+	cfg := DefaultTestConfig()
+
+	authMW := middleware.AuthMiddleware(&mockValidator{
+		validToken: "idemp-token",
+		claims: &auth.UserClaims{
+			UserID:        "user-idemp-001",
+			Email:         "idemp@stanford.edu",
+			EmailVerified: true,
+			Roles:         []string{"member"},
+		},
+	})
+
+	repo := &callTrackingJobRepo{}
+	jobSvc := job.NewService(repo)
+	jobH := job.NewHandler(jobSvc, repo)
+
+	memCache := cache.NewMemoryCache()
+	router := BuildRouter(
+		cfg,
+		nil,
+		nil,
+		jobH,
+		nil,
+		nil,
+		nil,
+		authMW,
+		nil,
+		nil,
+		memCache,
+	)
+
+	payload := `{"title":"Frontend Developer","description":"React and TypeScript","department":"CS","required_skills":["React","TypeScript"]}`
+
+	// 1. Initial request with Idempotency-Key
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(payload))
+	req1.Header.Set("Authorization", "Bearer idemp-token")
+	req1.Header.Set("Content-Type", "application/json")
+	req1.Header.Set("Idempotency-Key", "job-idem-key-abc")
+	rec1 := httptest.NewRecorder()
+	router.ServeHTTP(rec1, req1)
+
+	if rec1.Code != http.StatusCreated {
+		t.Fatalf("expected status 201 Created on first request, got %d: %s", rec1.Code, rec1.Body.String())
+	}
+	if rec1.Header().Get("Idempotent-Replayed") == "true" {
+		t.Fatalf("first request must not be marked as replayed")
+	}
+
+	repo.mu.Lock()
+	callsAfterFirst := repo.createCalls
+	repo.mu.Unlock()
+	if callsAfterFirst != 1 {
+		t.Fatalf("expected 1 CreateJob call, got %d", callsAfterFirst)
+	}
+
+	// 2. Retry request with identical Idempotency-Key
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(payload))
+	req2.Header.Set("Authorization", "Bearer idemp-token")
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("Idempotency-Key", "job-idem-key-abc")
+	rec2 := httptest.NewRecorder()
+	router.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusCreated {
+		t.Fatalf("expected status 201 Created on replayed request, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+	if rec2.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("expected Idempotent-Replayed: true header on replayed request")
+	}
+
+	repo.mu.Lock()
+	callsAfterSecond := repo.createCalls
+	repo.mu.Unlock()
+	if callsAfterSecond != 1 {
+		t.Fatalf("CreateJob must not be called again on replayed request, expected 1 call, got %d", callsAfterSecond)
+	}
+
+	if rec1.Body.String() != rec2.Body.String() {
+		t.Fatalf("replayed response body mismatch: %s vs %s", rec1.Body.String(), rec2.Body.String())
+	}
+
+	// 3. Different Idempotency-Key executes handler
+	req3 := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(payload))
+	req3.Header.Set("Authorization", "Bearer idemp-token")
+	req3.Header.Set("Content-Type", "application/json")
+	req3.Header.Set("Idempotency-Key", "job-idem-key-different")
+	rec3 := httptest.NewRecorder()
+	router.ServeHTTP(rec3, req3)
+
+	if rec3.Code != http.StatusCreated {
+		t.Fatalf("expected status 201 Created on third request, got %d: %s", rec3.Code, rec3.Body.String())
+	}
+	if rec3.Header().Get("Idempotent-Replayed") == "true" {
+		t.Fatalf("new key request must not be marked as replayed")
+	}
+
+	repo.mu.Lock()
+	callsAfterThird := repo.createCalls
+	repo.mu.Unlock()
+	if callsAfterThird != 2 {
+		t.Fatalf("expected 2 CreateJob calls after different key, got %d", callsAfterThird)
+	}
+}
+
+func TestBuildRouter_StickyPrimary(t *testing.T) {
+	cfg := DefaultTestConfig()
+
+	authMW := middleware.AuthMiddleware(&mockValidator{
+		validToken: "sticky-token",
+		claims: &auth.UserClaims{
+			UserID:        "user-sticky-001",
+			Email:         "sticky@stanford.edu",
+			EmailVerified: true,
+			Roles:         []string{"member"},
+		},
+	})
+
+	repo := &callTrackingJobRepo{}
+	jobSvc := job.NewService(repo)
+	jobH := job.NewHandler(jobSvc, repo)
+
+	memCache := cache.NewMemoryCache()
+	router := BuildRouter(
+		cfg,
+		nil,
+		nil,
+		jobH,
+		nil,
+		nil,
+		nil,
+		authMW,
+		nil,
+		nil,
+		memCache,
+	)
+
+	payload := `{"title":"Backend Engineer","description":"Go distributed systems","department":"CS","required_skills":["Go","Distributed Systems"]}`
+
+	// 1. Mutating request (POST /api/v1/jobs) succeeds with 201 Created
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(payload))
+	req1.Header.Set("Authorization", "Bearer sticky-token")
+	req1.Header.Set("Content-Type", "application/json")
+	rec1 := httptest.NewRecorder()
+	router.ServeHTTP(rec1, req1)
+
+	if rec1.Code != http.StatusCreated {
+		t.Fatalf("expected status 201 Created on POST /api/v1/jobs, got %d: %s", rec1.Code, rec1.Body.String())
+	}
+
+	if got := rec1.Header().Get(middleware.StickyPrimaryHeader); got != "true" {
+		t.Errorf("expected header %s: true, got %q", middleware.StickyPrimaryHeader, got)
+	}
+
+	var stickyCookie *http.Cookie
+	for _, c := range rec1.Result().Cookies() {
+		if c.Name == middleware.StickyPrimaryCookieName {
+			stickyCookie = c
+			break
+		}
+	}
+	if stickyCookie == nil {
+		t.Fatalf("expected cookie %s on successful POST", middleware.StickyPrimaryCookieName)
+	}
+	if stickyCookie.Value != "1" {
+		t.Errorf("expected cookie value '1', got %q", stickyCookie.Value)
+	}
+	if stickyCookie.MaxAge != 2 {
+		t.Errorf("expected cookie MaxAge 2, got %d", stickyCookie.MaxAge)
+	}
+
+	// 2. Failed mutating request (POST /api/v1/jobs with invalid payload) does not set sticky primary
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", strings.NewReader(`{invalid-json}`))
+	req2.Header.Set("Authorization", "Bearer sticky-token")
+	req2.Header.Set("Content-Type", "application/json")
+	rec2 := httptest.NewRecorder()
+	router.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400 Bad Request, got %d", rec2.Code)
+	}
+	if got := rec2.Header().Get(middleware.StickyPrimaryHeader); got != "" {
+		t.Errorf("expected no %s header on failed POST, got %q", middleware.StickyPrimaryHeader, got)
+	}
+	for _, c := range rec2.Result().Cookies() {
+		if c.Name == middleware.StickyPrimaryCookieName {
+			t.Errorf("expected no %s cookie on failed POST", middleware.StickyPrimaryCookieName)
+		}
+	}
+
+	// 3. Read request (GET /api/v1/jobs) does not emit sticky primary header or cookie
+	req3 := httptest.NewRequest(http.MethodGet, "/api/v1/jobs", nil)
+	rec3 := httptest.NewRecorder()
+	router.ServeHTTP(rec3, req3)
+
+	if rec3.Code != http.StatusOK {
+		t.Fatalf("expected status 200 OK on GET /api/v1/jobs, got %d", rec3.Code)
+	}
+	if got := rec3.Header().Get(middleware.StickyPrimaryHeader); got != "" {
+		t.Errorf("expected no %s header on GET, got %q", middleware.StickyPrimaryHeader, got)
+	}
+	for _, c := range rec3.Result().Cookies() {
+		if c.Name == middleware.StickyPrimaryCookieName {
+			t.Errorf("expected no %s cookie on GET", middleware.StickyPrimaryCookieName)
+		}
+	}
+}
+
+
 
 
