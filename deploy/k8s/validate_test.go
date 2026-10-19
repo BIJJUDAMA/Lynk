@@ -50,3 +50,41 @@ func TestKubernetesManifests_PureASCIIAndExistence(t *testing.T) {
 		}
 	}
 }
+
+func TestKubernetesManifests_ProductionWiring(t *testing.T) {
+	read := func(rel string) string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(".", rel))
+		if err != nil {
+			t.Fatalf("expected file %s to exist: %v", rel, err)
+		}
+		return string(data)
+	}
+
+	configMap := read("base/configmap.yaml")
+	for _, key := range []string{"MINIO_ENDPOINT", "MINIO_BUCKET", "API_DOMAIN", "WEBSITE_DOMAIN", "CORS_ALLOWED_ORIGINS"} {
+		if !strings.Contains(configMap, key) {
+			t.Fatalf("configmap must define %s", key)
+		}
+	}
+	if strings.Contains(configMap, "$(REDIS_PASSWORD)") {
+		t.Fatalf("configmap must not rely on unexpanded $(REDIS_PASSWORD)")
+	}
+
+	secret := read("base/secret.yaml")
+	for _, key := range []string{"MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "REDIS_URL"} {
+		if !strings.Contains(secret, key) {
+			t.Fatalf("secret must define %s", key)
+		}
+	}
+
+	deployment := read("base/api-deployment.yaml")
+	if !strings.Contains(deployment, "tcpSocket") {
+		t.Fatalf("deployment liveness probe must use tcpSocket")
+	}
+
+	ingress := read("base/ingress.yaml")
+	if !strings.Contains(ingress, "tls:") {
+		t.Fatalf("ingress must define a tls block")
+	}
+}
