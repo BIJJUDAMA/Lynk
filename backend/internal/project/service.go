@@ -60,6 +60,15 @@ func (s *Service) WithViewBatcher(b *ViewBatcher) *Service {
 	return s
 }
 
+// recordView counts a page view for discoverable projects only. Private
+// projects never record views, even when the viewer is the owner.
+func (s *Service) recordView(p *Project) {
+	if s.views == nil || p == nil || p.Visibility == VisibilityPrivate {
+		return
+	}
+	s.views.RecordView(p.ID)
+}
+
 // CreateProject validates input, generates a collision-free slug, and creates a project.
 func (s *Service) CreateProject(ctx context.Context, ownerID string, input CreateProjectInput) (*Project, error) {
 	if strings.TrimSpace(ownerID) == "" {
@@ -227,9 +236,7 @@ func (s *Service) GetProjectBySlug(ctx context.Context, slug string, viewerID ..
 					return nil, ErrUnauthorized
 				}
 			}
-			if s.views != nil {
-				s.views.RecordView(cached.ID)
-			}
+			s.recordView(&cached)
 			cp := cached
 			return &cp, nil
 		}
@@ -239,9 +246,7 @@ func (s *Service) GetProjectBySlug(ctx context.Context, slug string, viewerID ..
 					return nil, ErrUnauthorized
 				}
 			}
-			if s.views != nil {
-				s.views.RecordView(cached.ID)
-			}
+			s.recordView(&cached)
 			cp := cached
 			return &cp, nil
 		}
@@ -271,9 +276,7 @@ func (s *Service) GetProjectBySlug(ctx context.Context, slug string, viewerID ..
 		}
 	}
 
-	if s.views != nil {
-		s.views.RecordView(p.ID)
-	}
+	s.recordView(p)
 
 	cp := *p
 	return &cp, nil
@@ -290,9 +293,7 @@ func (s *Service) GetProjectByID(ctx context.Context, id uuid.UUID, viewerID *st
 					return nil, ErrUnauthorized
 				}
 			}
-			if s.views != nil {
-				s.views.RecordView(cached.ID)
-			}
+			s.recordView(&cached)
 			cp := cached
 			return &cp, nil
 		}
@@ -302,9 +303,7 @@ func (s *Service) GetProjectByID(ctx context.Context, id uuid.UUID, viewerID *st
 					return nil, ErrUnauthorized
 				}
 			}
-			if s.views != nil {
-				s.views.RecordView(cached.ID)
-			}
+			s.recordView(&cached)
 			cp := cached
 			return &cp, nil
 		}
@@ -334,9 +333,7 @@ func (s *Service) GetProjectByID(ctx context.Context, id uuid.UUID, viewerID *st
 		}
 	}
 
-	if s.views != nil {
-		s.views.RecordView(p.ID)
-	}
+	s.recordView(p)
 
 	cp := *p
 	return &cp, nil

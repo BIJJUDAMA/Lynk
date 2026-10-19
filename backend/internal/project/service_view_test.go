@@ -137,3 +137,44 @@ func TestService_GetProjectBySlug_DoesNotRecordPrivateView(t *testing.T) {
 		t.Fatalf("expected empty batch for private project, got %v", flushed)
 	}
 }
+
+func TestService_GetProjectBySlug_DoesNotRecordOwnerPrivateView(t *testing.T) {
+	var mu sync.Mutex
+	var flushed map[uuid.UUID]int64
+	batcher := project.NewViewBatcher(time.Hour, func(ctx context.Context, batch map[uuid.UUID]int64) error {
+		mu.Lock()
+		defer mu.Unlock()
+		flushed = batch
+		return nil
+	})
+
+	repo := newMockProjectRepo()
+	ctx := context.Background()
+	ownerID := "usr_private_owner_view_test"
+	p, err := project.NewService(repo).CreateProject(ctx, ownerID, project.CreateProjectInput{
+		Title:       "Owner Private View Counter Project",
+		Description: "Private project used to verify that the owner's own view is not recorded.",
+		Category:    "Engineering",
+		Visibility:  project.VisibilityPrivate,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating project: %v", err)
+	}
+
+	svc := project.NewService(repo).WithViewBatcher(batcher)
+
+	owner := ownerID
+	if _, err := svc.GetProjectBySlug(ctx, p.Slug, &owner); err != nil {
+		t.Fatalf("expected owner to access private project, got %v", err)
+	}
+
+	if err := batcher.Flush(ctx); err != nil {
+		t.Fatalf("unexpected error flushing batcher: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(flushed) != 0 {
+		t.Fatalf("expected no views recorded for owner private view, got %v", flushed)
+	}
+}
