@@ -95,9 +95,6 @@ services:
     image: edoburu/pgbouncer:latest
     container_name: lynk-pgbouncer
     restart: unless-stopped
-    profiles:
-      - pooler
-      - full
     volumes:
       - ./.docker/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
       - ./.docker/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
@@ -118,11 +115,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: lynk-api
     restart: unless-stopped
     environment:
       PORT: "8080"
-      DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
+      DATABASE_URL: "postgres://lynk_user:lynk_password@pgbouncer:6432/lynk_db?sslmode=disable"
+      MIGRATION_DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
       MIGRATIONS_DIR: "/app/migrations"
       SUPERTOKENS_CONNECTION_URI: "http://supertokens:3567"
       SUPERTOKENS_API_KEY: "${SUPERTOKENS_API_KEY:-lynksupertokenssecretapikey2026dev}"
@@ -140,10 +137,14 @@ services:
       REDIS_URL: "redis://redis:6379"
       RATE_LIMIT_PER_MINUTE: "${RATE_LIMIT_PER_MINUTE:-120}"
       TRUST_FORWARDED_FOR: "${TRUST_FORWARDED_FOR:-true}"
-    ports:
-      - "8080:8080"
+      GOMEMLIMIT: "750MiB"
+      GOGC: "100"
+    expose:
+      - "8080"
     depends_on:
       postgres:
+        condition: service_healthy
+      pgbouncer:
         condition: service_healthy
       supertokens:
         condition: service_healthy
@@ -157,6 +158,25 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  gateway:
+    image: nginx:1.25-alpine
+    container_name: lynk-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./.docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - lynk-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   ai-api:
     build:
@@ -213,6 +233,9 @@ services:
         NEXT_PUBLIC_WEBSITE_URL: "http://localhost:3000"
     container_name: lynk-frontend
     restart: unless-stopped
+    profiles:
+      - frontend
+      - full
     environment:
       PORT: "3000"
       NEXT_PUBLIC_API_URL: "http://localhost:8080"
