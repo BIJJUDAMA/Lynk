@@ -34,6 +34,7 @@ var (
 	ErrAlreadyDecided        = errors.New("application has already been decided")
 	ErrCannotWithdraw        = errors.New("cannot withdraw application in current status")
 	ErrRecruitmentClosed     = errors.New("project recruitment is closed")
+	ErrTeamCapacityExceeded  = errors.New("team capacity exceeded: recruitment cap reached")
 	ErrAlreadyApplied        = errors.New("already applied to this project")
 	ErrUnauthorized          = errors.New("unauthorized")
 	ErrForbidden             = errors.New("forbidden: insufficient permissions")

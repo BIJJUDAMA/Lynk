@@ -345,10 +345,12 @@ func (h *Handler) handleServiceError(w http.ResponseWriter, r *http.Request, err
 		httputil.WriteConflict(w, r, "ALREADY_APPLIED", err.Error())
 	case errors.Is(err, ErrAlreadyDecided):
 		httputil.WriteConflict(w, r, "ALREADY_DECIDED", err.Error())
+	case errors.Is(err, ErrTeamCapacityExceeded):
+		httputil.WriteConflict(w, r, "TEAM_CAPACITY_EXCEEDED", err.Error())
+	case errors.Is(err, ErrRecruitmentClosed):
+		httputil.WriteConflict(w, r, "RECRUITMENT_CLOSED", err.Error())
 	case errors.Is(err, ErrCannotWithdraw):
 		httputil.WriteBadRequest(w, r, "CANNOT_WITHDRAW", err.Error())
-	case errors.Is(err, ErrRecruitmentClosed):
-		httputil.WriteBadRequest(w, r, "RECRUITMENT_CLOSED", err.Error())
 	case errors.Is(err, ErrMissingRequiredAnswer), errors.Is(err, ErrInvalidStatement), errors.Is(err, ErrInvalidQuestionText):
 		httputil.WriteBadRequest(w, r, "BAD_REQUEST", err.Error())
 	default:

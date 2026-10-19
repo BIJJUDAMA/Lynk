@@ -336,6 +336,7 @@ func (r *pgxRepository) WithdrawApplication(ctx context.Context, id uuid.UUID, a
 }
 
 // AcceptApplicationTx atomically updates application to accepted and inserts the applicant as an active project member.
+// It acquires a row-level pessimistic lock on the project to enforce capacity and recruitment status invariants.
 // Invariant: Zero contracts created. Direct workspace team membership granted.
 func (r *pgxRepository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID, reviewerID string) error {
 	tx, err := r.db.Begin(ctx)
@@ -344,8 +345,46 @@ func (r *pgxRepository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// 1. Lock application row
+	// 1. Lock project row
 	var projectID uuid.UUID
+	var recruitmentStatus string
+	var maxMembers int
+	err = tx.QueryRow(ctx, `
+		SELECT id, recruitment_status, COALESCE(NULLIF(settings->>'max_members', '')::int, 0)
+		FROM projects
+		WHERE id = (SELECT project_id FROM project_applications WHERE id = $1)
+		FOR UPDATE
+	`, appID).Scan(&projectID, &recruitmentStatus, &maxMembers)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrApplicationNotFound
+		}
+		return fmt.Errorf("failed to lock project: %w", err)
+	}
+
+	// 2. If max_members > 0, count current active members
+	var activeCount int
+	if maxMembers > 0 {
+		err = tx.QueryRow(ctx, `
+			SELECT COUNT(*)
+			FROM project_members
+			WHERE project_id = $1 AND status = 'active'
+		`, projectID).Scan(&activeCount)
+		if err != nil {
+			return fmt.Errorf("failed to count active project members: %w", err)
+		}
+
+		if activeCount >= maxMembers {
+			return ErrTeamCapacityExceeded
+		}
+	}
+
+	if recruitmentStatus != "open" {
+		return ErrRecruitmentClosed
+	}
+
+	// 3. Lock application row
+	var appProjectID uuid.UUID
 	var applicantID string
 	var currentStatus string
 	err = tx.QueryRow(ctx, `
@@ -353,7 +392,7 @@ func (r *pgxRepository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID
 		FROM project_applications
 		WHERE id = $1
 		FOR UPDATE
-	`, appID).Scan(&projectID, &applicantID, &currentStatus)
+	`, appID).Scan(&appProjectID, &applicantID, &currentStatus)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrApplicationNotFound
@@ -365,7 +404,7 @@ func (r *pgxRepository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID
 		return ErrAlreadyDecided
 	}
 
-	// 2. Update project_applications status to accepted, set decided_by = reviewerID, decided_at = NOW()
+	// 4. Update project_applications status to accepted, set decided_by = reviewerID, decided_at = NOW()
 	_, err = tx.Exec(ctx, `
 		UPDATE project_applications
 		SET status = 'accepted',
@@ -378,7 +417,7 @@ func (r *pgxRepository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID
 		return fmt.Errorf("failed to update application status to accepted: %w", err)
 	}
 
-	// 3. Insert into project_members (project_id, member_id, role = 'member', status = 'active', joined_at = NOW())
+	// 5. Insert into project_members (project_id, member_id, role = 'member', status = 'active', joined_at = NOW())
 	memberID := uuid.New()
 	_, err = tx.Exec(ctx, `
 		INSERT INTO project_members (
@@ -394,7 +433,20 @@ func (r *pgxRepository) AcceptApplicationTx(ctx context.Context, appID uuid.UUID
 		return fmt.Errorf("failed to insert project member: %w", err)
 	}
 
-	// 4. Commit transaction
+	// 6. If max_members > 0 && activeCount + 1 >= maxMembers, automatically close recruitment
+	if maxMembers > 0 && activeCount+1 >= maxMembers {
+		_, err = tx.Exec(ctx, `
+			UPDATE projects
+			SET recruitment_status = 'closed',
+			    updated_at = NOW()
+			WHERE id = $1
+		`, projectID)
+		if err != nil {
+			return fmt.Errorf("failed to auto-close project recruitment: %w", err)
+		}
+	}
+
+	// 7. Commit transaction
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("failed to commit accept transaction: %w", err)
 	}

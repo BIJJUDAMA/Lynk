@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,7 @@ type mockRecruitmentRepo struct {
 	questions    map[uuid.UUID]*recruitment.ApplicationQuestion
 	answers      map[uuid.UUID][]recruitment.ApplicationAnswer
 	members      map[string]*team.ProjectMember
+	projects     map[uuid.UUID]*project.Project
 }
 
 func newMockRecruitmentRepo() *mockRecruitmentRepo {
@@ -34,6 +36,7 @@ func newMockRecruitmentRepo() *mockRecruitmentRepo {
 		questions:    make(map[uuid.UUID]*recruitment.ApplicationQuestion),
 		answers:      make(map[uuid.UUID][]recruitment.ApplicationAnswer),
 		members:      make(map[string]*team.ProjectMember),
+		projects:     make(map[uuid.UUID]*project.Project),
 	}
 }
 
@@ -156,6 +159,44 @@ func (m *mockRecruitmentRepo) AcceptApplicationTx(ctx context.Context, appID uui
 	if !ok {
 		return recruitment.ErrApplicationNotFound
 	}
+
+	// 1. Check project and capacity limits
+	var maxMembers int
+	var recruitmentStatus project.RecruitmentStatus = project.RecruitmentOpen
+	if proj, ok := m.projects[app.ProjectID]; ok {
+		recruitmentStatus = proj.RecruitmentStatus
+		if proj.Settings != nil {
+			if mm, ok := proj.Settings["max_members"]; ok {
+				switch v := mm.(type) {
+				case int:
+					maxMembers = v
+				case float64:
+					maxMembers = int(v)
+				case string:
+					_, _ = fmt.Sscanf(v, "%d", &maxMembers)
+				}
+			}
+		}
+	}
+
+	// 2. Count active members if maxMembers > 0
+	activeCount := 0
+	if maxMembers > 0 {
+		for _, member := range m.members {
+			if member.ProjectID == app.ProjectID && member.Status == "active" {
+				activeCount++
+			}
+		}
+		if activeCount >= maxMembers {
+			return recruitment.ErrTeamCapacityExceeded
+		}
+	}
+
+	if recruitmentStatus != project.RecruitmentOpen {
+		return recruitment.ErrRecruitmentClosed
+	}
+
+	// 3. Verify application status
 	if app.Status != recruitment.StatusSubmitted && app.Status != recruitment.StatusShortlisted {
 		return recruitment.ErrAlreadyDecided
 	}
@@ -166,7 +207,7 @@ func (m *mockRecruitmentRepo) AcceptApplicationTx(ctx context.Context, appID uui
 	app.DecidedAt = &now
 	app.UpdatedAt = now
 
-	// Atomically add to project members (Role: member, Status: active)
+	// 4. Atomically add to project members (Role: member, Status: active)
 	m.members[m.memberKey(app.ProjectID, app.ApplicantID)] = &team.ProjectMember{
 		ID:        uuid.New(),
 		ProjectID: app.ProjectID,
@@ -175,6 +216,15 @@ func (m *mockRecruitmentRepo) AcceptApplicationTx(ctx context.Context, appID uui
 		Status:    "active",
 		JoinedAt:  now,
 	}
+
+	// 5. Automatically close recruitment if capacity reached
+	if maxMembers > 0 && activeCount+1 >= maxMembers {
+		if proj, ok := m.projects[app.ProjectID]; ok {
+			proj.RecruitmentStatus = project.RecruitmentClosed
+			proj.UpdatedAt = now
+		}
+	}
+
 	return nil
 }
 
@@ -794,5 +844,241 @@ func TestRecruitmentHandler_EndToEndEndpoints(t *testing.T) {
 	// Verify team membership in repo
 	if _, ok := repo.members[repo.memberKey(projectID, applicantID)]; !ok {
 		t.Fatalf("expected applicant to be added to project team members")
+	}
+}
+
+func TestRecruitmentService_TeamCapacityExceeded(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRecruitmentRepo()
+	projReader := newMockProjectReader()
+	memReader := newMockMembershipReader()
+	svc := recruitment.NewService(repo, projReader, memReader)
+	handler := recruitment.NewHandler(svc)
+
+	projectID := uuid.New()
+	leadID := "lead-capacity-1"
+	existingMemberID := "existing-member-1"
+	applicantID := "applicant-overflow"
+
+	// Project has max_members: 1 and recruitment_status: open
+	proj := &project.Project{
+		ID:                projectID,
+		Title:             "Capped Project",
+		RecruitmentStatus: project.RecruitmentOpen,
+		OwnerMemberID:     leadID,
+		Settings: map[string]any{
+			"max_members": 1,
+		},
+	}
+	projReader.projects[projectID] = proj
+	repo.projects[projectID] = proj
+
+	// Already has 1 active member
+	leadMember := &team.ProjectMember{
+		ID:        uuid.New(),
+		ProjectID: projectID,
+		MemberID:  existingMemberID,
+		Role:      team.RoleLead,
+		Status:    "active",
+		JoinedAt:  time.Now().UTC(),
+	}
+	memReader.members[memReader.memberKey(projectID, existingMemberID)] = leadMember
+	repo.members[repo.memberKey(projectID, existingMemberID)] = leadMember
+
+	leadClaims := &auth.UserClaims{UserID: existingMemberID, Email: "lead@mit.edu", EmailVerified: true}
+
+	// Applicant submits application
+	applicantClaims := &auth.UserClaims{UserID: applicantID, Email: "overflow@mit.edu", EmailVerified: true}
+	app, err := svc.SubmitApplication(ctx, applicantClaims, projectID, recruitment.SubmitApplicationInput{
+		Statement: "Want to join capped project.",
+	})
+	if err != nil {
+		t.Fatalf("failed to submit application: %v", err)
+	}
+
+	// 1. Direct Service Call: Attempt to accept applicant when capacity is full
+	err = svc.AcceptApplication(ctx, leadClaims, app.ID)
+	if err == nil || !errors.Is(err, recruitment.ErrTeamCapacityExceeded) {
+		t.Fatalf("expected ErrTeamCapacityExceeded, got: %v", err)
+	}
+
+	// 2. HTTP Handler Call: Attempt to accept via HTTP endpoint -> verify HTTP 409 Conflict
+	router := handler.Routes(httpx.RequireAuthFromContext())
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/applications/%s/accept", app.ID.String()), nil)
+	req = req.WithContext(auth.WithUserContext(req.Context(), leadClaims))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected HTTP 409 Conflict, got: %d (%s)", rr.Code, rr.Body.String())
+	}
+
+	var errResp struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("failed to parse error response JSON: %v", err)
+	}
+	if errResp.Error.Code != "TEAM_CAPACITY_EXCEEDED" {
+		t.Errorf("expected error code 'TEAM_CAPACITY_EXCEEDED', got %q", errResp.Error.Code)
+	}
+}
+
+func TestRecruitmentService_ConcurrentCapacityRaceCondition(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRecruitmentRepo()
+	projReader := newMockProjectReader()
+	memReader := newMockMembershipReader()
+	svc := recruitment.NewService(repo, projReader, memReader)
+
+	projectID := uuid.New()
+	leadID := "lead-concurrent"
+	applicant1ID := "applicant-alpha"
+	applicant2ID := "applicant-beta"
+
+	// Project has max_members: 1, currently 0 active members (exactly 1 spot remaining)
+	proj := &project.Project{
+		ID:                projectID,
+		Title:             "Last Spot Project",
+		RecruitmentStatus: project.RecruitmentOpen,
+		OwnerMemberID:     leadID,
+		Settings: map[string]any{
+			"max_members": 1,
+		},
+	}
+	projReader.projects[projectID] = proj
+	repo.projects[projectID] = proj
+
+	leadClaims := &auth.UserClaims{UserID: leadID, Email: "lead@mit.edu", EmailVerified: true}
+
+	// Two applicants submit applications
+	app1Claims := &auth.UserClaims{UserID: applicant1ID, Email: "alpha@mit.edu", EmailVerified: true}
+	app1, err := svc.SubmitApplication(ctx, app1Claims, projectID, recruitment.SubmitApplicationInput{
+		Statement: "Applicant Alpha proposal",
+	})
+	if err != nil {
+		t.Fatalf("failed to submit app1: %v", err)
+	}
+
+	app2Claims := &auth.UserClaims{UserID: applicant2ID, Email: "beta@mit.edu", EmailVerified: true}
+	app2, err := svc.SubmitApplication(ctx, app2Claims, projectID, recruitment.SubmitApplicationInput{
+		Statement: "Applicant Beta proposal",
+	})
+	if err != nil {
+		t.Fatalf("failed to submit app2: %v", err)
+	}
+
+	// 2 concurrent goroutines attempting to accept two different applicants for the last remaining spot
+	const workers = 2
+	errs := make(chan error, workers)
+	startBarrier := make(chan struct{})
+	var wg sync.WaitGroup
+
+	for _, appID := range []uuid.UUID{app1.ID, app2.ID} {
+		wg.Add(1)
+		go func(targetID uuid.UUID) {
+			defer wg.Done()
+			<-startBarrier
+			acceptErr := svc.AcceptApplication(ctx, leadClaims, targetID)
+			errs <- acceptErr
+		}(appID)
+	}
+
+	close(startBarrier)
+	wg.Wait()
+	close(errs)
+
+	var successCount int
+	var capacityExceededCount int
+	for resErr := range errs {
+		if resErr == nil {
+			successCount++
+		} else if errors.Is(resErr, recruitment.ErrTeamCapacityExceeded) {
+			capacityExceededCount++
+		} else {
+			t.Errorf("unexpected error in concurrent accept: %v", resErr)
+		}
+	}
+
+	if successCount != 1 {
+		t.Fatalf("expected exactly 1 successful accept, got: %d", successCount)
+	}
+	if capacityExceededCount != 1 {
+		t.Fatalf("expected exactly 1 ErrTeamCapacityExceeded failure, got: %d", capacityExceededCount)
+	}
+
+	// Verify recruitment status transitioned to closed
+	if proj.RecruitmentStatus != project.RecruitmentClosed {
+		t.Errorf("expected project recruitment status to be 'closed', got: %s", proj.RecruitmentStatus)
+	}
+
+	// Verify exactly 1 member is in the project
+	activeMemberCount := 0
+	for _, m := range repo.members {
+		if m.ProjectID == projectID && m.Status == "active" {
+			activeMemberCount++
+		}
+	}
+	if activeMemberCount != 1 {
+		t.Errorf("expected exactly 1 active member in repo, got %d", activeMemberCount)
+	}
+}
+
+func TestRecruitmentHandler_ClosedRecruitmentReturnsConflict(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRecruitmentRepo()
+	projReader := newMockProjectReader()
+	memReader := newMockMembershipReader()
+	svc := recruitment.NewService(repo, projReader, memReader)
+	handler := recruitment.NewHandler(svc)
+
+	projectID := uuid.New()
+	leadID := "lead-closed-test"
+	applicantID := "applicant-closed-test"
+
+	proj := &project.Project{
+		ID:                projectID,
+		Title:             "Manually Closed Project",
+		RecruitmentStatus: project.RecruitmentOpen,
+		OwnerMemberID:     leadID,
+	}
+	projReader.projects[projectID] = proj
+	repo.projects[projectID] = proj
+
+	leadClaims := &auth.UserClaims{UserID: leadID, Email: "lead@mit.edu", EmailVerified: true}
+	applicantClaims := &auth.UserClaims{UserID: applicantID, Email: "app@mit.edu", EmailVerified: true}
+
+	app, err := svc.SubmitApplication(ctx, applicantClaims, projectID, recruitment.SubmitApplicationInput{
+		Statement: "Want to join.",
+	})
+	if err != nil {
+		t.Fatalf("failed to submit app: %v", err)
+	}
+
+	// Project recruitment is closed before accept
+	proj.RecruitmentStatus = project.RecruitmentClosed
+
+	router := handler.Routes(httpx.RequireAuthFromContext())
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/applications/%s/accept", app.ID.String()), nil)
+	req = req.WithContext(auth.WithUserContext(req.Context(), leadClaims))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected HTTP 409 Conflict for closed recruitment, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var errResp struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &errResp)
+	if errResp.Error.Code != "RECRUITMENT_CLOSED" {
+		t.Errorf("expected error code 'RECRUITMENT_CLOSED', got %q", errResp.Error.Code)
 	}
 }
