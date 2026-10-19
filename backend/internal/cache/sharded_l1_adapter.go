@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 )
 
@@ -51,7 +50,7 @@ func (c *ShardedL1Cacher) Delete(ctx context.Context, keys ...string) error {
 	return nil
 }
 
-// DeletePattern is unsupported: the sharded L1 cache exposes no key scan.
-func (c *ShardedL1Cacher) DeletePattern(_ context.Context, pattern string) error {
-	return fmt.Errorf("sharded L1 cache: DeletePattern not supported (pattern %q)", pattern)
+// DeletePattern delegates to the inner sharded cache's pattern deletion.
+func (c *ShardedL1Cacher) DeletePattern(ctx context.Context, pattern string) error {
+	return c.inner.DeletePattern(ctx, pattern)
 }

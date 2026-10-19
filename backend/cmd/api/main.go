@@ -719,7 +719,7 @@ func main() {
 
 	// 5. Wire Repositories, Services, and Handlers
 
-	// Two-tier cache: L1 in-memory (10s TTL) backed by L2 Redis for sub-microsecond reads
+	// Two-tier cache: L1 sharded in-memory (10s TTL) backed by L2 Redis for sub-microsecond reads
 	redisClient := initRedisClient(ctx, cfg.RedisURL)
 	if redisClient != nil {
 		defer func() {
@@ -728,26 +728,11 @@ func main() {
 	}
 
 	logger := slog.Default()
-	var appCache cache.Cacher
-	memCache := cache.NewMemoryCache()
+	appCache, closeCache := buildAppCache(redisClient)
+	defer closeCache()
 	if redisClient != nil {
-		redisCache := cache.NewRedisCache(redisClient)
-		ttc := cache.NewTwoTierCache(memCache, redisCache, 10*time.Second)
-		invalidationBus := cache.NewRedisInvalidationBus(redisClient, "lynk:cache:invalidation")
-		defer func() {
-			if err := invalidationBus.Close(); err != nil {
-				logger.Warn("failed to close cache invalidation bus", "error", err)
-			}
-		}()
-		if err := ttc.SetInvalidationBus(invalidationBus); err != nil {
-			logger.Warn("failed to subscribe to cache invalidation bus", "error", err)
-		} else {
-			logger.Info("initialized distributed L1 cache invalidation bus via Redis Pub/Sub")
-		}
-		appCache = ttc
-		logger.Info("initialized two-tier cache (L1 in-memory + L2 Redis)")
+		logger.Info("initialized two-tier cache (sharded L1 + L2 Redis)")
 	} else {
-		appCache = memCache
 		logger.Info("initialized in-memory cache fallback")
 	}
 

@@ -2,6 +2,8 @@ package cache
 
 import (
 	"context"
+	"path"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -122,6 +124,34 @@ func (c *ShardedL1Cache) Delete(ctx context.Context, key string) error {
 	shard.mu.Lock()
 	delete(shard.items, key)
 	shard.mu.Unlock()
+	return nil
+}
+
+// DeletePattern removes every key matching the glob-style pattern,
+// mirroring MemoryCache.DeletePattern semantics: "*" deletes all, a trailing
+// "*" is a prefix match, otherwise path.Match is used, and exact equality
+// also matches. Each shard is scanned under its own lock.
+func (c *ShardedL1Cache) DeletePattern(ctx context.Context, pattern string) error {
+	prefixMatch := strings.HasSuffix(pattern, "*")
+	prefix := strings.TrimSuffix(pattern, "*")
+
+	for _, shard := range c.shards {
+		shard.mu.Lock()
+		for k := range shard.items {
+			if pattern == "*" || (prefixMatch && strings.HasPrefix(k, prefix)) {
+				delete(shard.items, k)
+				continue
+			}
+			if matched, _ := path.Match(pattern, k); matched {
+				delete(shard.items, k)
+				continue
+			}
+			if pattern == k {
+				delete(shard.items, k)
+			}
+		}
+		shard.mu.Unlock()
+	}
 	return nil
 }
 

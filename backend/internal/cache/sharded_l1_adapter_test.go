@@ -71,10 +71,28 @@ func TestShardedL1Cacher_Delete(t *testing.T) {
 	}
 }
 
-func TestShardedL1Cacher_DeletePatternUnsupported(t *testing.T) {
-	c := NewShardedL1Cacher(NewShardedL1Cache(4, time.Minute))
-	if err := c.DeletePattern(context.Background(), "feed:*"); err == nil {
-		t.Fatal("expected DeletePattern to return a not supported error")
+func TestShardedL1Cacher_DeletePattern(t *testing.T) {
+	ctx := context.Background()
+	inner := NewShardedL1Cache(4, time.Minute)
+	c := NewShardedL1Cacher(inner)
+	_ = c.Set(ctx, "projects:slug:a", 1, time.Minute)
+	_ = c.Set(ctx, "projects:slug:b", 2, time.Minute)
+	_ = c.Set(ctx, "jobs:search:1", 3, time.Minute)
+
+	if err := c.DeletePattern(ctx, "projects:slug:*"); err != nil {
+		t.Fatalf("DeletePattern prefix: %v", err)
+	}
+	if _, found, _ := inner.Get(ctx, "projects:slug:a"); found {
+		t.Fatal("prefix pattern did not evict projects:slug:a")
+	}
+	if _, found, _ := inner.Get(ctx, "jobs:search:1"); !found {
+		t.Fatal("prefix pattern evicted an unrelated key")
+	}
+	if err := c.DeletePattern(ctx, "jobs:search:1"); err != nil {
+		t.Fatalf("DeletePattern exact: %v", err)
+	}
+	if _, found, _ := inner.Get(ctx, "jobs:search:1"); found {
+		t.Fatal("exact pattern did not evict jobs:search:1")
 	}
 }
 
