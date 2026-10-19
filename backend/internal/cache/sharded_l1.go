@@ -3,20 +3,32 @@ package cache
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
 )
 
+const l1SweepInterval = 256
+
 type l1Item struct {
 	value     []byte
 	expiresAt time.Time
-	hits      uint64
+	hits      atomic.Uint64
 }
 
 type l1Shard struct {
-	mu    sync.RWMutex
-	items map[string]l1Item
+	mu     sync.RWMutex
+	items  map[string]*l1Item
+	writes uint64
+}
+
+func (s *l1Shard) sweepExpiredLocked(now time.Time) {
+	for key, item := range s.items {
+		if now.After(item.expiresAt) {
+			delete(s.items, key)
+		}
+	}
 }
 
 // ShardedL1Cache splits cache keys across N shards to minimize mutex contention under 1M RPS.
@@ -34,7 +46,7 @@ func NewShardedL1Cache(numShards int, defaultTTL time.Duration) *ShardedL1Cache 
 	shards := make([]*l1Shard, numShards)
 	for i := 0; i < numShards; i++ {
 		shards[i] = &l1Shard{
-			items: make(map[string]l1Item),
+			items: make(map[string]*l1Item),
 		}
 	}
 	return &ShardedL1Cache{
@@ -52,24 +64,28 @@ func (c *ShardedL1Cache) getShard(key string) *l1Shard {
 // Get retrieves cached item and increments access frequency.
 func (c *ShardedL1Cache) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	shard := c.getShard(key)
-	shard.mu.Lock()
-	defer shard.mu.Unlock()
+	shard.mu.RLock()
 
 	item, exists := shard.items[key]
 	if !exists {
+		shard.mu.RUnlock()
 		return nil, false, nil
 	}
 
 	if time.Now().After(item.expiresAt) {
-		delete(shard.items, key)
+		shard.mu.RUnlock()
+		shard.mu.Lock()
+		if current, ok := shard.items[key]; ok && time.Now().After(current.expiresAt) {
+			delete(shard.items, key)
+		}
+		shard.mu.Unlock()
 		return nil, false, nil
 	}
 
-	item.hits++
-	shard.items[key] = item
-
+	item.hits.Add(1)
 	cpy := make([]byte, len(item.value))
 	copy(cpy, item.value)
+	shard.mu.RUnlock()
 	return cpy, true, nil
 }
 
@@ -78,17 +94,24 @@ func (c *ShardedL1Cache) Set(ctx context.Context, key string, value []byte, ttl 
 	if ttl <= 0 {
 		ttl = c.ttl
 	}
-	shard := c.getShard(key)
-	shard.mu.Lock()
-	defer shard.mu.Unlock()
 
 	valCopy := make([]byte, len(value))
 	copy(valCopy, value)
 
-	shard.items[key] = l1Item{
+	item := &l1Item{
 		value:     valCopy,
 		expiresAt: time.Now().Add(ttl),
-		hits:      1,
+	}
+	item.hits.Store(1)
+
+	shard := c.getShard(key)
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
+
+	shard.items[key] = item
+	shard.writes++
+	if shard.writes%l1SweepInterval == 0 {
+		shard.sweepExpiredLocked(time.Now())
 	}
 	return nil
 }
@@ -108,7 +131,7 @@ func (c *ShardedL1Cache) Frequency(key string) uint64 {
 	shard.mu.RLock()
 	defer shard.mu.RUnlock()
 	if item, ok := shard.items[key]; ok {
-		return item.hits
+		return item.hits.Load()
 	}
 	return 0
 }

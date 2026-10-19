@@ -77,3 +77,39 @@ func TestShardedL1Cache_HotKeyCounter(t *testing.T) {
 		t.Fatalf("expected frequency >= 50, got %d", freq)
 	}
 }
+
+func TestShardedL1Cache_SweepsExpiredEntries(t *testing.T) {
+	ctx := context.Background()
+	c := NewShardedL1Cache(1, time.Minute)
+
+	expiredKey := "project:expired"
+	unexpiredKey := "project:live"
+	if err := c.Set(ctx, expiredKey, []byte("stale"), 10*time.Millisecond); err != nil {
+		t.Fatalf("Set expired key failed: %v", err)
+	}
+	if err := c.Set(ctx, unexpiredKey, []byte("fresh"), time.Minute); err != nil {
+		t.Fatalf("Set unexpired key failed: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	for i := 0; i < 256; i++ {
+		key := fmt.Sprintf("filler:%d", i)
+		if err := c.Set(ctx, key, []byte("x"), time.Minute); err != nil {
+			t.Fatalf("Set filler %d failed: %v", i, err)
+		}
+	}
+
+	shard := c.getShard(expiredKey)
+	shard.mu.RLock()
+	_, expiredPresent := shard.items[expiredKey]
+	_, unexpiredPresent := shard.items[unexpiredKey]
+	shard.mu.RUnlock()
+
+	if expiredPresent {
+		t.Fatal("expected expired entry to be swept")
+	}
+	if !unexpiredPresent {
+		t.Fatal("expected unexpired entry to survive sweep")
+	}
+}
