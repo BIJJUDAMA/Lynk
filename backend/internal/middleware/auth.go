@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/lynk/backend/internal/auth"
 	"github.com/supertokens/supertokens-golang/recipe/emailpassword"
@@ -164,7 +163,7 @@ func SessionMiddlewareWithTokenCache(tc *auth.TokenCache) func(http.Handler) htt
 						Roles:         roles,
 					}
 					if tc != nil && isSafeMethod(r.Method) && token != "" {
-						tc.Set(token, claims, 10*time.Second)
+						tc.Set(token, claims, auth.TokenFastPathTTL)
 					}
 					ctx := auth.WithUserContext(r.Context(), claims)
 					next.ServeHTTP(tw, r.WithContext(ctx))
@@ -219,7 +218,7 @@ func SessionMiddlewareWithTokenCache(tc *auth.TokenCache) func(http.Handler) htt
 			}
 
 			if tc != nil && isSafeMethod(r.Method) && token != "" {
-				tc.Set(token, claims, 10*time.Second)
+				tc.Set(token, claims, auth.TokenFastPathTTL)
 			}
 
 			ctx := auth.WithUserContext(r.Context(), claims)
