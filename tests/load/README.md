@@ -30,6 +30,8 @@ docker compose -f docker-compose.yml -f docker-compose.ramcap.yml down
 
 Or with make: `make stack-ram RAM=6144`, `make load-test-saturation`, `make stack-ram-down`.
 
+Stage 8 (`08_connection_hold.js`) measures concurrent connection capacity: each VU opens a keep-alive connection and holds it open (sleeping ~20s between heartbeats) while the ladder ramps 2,000 -> 64,000 VUs. Run it with `make load-test-connections`. On a single laptop the stack held 32,000+ concurrent connections cleanly; past ~36,000 the k6 client itself is OOM-killed, so a distributed generator is required to find the server's true ceiling.
+
 ---
 
 ## 2. Prerequisites
