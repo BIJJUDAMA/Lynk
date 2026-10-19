@@ -288,4 +288,3 @@ func TestService_ListPublicProjects_SingleFlight(t *testing.T) {
 		t.Fatalf("expected exactly 1 repository invocation for ListPublic, got %d", actualCalls)
 	}
 }
-

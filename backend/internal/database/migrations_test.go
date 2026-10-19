@@ -280,4 +280,3 @@ func TestMigration000020_FilesExistAndSyntaxValid(t *testing.T) {
 		}
 	}
 }
-

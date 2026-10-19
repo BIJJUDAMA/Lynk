@@ -598,4 +598,3 @@ func (c *TwoTierCache) DeletePattern(ctx context.Context, pattern string) error 
 	}
 	return errors.Join(errs...)
 }
-

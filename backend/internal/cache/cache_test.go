@@ -526,5 +526,3 @@ func TestRedisInvalidationBus_NilClient(t *testing.T) {
 		t.Fatalf("expected nil error closing nil client bus: %v", err)
 	}
 }
-
-

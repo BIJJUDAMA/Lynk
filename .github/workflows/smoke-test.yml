@@ -29,7 +29,7 @@ jobs:
             until [ "$(docker inspect -f {{.State.Health.Status}} lynk-postgres 2>/dev/null)" = "healthy" ] && \
                   [ "$(docker inspect -f {{.State.Health.Status}} lynk-supertokens 2>/dev/null)" = "healthy" ] && \
                   [ "$(docker inspect -f {{.State.Health.Status}} lynk-minio 2>/dev/null)" = "healthy" ] && \
-                  [ "$(docker inspect -f {{.State.Health.Status}} lynk-api 2>/dev/null)" = "healthy" ] && \
+                  [ "$(docker inspect -f {{.State.Health.Status}} lynk-gateway 2>/dev/null)" = "healthy" ] && \
                   [ "$(docker inspect -f {{.State.Health.Status}} lynk-ai-api 2>/dev/null)" = "healthy" ]; do
               echo "Waiting for container healthchecks..."
               docker ps --format "table {{.Names}}\t{{.Status}}"
@@ -53,7 +53,9 @@ jobs:
         if: failure()
         run: |
           echo "=== Lynk API Logs ==="
-          docker logs lynk-api --tail 100 || true
+          docker compose logs api --tail 100 || true
+          echo "=== Lynk Gateway Logs ==="
+          docker logs lynk-gateway --tail 100 || true
           echo "=== Lynk AI API Logs ==="
           docker logs lynk-ai-api --tail 100 || true
           echo "=== Lynk AI Worker Logs ==="
@@ -68,4 +70,3 @@ jobs:
       - name: Teardown Stack
         if: always()
         run: docker compose down -v --remove-orphans
-

@@ -211,9 +211,9 @@ func TestETag_Non200Response_BypassesETag(t *testing.T) {
 
 func TestETag_SSEExemption_NotBuffered(t *testing.T) {
 	testCases := []struct {
-		name       string
-		path       string
-		acceptHdr  string
+		name      string
+		path      string
+		acceptHdr string
 	}{
 		{name: "Exact SSE path", path: "/events/stream"},
 		{name: "Prefixed SSE path", path: "/api/v1/events/stream"},
