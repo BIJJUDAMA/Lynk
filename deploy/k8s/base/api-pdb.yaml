@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: lynk-api-pdb
+  namespace: lynk-production
+spec:
+  minAvailable: 80%
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lynk-api
