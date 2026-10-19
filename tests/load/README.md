@@ -19,6 +19,17 @@ The test suite is orchestrated sequentially by `tests/load/run_all.js` across 6 
 
 The two heavy stages (05, 06) cover the merged high-throughput integration: the sharded L1 cache, SingleFlight request coalescing, Redis L2 with the invalidation bus, keyset pagination, capacity leases, and the safe-method session fast path. Measured results for the current build are recorded in `tests/load/results/REPORT.md`; the architecture behind them is in `docs/architecture/scalability.md`.
 
+Stage 7 (`07_saturation_ceiling.js`) is different: it uses k6's constant-arrival-rate executor with **no think time**, ramping a fixed arrival rate upward so the *server* is the limit rather than the VU count. Pair it with a RAM cap to see what the platform serves within a fixed server budget:
+
+```powershell
+node tests/load/ramcap.js 6144 > docker-compose.ramcap.yml   # any integer MiB
+docker compose -f docker-compose.yml -f docker-compose.ramcap.yml up -d --force-recreate
+node tests/load/run_all.js --stage=07_saturation_ceiling
+docker compose -f docker-compose.yml -f docker-compose.ramcap.yml down
+```
+
+Or with make: `make stack-ram RAM=6144`, `make load-test-saturation`, `make stack-ram-down`.
+
 ---
 
 ## 2. Prerequisites

@@ -108,7 +108,16 @@ Measured on a single developer host (Intel i7-13620H, 10 cores / 16 threads, 15.
 
 At peak the Go API used under 51 MiB RSS and never exceeded ~74% of one container CPU; PostgreSQL peaked near 52% CPU. The service is comfortable on a laptop, which is the point: the horizontal story (many replicas behind the gateway, HPA to 100 pods) is what turns this into campus scale, and nothing in the per-request path is a global lock.
 
-Full numbers and methodology: `tests/load/results/SUMMARY.md`.
+That table is VU-bound (each stage has a think time). A **constant-arrival saturation stage** (`07_saturation_ceiling.js`, no think time) removes the client's VU ceiling and measures the server directly. Run twice under hard whole-stack RAM caps (swap disabled), it shows RAM is not the limiting resource:
+
+| Budget (whole stack) | Throughput | p95 | p99 | Errors | Peak stack RSS |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **4 GiB** | **3,462 req/s** | 13.0 ms | 3.0 s | 0.00% | ~0.85 GiB |
+| **2 GiB** | **3,618 req/s** | 5.2 ms | 55.4 ms | 0.28% | ~0.53 GiB |
+
+The stack's working set fits in under 1 GiB; per-pod CPU (~3 cores at ~3.5k req/s) is the lever, which is what the HPA scales on. The RAM cap is parameterized by any integer MiB: `node tests/load/ramcap.js <MiB> > docker-compose.ramcap.yml` or `make stack-ram RAM=<MiB>`.
+
+Full numbers and methodology: `tests/load/results/REPORT.md` (and the auto-generated `SUMMARY.md`).
 
 ---
 

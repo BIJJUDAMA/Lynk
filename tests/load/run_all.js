@@ -55,6 +55,13 @@ const STAGES = [
     resultFile: path.join(RESULTS_DIR, '06_ultra_concurrency_stress.json'),
     description: 'Pushes concurrency to 2,500 VUs to evaluate Nginx micro-caching, L1 cache, and DB buffers',
   },
+  {
+    id: '07_saturation_ceiling',
+    name: '07. Constant-Arrival Saturation Ceiling',
+    script: path.join(SCRIPTS_DIR, '07_saturation_ceiling.js'),
+    resultFile: path.join(RESULTS_DIR, '07_saturation_ceiling.json'),
+    description: 'Ramps fixed arrival rate (no think time) to find the true per-pod server ceiling',
+  },
 ];
 
 // Ensure Windows default install paths for k6 and winget links are in PATH

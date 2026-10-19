@@ -1,4 +1,4 @@
-.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check load-test load-test-rate-limit load-test-cache load-test-pool load-test-concurrency load-test-stress load-test-ultra
+.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check load-test load-test-rate-limit load-test-cache load-test-pool load-test-concurrency load-test-stress load-test-ultra load-test-saturation stack-ram stack-ram-down
 
 help:
 	@echo "Available commands:"
@@ -13,6 +13,9 @@ help:
 	@echo "  make format-check   - Verify code formatting across all services"
 	@echo "  make load-test      - Run complete sequential k6 backend load test suite"
 	@echo "  make load-test-ultra - Run Stage 6 ultra-concurrency stress test (2,500 VUs)"
+	@echo "  make load-test-saturation - Run Stage 7 constant-arrival saturation ceiling (no think time)"
+	@echo "  make stack-ram RAM=N - Start the server stack capped to N MiB total (e.g. RAM=4096, RAM=6144)"
+	@echo "  make stack-ram-down  - Stop the RAM-capped server stack"
 
 setup-hooks:
 	@echo "==> Installing pre-commit hooks..."
@@ -124,4 +127,18 @@ load-test-ultra:
 	@echo "==> Running Stage 6: Ultra-concurrency stress test (2,500 VUs)..."
 	node tests/load/run_all.js --stage=06_ultra_concurrency_stress
 
+load-test-saturation:
+	@echo "==> Running Stage 7: Constant-arrival saturation ceiling (no think time)..."
+	k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/07_saturation_ceiling.json tests/load/scripts/07_saturation_ceiling.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/07_saturation_ceiling.json tests/load/scripts/07_saturation_ceiling.js
 
+RAM ?= 4096
+
+stack-ram:
+	@echo "==> Generating RAM cap override for $(RAM) MiB total..."
+	node tests/load/ramcap.js $(RAM) > docker-compose.ramcap.yml
+	@echo "==> Starting server stack capped to $(RAM) MiB total..."
+	docker compose -f docker-compose.yml -f docker-compose.ramcap.yml up -d --force-recreate
+
+stack-ram-down:
+	@echo "==> Stopping the RAM-capped server stack..."
+	docker compose -f docker-compose.yml -f docker-compose.ramcap.yml down

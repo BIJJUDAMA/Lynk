@@ -1,5 +1,6 @@
 # --- Antigravity / Agent orchestration ---
 .superpowers/
+.playwright-mcp/
 
 # --- Environment / secrets ---
 .env
@@ -33,6 +34,8 @@ dist/
 build/
 .venv/
 venv/
+.mypy_cache/
+.ruff_cache/
 
 # --- OS ---
 .DS_Store
@@ -53,3 +56,6 @@ desktop.ini
 *.log
 logs/
 tests/load/results/
+
+# --- Generated RAM-cap override (tests/load/ramcap.js) ---
+docker-compose.ramcap.yml
