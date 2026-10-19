@@ -1454,7 +1454,7 @@ func TestBuildRouter_ResponseCompression(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create gzip reader from response: %v", err)
 		}
-		defer gzReader.Close()
+		defer func() { _ = gzReader.Close() }()
 
 		decompressed, err := io.ReadAll(gzReader)
 		if err != nil {
@@ -1508,7 +1508,7 @@ func TestBuildRouter_ResponseCompression(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create gzip reader: %v", err)
 		}
-		defer gzReader.Close()
+		defer func() { _ = gzReader.Close() }()
 
 		decompressed, err := io.ReadAll(gzReader)
 		if err != nil {

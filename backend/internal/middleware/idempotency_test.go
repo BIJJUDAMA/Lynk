@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -492,7 +493,8 @@ func TestIdempotency_ASCIICompliance(t *testing.T) {
 		"../../cmd/api/main_test.go",
 	}
 	for _, file := range files {
-		data, err := os.ReadFile(file)
+		cleanPath := filepath.Clean(file)
+		data, err := os.ReadFile(cleanPath)
 		if err != nil {
 			t.Fatalf("failed to read %s: %v", file, err)
 		}

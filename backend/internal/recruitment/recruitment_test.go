@@ -162,7 +162,7 @@ func (m *mockRecruitmentRepo) AcceptApplicationTx(ctx context.Context, appID uui
 
 	// 1. Check project and capacity limits
 	var maxMembers int
-	var recruitmentStatus project.RecruitmentStatus = project.RecruitmentOpen
+	recruitmentStatus := project.RecruitmentOpen
 	if proj, ok := m.projects[app.ProjectID]; ok {
 		recruitmentStatus = proj.RecruitmentStatus
 		if proj.Settings != nil {

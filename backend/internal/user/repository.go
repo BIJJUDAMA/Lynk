@@ -156,7 +156,7 @@ func (r *Repository) UpsertProfile(ctx context.Context, p *Profile) error {
 	}
 	query := `
 		INSERT INTO profiles (user_id, first_name, last_name, bio, department, graduation_year, skills, portfolio_links, organization, organization_website, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, NOW())
 		ON CONFLICT (user_id) DO UPDATE
 		SET first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, bio = EXCLUDED.bio,
 		    department = EXCLUDED.department, graduation_year = EXCLUDED.graduation_year,
@@ -167,7 +167,7 @@ func (r *Repository) UpsertProfile(ctx context.Context, p *Profile) error {
 		          portfolio_links, resume_key, resume_filename, resume_byte_size, organization, organization_website, updated_at;
 	`
 	var returnedLinks []byte
-	err = r.db.QueryRow(ctx, query, p.UserID, p.FirstName, p.LastName, p.Bio, p.Department, p.GraduationYear, p.Skills, linksJSON, p.Organization, p.OrganizationWebsite).Scan(
+	err = r.db.QueryRow(ctx, query, p.UserID, p.FirstName, p.LastName, p.Bio, p.Department, p.GraduationYear, p.Skills, string(linksJSON), p.Organization, p.OrganizationWebsite).Scan(
 		&p.ID, &p.UserID, &p.FirstName, &p.LastName, &p.Bio, &p.Department,
 		&p.GraduationYear, &p.Skills, &returnedLinks, &p.ResumeKey, &p.ResumeFilename,
 		&p.ResumeByteSize, &p.Organization, &p.OrganizationWebsite, &p.UpdatedAt,
@@ -259,7 +259,7 @@ func (r *Repository) ProvisionUser(ctx context.Context, u *User, profile *Profil
 
 		profileQuery := `
 			INSERT INTO profiles (user_id, first_name, last_name, bio, department, graduation_year, skills, portfolio_links, organization, organization_website, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, NOW())
 			ON CONFLICT (user_id) DO UPDATE
 			SET first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, bio = EXCLUDED.bio,
 			    department = EXCLUDED.department, graduation_year = EXCLUDED.graduation_year,
@@ -270,7 +270,7 @@ func (r *Repository) ProvisionUser(ctx context.Context, u *User, profile *Profil
 			          portfolio_links, resume_key, resume_filename, resume_byte_size, organization, organization_website, updated_at;
 		`
 		var returnedLinks []byte
-		if err := tx.QueryRow(ctx, profileQuery, profile.UserID, profile.FirstName, profile.LastName, profile.Bio, profile.Department, profile.GraduationYear, profile.Skills, linksJSON, profile.Organization, profile.OrganizationWebsite).Scan(
+		if err := tx.QueryRow(ctx, profileQuery, profile.UserID, profile.FirstName, profile.LastName, profile.Bio, profile.Department, profile.GraduationYear, profile.Skills, string(linksJSON), profile.Organization, profile.OrganizationWebsite).Scan(
 			&profile.ID, &profile.UserID, &profile.FirstName, &profile.LastName, &profile.Bio, &profile.Department,
 			&profile.GraduationYear, &profile.Skills, &returnedLinks, &profile.ResumeKey, &profile.ResumeFilename,
 			&profile.ResumeByteSize, &profile.Organization, &profile.OrganizationWebsite, &profile.UpdatedAt,

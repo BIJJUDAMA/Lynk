@@ -123,12 +123,14 @@ func TestRouter_Route_NilContext(t *testing.T) {
 	replica := &pgxpool.Pool{}
 	router := NewRouter(primary, replica)
 
+	//nolint:staticcheck // SA1012 explicitly testing defensive nil-context handling
 	if got := router.Route(nil); got != replica {
 		t.Errorf("Route(nil) = %p; want replica %p", got, replica)
 	}
 }
 
 func TestIsStickyPrimary_EdgeCases(t *testing.T) {
+	//nolint:staticcheck // SA1012 explicitly testing defensive nil-context handling
 	if IsStickyPrimary(nil) {
 		t.Error("expected IsStickyPrimary(nil) == false")
 	}
@@ -137,6 +139,7 @@ func TestIsStickyPrimary_EdgeCases(t *testing.T) {
 		t.Error("expected IsStickyPrimary(Background) == false")
 	}
 
+	//nolint:staticcheck // SA1012 explicitly testing defensive nil-context handling
 	wrapped := WithStickyPrimary(nil)
 	if !IsStickyPrimary(wrapped) {
 		t.Error("expected IsStickyPrimary(WithStickyPrimary(nil)) == true")
