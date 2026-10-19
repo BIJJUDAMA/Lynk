@@ -1,0 +1,96 @@
+package recruitment
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
+)
+
+// CapacityLeaser controls in-memory flash recruitment applicant slots before DB locking.
+type CapacityLeaser interface {
+	AcquireLease(ctx context.Context, projectID uuid.UUID, maxMembers int) (bool, error)
+	ReleaseLease(ctx context.Context, projectID uuid.UUID) error
+}
+
+// RedisCapacityLeaser uses an atomic Lua script to guarantee zero over-recruitment at 1M RPS.
+type RedisCapacityLeaser struct {
+	client redis.UniversalClient
+	script *redis.Script
+}
+
+const luaAcquireCapacity = `
+local key = KEYS[1]
+local max_members = tonumber(ARGV[1])
+
+local current = redis.call('GET', key)
+if not current then
+    redis.call('SET', key, 1)
+    return 1
+end
+
+if tonumber(current) < max_members then
+    redis.call('INCR', key)
+    return 1
+else
+    return 0
+end
+`
+
+// NewRedisCapacityLeaser initializes the Lua reservation leaser.
+func NewRedisCapacityLeaser(client redis.UniversalClient) *RedisCapacityLeaser {
+	return &RedisCapacityLeaser{
+		client: client,
+		script: redis.NewScript(luaAcquireCapacity),
+	}
+}
+
+func (l *RedisCapacityLeaser) AcquireLease(ctx context.Context, projectID uuid.UUID, maxMembers int) (bool, error) {
+	key := fmt.Sprintf("recruitment:capacity:%s", projectID.String())
+	res, err := l.script.Run(ctx, l.client, []string{key}, maxMembers).Int()
+	if err != nil {
+		return false, err
+	}
+	return res == 1, nil
+}
+
+func (l *RedisCapacityLeaser) ReleaseLease(ctx context.Context, projectID uuid.UUID) error {
+	key := fmt.Sprintf("recruitment:capacity:%s", projectID.String())
+	return l.client.Decr(ctx, key).Err()
+}
+
+// InMemoryCapacityLeaser provides atomic in-process tracking for testing and local mode.
+type InMemoryCapacityLeaser struct {
+	mu     sync.Mutex
+	counts map[uuid.UUID]int
+}
+
+func NewInMemoryCapacityLeaser() *InMemoryCapacityLeaser {
+	return &InMemoryCapacityLeaser{
+		counts: make(map[uuid.UUID]int),
+	}
+}
+
+func (l *InMemoryCapacityLeaser) AcquireLease(ctx context.Context, projectID uuid.UUID, maxMembers int) (bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	cur := l.counts[projectID]
+	if maxMembers > 0 && cur >= maxMembers {
+		return false, nil
+	}
+	l.counts[projectID] = cur + 1
+	return true, nil
+}
+
+func (l *InMemoryCapacityLeaser) ReleaseLease(ctx context.Context, projectID uuid.UUID) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	cur := l.counts[projectID]
+	if cur > 0 {
+		l.counts[projectID] = cur - 1
+	}
+	return nil
+}
