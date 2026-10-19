@@ -2,8 +2,11 @@ package cache
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path"
 	"strings"
@@ -235,12 +238,201 @@ func New(redisURL string) Cacher {
 	return NewRedisCache(client)
 }
 
+// InvalidationMessage represents a cache eviction event broadcast across nodes.
+type InvalidationMessage struct {
+	SenderID string   `json:"sender_id"`
+	Action   string   `json:"action"` // "delete" or "pattern"
+	Keys     []string `json:"keys,omitempty"`
+	Pattern  string   `json:"pattern,omitempty"`
+}
+
+// InvalidationBus defines a pub/sub bus for distributed cache invalidation.
+type InvalidationBus interface {
+	Publish(ctx context.Context, msg InvalidationMessage) error
+	Subscribe(ctx context.Context, handler func(msg InvalidationMessage)) error
+	Close() error
+}
+
+// RedisInvalidationBus implements InvalidationBus backed by Redis Pub/Sub.
+type RedisInvalidationBus struct {
+	client  *redis.Client
+	channel string
+	pubsub  *redis.PubSub
+	cancel  context.CancelFunc
+	mu      sync.Mutex
+	closed  bool
+}
+
+var _ InvalidationBus = (*RedisInvalidationBus)(nil)
+
+// NewRedisInvalidationBus creates a new RedisInvalidationBus for the given channel.
+func NewRedisInvalidationBus(client *redis.Client, channel string) *RedisInvalidationBus {
+	if channel == "" {
+		channel = "lynk:cache:invalidation"
+	}
+	return &RedisInvalidationBus{
+		client:  client,
+		channel: channel,
+	}
+}
+
+// Publish serializes and publishes an InvalidationMessage to the Redis channel.
+func (b *RedisInvalidationBus) Publish(ctx context.Context, msg InvalidationMessage) error {
+	if b.client == nil {
+		return errors.New("redis client not configured")
+	}
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return b.client.Publish(ctx, b.channel, payload).Err()
+}
+
+// Subscribe subscribes to the Redis channel and starts a background goroutine
+// that invokes handler for each received InvalidationMessage.
+func (b *RedisInvalidationBus) Subscribe(ctx context.Context, handler func(msg InvalidationMessage)) error {
+	if b.client == nil {
+		return errors.New("redis client not configured")
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return errors.New("invalidation bus is closed")
+	}
+	if b.pubsub != nil {
+		return errors.New("already subscribed")
+	}
+
+	subCtx, cancel := context.WithCancel(context.Background())
+	pubsub := b.client.Subscribe(subCtx, b.channel)
+
+	// Confirm subscription is active
+	_, err := pubsub.Receive(ctx)
+	if err != nil {
+		cancel()
+		_ = pubsub.Close()
+		return err
+	}
+
+	b.pubsub = pubsub
+	b.cancel = cancel
+
+	ch := pubsub.Channel()
+	go func() {
+		for {
+			select {
+			case <-subCtx.Done():
+				return
+			case redisMsg, ok := <-ch:
+				if !ok {
+					return
+				}
+				var msg InvalidationMessage
+				if err := json.Unmarshal([]byte(redisMsg.Payload), &msg); err != nil {
+					continue
+				}
+				handler(msg)
+			}
+		}
+	}()
+
+	return nil
+}
+
+// Close closes the Redis pubsub subscription and stops the receiver goroutine.
+func (b *RedisInvalidationBus) Close() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return nil
+	}
+	b.closed = true
+	if b.cancel != nil {
+		b.cancel()
+	}
+	if b.pubsub != nil {
+		return b.pubsub.Close()
+	}
+	return nil
+}
+
+// InMemoryInvalidationBus provides an in-memory pub/sub multiplexer for testing.
+type InMemoryInvalidationBus struct {
+	mu          sync.RWMutex
+	subscribers []func(msg InvalidationMessage)
+	closed      bool
+}
+
+// MockInvalidationBus is an alias for InMemoryInvalidationBus.
+type MockInvalidationBus = InMemoryInvalidationBus
+
+var _ InvalidationBus = (*InMemoryInvalidationBus)(nil)
+
+// NewInMemoryInvalidationBus creates a new InMemoryInvalidationBus instance.
+func NewInMemoryInvalidationBus() *InMemoryInvalidationBus {
+	return &InMemoryInvalidationBus{
+		subscribers: make([]func(msg InvalidationMessage), 0),
+	}
+}
+
+// NewMockInvalidationBus creates a new MockInvalidationBus instance.
+func NewMockInvalidationBus() *MockInvalidationBus {
+	return NewInMemoryInvalidationBus()
+}
+
+// Publish broadcasts msg to all registered subscribers.
+func (b *InMemoryInvalidationBus) Publish(ctx context.Context, msg InvalidationMessage) error {
+	b.mu.RLock()
+	if b.closed {
+		b.mu.RUnlock()
+		return errors.New("invalidation bus is closed")
+	}
+	subs := make([]func(msg InvalidationMessage), len(b.subscribers))
+	copy(subs, b.subscribers)
+	b.mu.RUnlock()
+
+	for _, handler := range subs {
+		handler(msg)
+	}
+	return nil
+}
+
+// Subscribe registers a new subscriber callback.
+func (b *InMemoryInvalidationBus) Subscribe(ctx context.Context, handler func(msg InvalidationMessage)) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return errors.New("invalidation bus is closed")
+	}
+	b.subscribers = append(b.subscribers, handler)
+	return nil
+}
+
+// Close closes the in-memory bus and releases subscribers.
+func (b *InMemoryInvalidationBus) Close() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closed = true
+	b.subscribers = nil
+	return nil
+}
+
+func generateNodeID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("node-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
+
 // TwoTierCache provides a transparent two-tier cache architecture
 // combining an in-memory L1 cache with a remote L2 cache (such as Redis).
 type TwoTierCache struct {
-	l1    Cacher
-	l2    Cacher
-	l1TTL time.Duration
+	l1     Cacher
+	l2     Cacher
+	l1TTL  time.Duration
+	nodeID string
+	bus    InvalidationBus
 }
 
 var _ Cacher = (*TwoTierCache)(nil)
@@ -252,10 +444,50 @@ func NewTwoTierCache(l1 Cacher, l2 Cacher, l1TTL time.Duration) *TwoTierCache {
 		l1TTL = 10 * time.Second
 	}
 	return &TwoTierCache{
-		l1:    l1,
-		l2:    l2,
-		l1TTL: l1TTL,
+		l1:     l1,
+		l2:     l2,
+		l1TTL:  l1TTL,
+		nodeID: generateNodeID(),
 	}
+}
+
+// NodeID returns the unique node identifier for this cache instance.
+func (c *TwoTierCache) NodeID() string {
+	return c.nodeID
+}
+
+// Bus returns the configured InvalidationBus, or nil if none is set.
+func (c *TwoTierCache) Bus() InvalidationBus {
+	return c.bus
+}
+
+// SetInvalidationBus registers a distributed invalidation bus and subscribes
+// to remote eviction events. An optional nodeID can be passed; if omitted, a
+// random hex identifier is generated.
+func (c *TwoTierCache) SetInvalidationBus(bus InvalidationBus, nodeID ...string) error {
+	c.bus = bus
+	if len(nodeID) > 0 && nodeID[0] != "" {
+		c.nodeID = nodeID[0]
+	} else if c.nodeID == "" {
+		c.nodeID = generateNodeID()
+	}
+	if c.bus == nil {
+		return nil
+	}
+	return c.bus.Subscribe(context.Background(), func(msg InvalidationMessage) {
+		if msg.SenderID == c.nodeID {
+			return
+		}
+		if c.l1 == nil {
+			return
+		}
+		switch msg.Action {
+		case "delete":
+			_ = c.l1.Delete(context.Background(), msg.Keys...)
+		case "pattern":
+			_ = c.l1.DeletePattern(context.Background(), msg.Pattern)
+		}
+	})
 }
 
 // L1 returns the underlying L1 cache.
@@ -317,7 +549,7 @@ func (c *TwoTierCache) Set(ctx context.Context, key string, val any, ttl time.Du
 	return errors.Join(errs...)
 }
 
-// Delete removes one or more keys from both L1 and L2.
+// Delete removes one or more keys from both L1 and L2, then broadcasts an invalidation.
 func (c *TwoTierCache) Delete(ctx context.Context, keys ...string) error {
 	var errs []error
 	if c.l1 != nil {
@@ -330,10 +562,19 @@ func (c *TwoTierCache) Delete(ctx context.Context, keys ...string) error {
 			errs = append(errs, err)
 		}
 	}
+	if c.bus != nil && len(keys) > 0 {
+		if err := c.bus.Publish(ctx, InvalidationMessage{
+			SenderID: c.nodeID,
+			Action:   "delete",
+			Keys:     keys,
+		}); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	return errors.Join(errs...)
 }
 
-// DeletePattern purges keys matching pattern from both L1 and L2.
+// DeletePattern purges keys matching pattern from both L1 and L2, then broadcasts an invalidation.
 func (c *TwoTierCache) DeletePattern(ctx context.Context, pattern string) error {
 	var errs []error
 	if c.l1 != nil {
@@ -343,6 +584,15 @@ func (c *TwoTierCache) DeletePattern(ctx context.Context, pattern string) error 
 	}
 	if c.l2 != nil {
 		if err := c.l2.DeletePattern(ctx, pattern); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if c.bus != nil {
+		if err := c.bus.Publish(ctx, InvalidationMessage{
+			SenderID: c.nodeID,
+			Action:   "pattern",
+			Pattern:  pattern,
+		}); err != nil {
 			errs = append(errs, err)
 		}
 	}

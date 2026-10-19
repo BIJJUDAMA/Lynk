@@ -323,3 +323,208 @@ func TestTwoTierCache_NilResilience(t *testing.T) {
 	}
 }
 
+func TestTwoTierCache_DistributedInvalidation(t *testing.T) {
+	ctx := context.Background()
+	bus := NewInMemoryInvalidationBus()
+
+	l1Node1 := NewMemoryCache()
+	l2Shared := NewMemoryCache()
+	ttc1 := NewTwoTierCache(l1Node1, l2Shared, 5*time.Minute)
+	if err := ttc1.SetInvalidationBus(bus, "node-1"); err != nil {
+		t.Fatalf("failed to set invalidation bus on node 1: %v", err)
+	}
+
+	l1Node2 := NewMemoryCache()
+	ttc2 := NewTwoTierCache(l1Node2, l2Shared, 5*time.Minute)
+	if err := ttc2.SetInvalidationBus(bus, "node-2"); err != nil {
+		t.Fatalf("failed to set invalidation bus on node 2: %v", err)
+	}
+
+	key := "project:slug:distributed"
+	val := sampleData{Title: "Distributed Systems Hardening"}
+
+	// Seed both Node 1 and Node 2 L1 caches directly
+	if err := l1Node1.Set(ctx, key, val, 5*time.Minute); err != nil {
+		t.Fatalf("failed to set node 1 L1 cache: %v", err)
+	}
+	if err := l1Node2.Set(ctx, key, val, 5*time.Minute); err != nil {
+		t.Fatalf("failed to set node 2 L1 cache: %v", err)
+	}
+	if err := l2Shared.Set(ctx, key, val, 5*time.Minute); err != nil {
+		t.Fatalf("failed to set shared L2 cache: %v", err)
+	}
+
+	// Verify both nodes initially have the key in L1
+	var out sampleData
+	if found, _ := l1Node1.Get(ctx, key, &out); !found {
+		t.Fatalf("expected node 1 L1 to have key before invalidation")
+	}
+	if found, _ := l1Node2.Get(ctx, key, &out); !found {
+		t.Fatalf("expected node 2 L1 to have key before invalidation")
+	}
+
+	// Node 1 mutates and invalidates key via TwoTierCache.Delete
+	if err := ttc1.Delete(ctx, key); err != nil {
+		t.Fatalf("failed to delete key on node 1: %v", err)
+	}
+
+	// Node 1 L1 and L2 must be evicted locally
+	if found, _ := l1Node1.Get(ctx, key, &out); found {
+		t.Fatalf("expected node 1 L1 to be evicted immediately")
+	}
+	if found, _ := l2Shared.Get(ctx, key, &out); found {
+		t.Fatalf("expected shared L2 to be evicted immediately")
+	}
+
+	// Node 2 L1 must be evicted via invalidation bus broadcast
+	if found, _ := l1Node2.Get(ctx, key, &out); found {
+		t.Fatalf("expected node 2 L1 to be evicted by cross-replica invalidation bus")
+	}
+}
+
+func TestTwoTierCache_DistributedInvalidation_DeletePattern(t *testing.T) {
+	ctx := context.Background()
+	bus := NewMockInvalidationBus()
+
+	l1Node1 := NewMemoryCache()
+	l1Node2 := NewMemoryCache()
+	l1Node3 := NewMemoryCache()
+	l2Shared := NewMemoryCache()
+
+	ttc1 := NewTwoTierCache(l1Node1, l2Shared, 5*time.Minute)
+	_ = ttc1.SetInvalidationBus(bus, "node-1")
+
+	ttc2 := NewTwoTierCache(l1Node2, l2Shared, 5*time.Minute)
+	_ = ttc2.SetInvalidationBus(bus, "node-2")
+
+	ttc3 := NewTwoTierCache(l1Node3, l2Shared, 5*time.Minute)
+	_ = ttc3.SetInvalidationBus(bus, "node-3")
+
+	keys := []string{"project:1", "project:2", "user:keep"}
+	for _, k := range keys {
+		v := sampleData{Title: k}
+		_ = l1Node1.Set(ctx, k, v, 5*time.Minute)
+		_ = l1Node2.Set(ctx, k, v, 5*time.Minute)
+		_ = l1Node3.Set(ctx, k, v, 5*time.Minute)
+		_ = l2Shared.Set(ctx, k, v, 5*time.Minute)
+	}
+
+	// Node 1 deletes pattern "project:*"
+	if err := ttc1.DeletePattern(ctx, "project:*"); err != nil {
+		t.Fatalf("failed to delete pattern on node 1: %v", err)
+	}
+
+	var out sampleData
+	// Verify Node 2 and Node 3 have evicted project keys
+	for _, k := range []string{"project:1", "project:2"} {
+		if found, _ := l1Node2.Get(ctx, k, &out); found {
+			t.Fatalf("expected node 2 L1 to have evicted %s", k)
+		}
+		if found, _ := l1Node3.Get(ctx, k, &out); found {
+			t.Fatalf("expected node 3 L1 to have evicted %s", k)
+		}
+	}
+
+	// Verify unaffected key remains in Node 2 and Node 3 L1
+	if found, _ := l1Node2.Get(ctx, "user:keep", &out); !found {
+		t.Fatalf("expected node 2 L1 to retain user:keep")
+	}
+	if found, _ := l1Node3.Get(ctx, "user:keep", &out); !found {
+		t.Fatalf("expected node 3 L1 to retain user:keep")
+	}
+}
+
+func TestTwoTierCache_SetInvalidationBus_NodeIDAndAccessors(t *testing.T) {
+	mem := NewMemoryCache()
+	ttc := NewTwoTierCache(mem, mem, time.Minute)
+
+	if ttc.NodeID() == "" {
+		t.Fatalf("expected non-empty auto-generated nodeID on creation")
+	}
+
+	bus := NewInMemoryInvalidationBus()
+	defer func() { _ = bus.Close() }()
+
+	if err := ttc.SetInvalidationBus(bus); err != nil {
+		t.Fatalf("unexpected error setting invalidation bus without explicit nodeID: %v", err)
+	}
+
+	if ttc.Bus() != bus {
+		t.Fatalf("expected Bus() accessor to return registered bus")
+	}
+
+	origID := ttc.NodeID()
+	if origID == "" {
+		t.Fatalf("expected NodeID() to be populated")
+	}
+
+	// Set with explicit node ID
+	_ = ttc.SetInvalidationBus(bus, "custom-node-id")
+	if ttc.NodeID() != "custom-node-id" {
+		t.Fatalf("expected custom-node-id, got %s", ttc.NodeID())
+	}
+}
+
+func TestInMemoryInvalidationBus_Lifecycle(t *testing.T) {
+	bus := NewInMemoryInvalidationBus()
+	ctx := context.Background()
+
+	var received []InvalidationMessage
+	err := bus.Subscribe(ctx, func(msg InvalidationMessage) {
+		received = append(received, msg)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error subscribing: %v", err)
+	}
+
+	msg := InvalidationMessage{
+		SenderID: "node-a",
+		Action:   "delete",
+		Keys:     []string{"k1", "k2"},
+	}
+	if err := bus.Publish(ctx, msg); err != nil {
+		t.Fatalf("unexpected error publishing: %v", err)
+	}
+
+	if len(received) != 1 {
+		t.Fatalf("expected 1 message received, got %d", len(received))
+	}
+	if received[0].SenderID != "node-a" || received[0].Action != "delete" || len(received[0].Keys) != 2 {
+		t.Fatalf("unexpected message content: %+v", received[0])
+	}
+
+	// Close bus
+	if err := bus.Close(); err != nil {
+		t.Fatalf("unexpected error closing bus: %v", err)
+	}
+
+	// Operations after close should return error
+	if err := bus.Publish(ctx, msg); err == nil {
+		t.Fatalf("expected error publishing to closed bus")
+	}
+	if err := bus.Subscribe(ctx, func(InvalidationMessage) {}); err == nil {
+		t.Fatalf("expected error subscribing to closed bus")
+	}
+}
+
+func TestRedisInvalidationBus_NilClient(t *testing.T) {
+	ctx := context.Background()
+	bus := NewRedisInvalidationBus(nil, "")
+	if bus.channel != "lynk:cache:invalidation" {
+		t.Fatalf("expected default channel 'lynk:cache:invalidation', got %s", bus.channel)
+	}
+
+	if err := bus.Publish(ctx, InvalidationMessage{}); err == nil {
+		t.Fatalf("expected error publishing with nil client")
+	}
+
+	if err := bus.Subscribe(ctx, func(InvalidationMessage) {}); err == nil {
+		t.Fatalf("expected error subscribing with nil client")
+	}
+
+	if err := bus.Close(); err != nil {
+		t.Fatalf("expected nil error closing nil client bus: %v", err)
+	}
+}
+
+
