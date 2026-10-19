@@ -40,6 +40,7 @@ import (
 	"github.com/lynk/backend/internal/team"
 	"github.com/lynk/backend/internal/user"
 	"github.com/lynk/backend/internal/workspace"
+	"github.com/redis/go-redis/v9"
 	"github.com/supertokens/supertokens-golang/supertokens"
 )
 
@@ -543,6 +544,35 @@ func NewServer(cfg Config, handler http.Handler) *http.Server {
 	}
 }
 
+// initRedisClient attempts to establish a Redis connection within a short timeout.
+// Returns nil if redisURL is empty, invalid, or unreachable.
+func initRedisClient(ctx context.Context, redisURL string) *redis.Client {
+	trimmed := strings.TrimSpace(redisURL)
+	if trimmed == "" {
+		return nil
+	}
+	opt, err := redis.ParseURL(trimmed)
+	if err != nil {
+		slog.Warn("invalid redis url, falling back to memory cache", "error", err)
+		return nil
+	}
+	opt.MaxRetries = 0
+	opt.DialTimeout = 200 * time.Millisecond
+	opt.ReadTimeout = 200 * time.Millisecond
+	opt.WriteTimeout = 200 * time.Millisecond
+
+	client := redis.NewClient(opt)
+	pingCtx, pingCancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer pingCancel()
+
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		slog.Warn("cannot ping redis, falling back to memory cache", "error", err)
+		_ = client.Close()
+		return nil
+	}
+	return client
+}
+
 func main() {
 	cfg := config.Load()
 	if err := cfg.Validate(); err != nil {
@@ -654,8 +684,25 @@ func main() {
 
 	// 5. Wire Repositories, Services, and Handlers
 
-	// Initialize cache layer (Redis with MemoryCache fallback)
-	appCache := cache.New(cfg.RedisURL)
+	// Two-tier cache: L1 in-memory (10s TTL) backed by L2 Redis for sub-microsecond reads
+	redisClient := initRedisClient(ctx, cfg.RedisURL)
+	if redisClient != nil {
+		defer func() {
+			_ = redisClient.Close()
+		}()
+	}
+
+	logger := slog.Default()
+	var appCache cache.Cacher
+	memCache := cache.NewMemoryCache()
+	if redisClient != nil {
+		redisCache := cache.NewRedisCache(redisClient)
+		appCache = cache.NewTwoTierCache(memCache, redisCache, 10*time.Second)
+		logger.Info("initialized two-tier cache (L1 in-memory + L2 Redis)")
+	} else {
+		appCache = memCache
+		logger.Info("initialized in-memory cache fallback")
+	}
 
 	// 6. Initialize Outbox Writer & SSE Broker
 	// Create SSE broker first so outbox handlers can close over it.
@@ -736,7 +783,7 @@ func main() {
 
 	// 5b. Wire Project-First Domain Repositories, Services, and Handlers
 	projectRepo := project.NewRepository(pool)
-	projectService := project.NewService(projectRepo)
+	projectService := project.NewService(projectRepo).WithCache(appCache)
 	projectHandler := project.NewHandler(projectService, projectRepo)
 
 	teamRepo := team.NewRepository(pool)

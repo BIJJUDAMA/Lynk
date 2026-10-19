@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lynk/backend/internal/application"
 	"github.com/lynk/backend/internal/auth"
+	"github.com/lynk/backend/internal/cache"
 	"github.com/lynk/backend/internal/contract"
 	"github.com/lynk/backend/internal/job"
 	"github.com/lynk/backend/internal/middleware"
@@ -1339,4 +1340,47 @@ func TestResolveMigrationDatabaseURL(t *testing.T) {
 		}
 	})
 }
+
+func TestTwoTierCache_WiringIntegration(t *testing.T) {
+	mem := cache.NewMemoryCache()
+	ttc := cache.NewTwoTierCache(mem, mem, 5*time.Second)
+
+	ctx := context.Background()
+	err := ttc.Set(ctx, "wiring:test", "ok", 30*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error setting two-tier cache: %v", err)
+	}
+
+	var res string
+	found, err := ttc.Get(ctx, "wiring:test", &res)
+	if err != nil || !found || res != "ok" {
+		t.Fatalf("expected found=true res='ok', got found=%v res=%s", found, res)
+	}
+}
+
+func TestInitRedisClient(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("empty url returns nil", func(t *testing.T) {
+		client := initRedisClient(ctx, "")
+		if client != nil {
+			t.Fatalf("expected nil client for empty url")
+		}
+	})
+
+	t.Run("invalid url returns nil", func(t *testing.T) {
+		client := initRedisClient(ctx, "not-a-redis-url")
+		if client != nil {
+			t.Fatalf("expected nil client for invalid url")
+		}
+	})
+
+	t.Run("unreachable redis returns nil without panic", func(t *testing.T) {
+		client := initRedisClient(ctx, "redis://127.0.0.1:65534")
+		if client != nil {
+			t.Fatalf("expected nil client for unreachable redis")
+		}
+	})
+}
+
 
