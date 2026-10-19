@@ -961,8 +961,22 @@ func (m *mockProjectRepo) GetProjectBySlug(ctx context.Context, slug string) (*p
 	return nil, project.ErrProjectNotFound
 }
 
+func (m *mockProjectRepo) GetByIDOrSlug(ctx context.Context, idOrSlug string) (*project.Project, error) {
+	trimmed := strings.TrimSpace(idOrSlug)
+	if id, err := uuid.Parse(trimmed); err == nil {
+		if p, err := m.GetProjectByID(ctx, id); err == nil {
+			return p, nil
+		}
+	}
+	return m.GetProjectBySlug(ctx, trimmed)
+}
+
 func (m *mockProjectRepo) ListProjects(ctx context.Context, filter project.ListFilter) ([]project.Project, int, error) {
 	return m.projects, len(m.projects), nil
+}
+
+func (m *mockProjectRepo) ListPublic(ctx context.Context, filter project.ListFilter) ([]project.Project, error) {
+	return m.projects, nil
 }
 
 func (m *mockProjectRepo) UpdateProject(ctx context.Context, p *project.Project) error {
@@ -1306,3 +1320,23 @@ func TestBuildRouter_ProjectAndRecruitmentRoutes(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveMigrationDatabaseURL(t *testing.T) {
+	defaultURL := "postgres://user:pass@pgbouncer:6432/lynk_db"
+
+	t.Run("defaults to defaultURL when MIGRATION_DATABASE_URL is unset", func(t *testing.T) {
+		t.Setenv("MIGRATION_DATABASE_URL", "")
+		if got := resolveMigrationDatabaseURL(defaultURL); got != defaultURL {
+			t.Errorf("expected %q, got %q", defaultURL, got)
+		}
+	})
+
+	t.Run("uses MIGRATION_DATABASE_URL when set", func(t *testing.T) {
+		migURL := "postgres://user:pass@postgres:5432/lynk_db"
+		t.Setenv("MIGRATION_DATABASE_URL", migURL)
+		if got := resolveMigrationDatabaseURL(defaultURL); got != migURL {
+			t.Errorf("expected %q, got %q", migURL, got)
+		}
+	})
+}
+

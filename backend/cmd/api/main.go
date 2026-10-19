@@ -66,6 +66,10 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+func resolveMigrationDatabaseURL(defaultURL string) string {
+	return getEnv("MIGRATION_DATABASE_URL", defaultURL)
+}
+
 func warnIfDefaultSecrets(appEnv, accessKey, secretKey, stAPIKey string, aiSecret ...string) string {
 	env := strings.ToLower(strings.TrimSpace(appEnv))
 	isDev := env == "" || env == "development" || env == "dev" || env == "local"
@@ -576,8 +580,31 @@ func main() {
 	defer pool.Close()
 
 	// 2. Run Database Migrations on Startup
+	migrationDBURL := resolveMigrationDatabaseURL(cfg.DatabaseURL)
+	migrationPool := pool
+	if migrationDBURL != cfg.DatabaseURL {
+		var migErr error
+		for attempts := 1; attempts <= 15; attempts++ {
+			migrationPool, migErr = database.NewPool(ctx, migrationDBURL)
+			if migErr == nil {
+				log.Printf("Connected to migration database successfully")
+				break
+			}
+			log.Printf("Waiting for migration database connection (%s), attempt %d/15: %v", redactDatabaseURL(migrationDBURL), attempts, migErr)
+			select {
+			case <-ctx.Done():
+				log.Fatal("Startup cancelled while waiting for migration database")
+			case <-time.After(2 * time.Second):
+			}
+		}
+		if migErr != nil {
+			log.Fatalf("Failed to connect to migration database: %v", migErr)
+		}
+		defer migrationPool.Close()
+	}
+
 	log.Printf("Running migrations from %s...", cfg.MigrationsDir)
-	if err := database.RunMigrations(ctx, pool, cfg.MigrationsDir); err != nil {
+	if err := database.RunMigrations(ctx, migrationPool, cfg.MigrationsDir); err != nil {
 		log.Fatalf("Failed to run database migrations: %v", err)
 	}
 	log.Printf("Database migrations applied successfully")
