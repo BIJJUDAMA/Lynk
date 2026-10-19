@@ -1,5 +1,5 @@
 // Master Load Test Orchestrator for Lynk
-// Executes all 4 k6 stages sequentially and outputs a unified metric summary.
+// Executes k6 stages sequentially and outputs a unified metric summary.
 // 100% pure ASCII
 
 const { execSync, spawnSync } = require('child_process');
@@ -40,6 +40,13 @@ const STAGES = [
     script: path.join(SCRIPTS_DIR, '04_user_concurrency.js'),
     resultFile: path.join(RESULTS_DIR, '04_user_concurrency.json'),
     description: 'Ramps up to 350 VUs with realistic think times to identify capacity ceiling',
+  },
+  {
+    id: '05_high_concurrency_stress',
+    name: '05. High-Concurrency Stress (1,000 VUs)',
+    script: path.join(SCRIPTS_DIR, '05_high_concurrency_stress.js'),
+    resultFile: path.join(RESULTS_DIR, '05_high_concurrency_stress.json'),
+    description: 'Pushes concurrency to 1,000 VUs evaluating PgBouncer, Redis cache, and covering indexes',
   },
 ];
 
@@ -94,6 +101,28 @@ async function main() {
   console.log('                 LYNK BACKEND LOAD TESTING CONTROL PLANE                ');
   console.log('========================================================================\n');
 
+  // Parse command line arguments
+  let stageFilter = null;
+  for (let i = 2; i < process.argv.length; i++) {
+    const arg = process.argv[i];
+    if (arg.startsWith('--stage=')) {
+      stageFilter = arg.slice('--stage='.length);
+    } else if (arg === '--stage' && i + 1 < process.argv.length) {
+      stageFilter = process.argv[i + 1];
+    }
+  }
+
+  let activeStages = STAGES;
+  if (stageFilter) {
+    activeStages = STAGES.filter((s) => s.id === stageFilter || s.id.includes(stageFilter));
+    if (activeStages.length === 0) {
+      console.error(`[ERROR] No stage matches filter "${stageFilter}". Available stages:`);
+      STAGES.forEach((s) => console.error(`  - ${s.id} (${s.name})`));
+      process.exit(1);
+    }
+    console.log(`==> Filtered to stage: ${activeStages.map((s) => s.id).join(', ')}\n`);
+  }
+
   // 1. Ensure results directory exists
   if (!fs.existsSync(RESULTS_DIR)) {
     fs.mkdirSync(RESULTS_DIR, { recursive: true });
@@ -127,15 +156,15 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`\nExecuting 4 test stages sequentially with 5s cooldown intervals...\n`);
+  console.log(`\nExecuting ${activeStages.length} test stage(s) sequentially with 5s cooldown intervals...\n`);
 
   const summaryData = [];
 
   // 4. Sequential execution loop
-  for (let i = 0; i < STAGES.length; i++) {
-    const stage = STAGES[i];
+  for (let i = 0; i < activeStages.length; i++) {
+    const stage = activeStages[i];
     console.log(`------------------------------------------------------------------------`);
-    console.log(`[STAGE ${i + 1}/${STAGES.length}] ${stage.name}`);
+    console.log(`[STAGE ${i + 1}/${activeStages.length}] ${stage.name}`);
     console.log(`Target: ${stage.description}`);
     console.log(`------------------------------------------------------------------------`);
 
@@ -204,7 +233,7 @@ async function main() {
       metrics,
     });
 
-    if (i < STAGES.length - 1) {
+    if (i < activeStages.length - 1) {
       console.log('==> Pausing 5 seconds for TCP socket cooldown and DB pool stabilization...\n');
       await sleepMs(5000);
     }
@@ -290,11 +319,12 @@ function generateMarkdownReport(rows, peakRps, maxVUs, estimatedUsers) {
 
 ## 1. Executive Summary
 
-The Lynk backend test suite executed 4 sequential load stages evaluating:
+The Lynk backend test suite executed ${rows.length} sequential load stage(s) evaluating:
 1. **DDoS Protection & Rate Limiting** (\`NewSlidingWindowMiddleware\` 120 req/min).
 2. **Read Path Performance** (Project workspace listings and hybrid search).
 3. **Database Connection Queuing** (\`pgxpool.MaxConns = 25\` under contention).
 4. **Max Virtual User Concurrency** (Progressive multi-VU ramping to find the capacity cliff).
+5. **High-Concurrency Stress** (1,000 VUs evaluating PgBouncer, Redis cache, and covering indexes).
 
 ---
 

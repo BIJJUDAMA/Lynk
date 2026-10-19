@@ -1,4 +1,4 @@
-.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check load-test load-test-rate-limit load-test-cache load-test-pool load-test-concurrency
+.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check load-test load-test-rate-limit load-test-cache load-test-pool load-test-concurrency load-test-stress
 
 help:
 	@echo "Available commands:"
@@ -114,3 +114,9 @@ load-test-pool:
 load-test-concurrency:
 	@echo "==> Running Stage 4: Max user concurrency breakpoint test..."
 	k6 run tests/load/scripts/04_user_concurrency.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/04_user_concurrency.js
+
+load-test-stress:
+	@echo "==> Running Stage 5: High-concurrency stress test (1,000 VUs)..."
+	k6 run tests/load/scripts/05_high_concurrency_stress.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/05_high_concurrency_stress.js
+
+
