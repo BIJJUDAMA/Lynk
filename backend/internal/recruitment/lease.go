@@ -26,6 +26,11 @@ const luaAcquireCapacity = `
 local key = KEYS[1]
 local max_members = tonumber(ARGV[1])
 
+if max_members <= 0 then
+    redis.call('INCR', key)
+    return 1
+end
+
 local current = redis.call('GET', key)
 if not current then
     redis.call('SET', key, 1)

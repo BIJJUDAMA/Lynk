@@ -3,6 +3,7 @@ package recruitment
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
@@ -116,6 +117,45 @@ func TestRedisCapacityLeaser_AcquireRelease(t *testing.T) {
 	}
 	if ok {
 		t.Fatal("expected lease to be rejected after re-acquiring to capacity")
+	}
+}
+
+func TestRedisCapacityLeaser_NonPositiveMaxIsUnlimited(t *testing.T) {
+	leaser, client := newTestRedisCapacityLeaser(t)
+	ctx := context.Background()
+
+	for _, maxMembers := range []int{0, -1} {
+		t.Run(fmt.Sprintf("max=%d", maxMembers), func(t *testing.T) {
+			projID := uuid.New()
+			key := redisCapacityKey(projID)
+
+			const attempts = 8
+			var wg sync.WaitGroup
+			results := make([]bool, attempts)
+			errs := make([]error, attempts)
+			for i := 0; i < attempts; i++ {
+				wg.Add(1)
+				go func(idx int) {
+					defer wg.Done()
+					ok, err := leaser.AcquireLease(ctx, projID, maxMembers)
+					results[idx] = ok
+					errs[idx] = err
+				}(i)
+			}
+			wg.Wait()
+
+			for i := 0; i < attempts; i++ {
+				if errs[i] != nil {
+					t.Fatalf("acquire %d failed: %v", i, errs[i])
+				}
+				if !results[i] {
+					t.Fatalf("acquire %d rejected despite unlimited capacity", i)
+				}
+			}
+			if got := redisCapacityCounter(t, client, key); got != attempts {
+				t.Fatalf("expected counter %d after unlimited acquires, got %d", attempts, got)
+			}
+		})
 	}
 }
 
