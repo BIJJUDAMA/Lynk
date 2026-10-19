@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 )
@@ -18,6 +19,7 @@ type EmbeddingGenerator interface {
 type Service struct {
 	repo           ProjectEmbeddingRepository
 	embedGenerator EmbeddingGenerator
+	queryCache     sync.Map
 }
 
 // NewService constructs a new AI semantic discovery Service.
@@ -76,9 +78,16 @@ func (s *Service) SearchProjectsSemantic(ctx context.Context, query string, limi
 		return nil, errors.New("embedding generator is not configured")
 	}
 
-	queryVector, err := s.embedGenerator.GenerateEmbedding(ctx, trimmedQuery)
-	if err != nil {
-		return nil, fmt.Errorf("failed to embed search query: %w", err)
+	var queryVector []float32
+	if cached, ok := s.queryCache.Load(trimmedQuery); ok {
+		queryVector = cached.([]float32)
+	} else {
+		vec, err := s.embedGenerator.GenerateEmbedding(ctx, trimmedQuery)
+		if err != nil {
+			return nil, fmt.Errorf("failed to embed search query: %w", err)
+		}
+		queryVector = vec
+		s.queryCache.Store(trimmedQuery, vec)
 	}
 
 	if s.repo == nil {
