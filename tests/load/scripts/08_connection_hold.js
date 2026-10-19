@@ -19,11 +19,15 @@ export const options = {
       executor: 'ramping-vus',
       startVUs: 0,
       stages: [
-        { duration: '20s', target: 500 },    // Tier 1: 500 concurrent
-        { duration: '30s', target: 2000 },   // Tier 2: 2,000 concurrent
-        { duration: '40s', target: 5000 },   // Tier 3: 5,000 concurrent
-        { duration: '40s', target: 8000 },   // Tier 4: 8,000 concurrent
-        { duration: '20s', target: 0 },      // Release
+        { duration: '15s', target: 2000 },    // Tier 1: 2,000 concurrent (verified clean)
+        { duration: '20s', target: 8000 },    // Tier 2: 8,000 concurrent (verified clean)
+        { duration: '20s', target: 16000 },   // Tier 3: 16,000 concurrent
+        { duration: '30s', target: 32000 },   // Tier 4: 32,000 concurrent
+        { duration: '30s', target: 40000 },   // Tier 5: 40,000 concurrent
+        { duration: '30s', target: 48000 },   // Tier 6: 48,000 concurrent
+        { duration: '30s', target: 56000 },   // Tier 7: 56,000 concurrent
+        { duration: '30s', target: 64000 },   // Tier 8: 64,000 concurrent
+        { duration: '20s', target: 0 },       // Release
       ],
       gracefulStop: '30s',
     },

@@ -106,23 +106,23 @@ load-test:
 
 load-test-rate-limit:
 	@echo "==> Running Stage 1: Rate limiter enforcement test..."
-	k6 run tests/load/scripts/01_rate_limit.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/01_rate_limit.js
+	k6 run tests/load/scripts/01_rate_limit.js || docker run --rm -i --network=host -v "$(CURDIR):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/01_rate_limit.js
 
 load-test-cache:
 	@echo "==> Running Stage 2: Cache & read benchmark..."
-	k6 run tests/load/scripts/02_cache_benchmark.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/02_cache_benchmark.js
+	k6 run tests/load/scripts/02_cache_benchmark.js || docker run --rm -i --network=host -v "$(CURDIR):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/02_cache_benchmark.js
 
 load-test-pool:
 	@echo "==> Running Stage 3: Database pool saturation test..."
-	k6 run tests/load/scripts/03_pool_saturation.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/03_pool_saturation.js
+	k6 run tests/load/scripts/03_pool_saturation.js || docker run --rm -i --network=host -v "$(CURDIR):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/03_pool_saturation.js
 
 load-test-concurrency:
 	@echo "==> Running Stage 4: Max user concurrency breakpoint test..."
-	k6 run tests/load/scripts/04_user_concurrency.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/04_user_concurrency.js
+	k6 run tests/load/scripts/04_user_concurrency.js || docker run --rm -i --network=host -v "$(CURDIR):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/04_user_concurrency.js
 
 load-test-stress:
 	@echo "==> Running Stage 5: High-concurrency stress test (1,000 VUs)..."
-	k6 run tests/load/scripts/05_high_concurrency_stress.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/05_high_concurrency_stress.js
+	k6 run tests/load/scripts/05_high_concurrency_stress.js || docker run --rm -i --network=host -v "$(CURDIR):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run tests/load/scripts/05_high_concurrency_stress.js
 
 load-test-ultra:
 	@echo "==> Running Stage 6: Ultra-concurrency stress test (2,500 VUs)..."
@@ -130,11 +130,11 @@ load-test-ultra:
 
 load-test-saturation:
 	@echo "==> Running Stage 7: Constant-arrival saturation ceiling (no think time)..."
-	k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/07_saturation_ceiling.json tests/load/scripts/07_saturation_ceiling.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/07_saturation_ceiling.json tests/load/scripts/07_saturation_ceiling.js
+	k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/07_saturation_ceiling.json tests/load/scripts/07_saturation_ceiling.js || docker run --rm -i --network=host -v "$(CURDIR):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/07_saturation_ceiling.json tests/load/scripts/07_saturation_ceiling.js
 
 load-test-connections:
-	@echo "==> Running Stage 8: Concurrent connection hold (500 -> 8,000 held connections)..."
-	k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/08_connection_hold.json tests/load/scripts/08_connection_hold.js || docker run --rm -i --network=host -v "$$(pwd):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/08_connection_hold.json tests/load/scripts/08_connection_hold.js
+	@echo "==> Running Stage 8: Concurrent connection hold (500 -> 64,000 held connections)..."
+	k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/08_connection_hold.json tests/load/scripts/08_connection_hold.js || docker run --rm -i --network=host -v "$(CURDIR):/lynk" -w /lynk -e API_BASE_URL=http://localhost:8080/api/v1 grafana/k6 run "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)" --summary-export=tests/load/results/08_connection_hold.json tests/load/scripts/08_connection_hold.js
 
 RAM ?= 4096
 
