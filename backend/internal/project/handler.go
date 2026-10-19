@@ -73,6 +73,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		LifecycleStatus:   LifecycleStatus(strings.ToLower(strings.TrimSpace(q.Get("lifecycle_status")))),
 		SearchQuery:       strings.TrimSpace(q.Get("search")),
 		OwnerMemberID:     strings.TrimSpace(q.Get("owner_id")),
+		Cursor:            strings.TrimSpace(q.Get("cursor")),
 	}
 	if filter.SearchQuery == "" {
 		filter.SearchQuery = strings.TrimSpace(q.Get("q"))

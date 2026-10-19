@@ -131,4 +131,5 @@ type ListFilter struct {
 	OwnerMemberID     string
 	Limit             int
 	Offset            int
+	Cursor            string
 }

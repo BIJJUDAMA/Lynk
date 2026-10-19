@@ -182,17 +182,33 @@ func (r *pgxRepository) ListProjects(ctx context.Context, filter ListFilter) ([]
 		offset = 0
 	}
 
+	dataWhere := whereClause
+	dataArgs := args
+	dataArgIdx := argIdx
+	orderBy := "created_at DESC"
+
+	if filter.Cursor != "" {
+		cursorTime, cursorID, cErr := DecodeCursor(filter.Cursor)
+		if cErr == nil {
+			dataWhere = fmt.Sprintf("%s AND (created_at, id) < ($%d, $%d)", dataWhere, dataArgIdx, dataArgIdx+1)
+			dataArgs = append(append([]any{}, args...), cursorTime, cursorID)
+			dataArgIdx += 2
+			orderBy = "created_at DESC, id DESC"
+			offset = 0
+		}
+	}
+
 	dataQuery := fmt.Sprintf(`
 		SELECT id, slug, owner_member_id, title, description, category,
 		       visibility, recruitment_status, lifecycle_status, settings,
 		       created_at, updated_at
 		FROM projects
 		WHERE %s
-		ORDER BY created_at DESC
+		ORDER BY %s
 		LIMIT $%d OFFSET $%d
-	`, whereClause, argIdx, argIdx+1)
+	`, dataWhere, orderBy, dataArgIdx, dataArgIdx+1)
 
-	queryArgs := append(args, limit, offset)
+	queryArgs := append(append([]any{}, dataArgs...), limit, offset)
 
 	rows, err := r.db.Query(ctx, dataQuery, queryArgs...)
 	if err != nil {
