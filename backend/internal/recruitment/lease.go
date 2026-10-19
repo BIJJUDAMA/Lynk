@@ -22,27 +22,21 @@ type RedisCapacityLeaser struct {
 	releaseScript *redis.Script
 }
 
+const capacityLeaseTTLSeconds = 300
+
 const luaAcquireCapacity = `
 local key = KEYS[1]
 local max_members = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
 
-if max_members <= 0 then
-    redis.call('INCR', key)
-    return 1
-end
-
-local current = redis.call('GET', key)
-if not current then
-    redis.call('SET', key, 1)
-    return 1
-end
-
-if tonumber(current) < max_members then
-    redis.call('INCR', key)
-    return 1
-else
+local current = tonumber(redis.call('GET', key) or '0')
+if max_members > 0 and current >= max_members then
     return 0
 end
+
+redis.call('INCR', key)
+redis.call('EXPIRE', key, ttl)
+return 1
 `
 
 const luaReleaseCapacity = `
@@ -72,7 +66,7 @@ func NewRedisCapacityLeaser(client redis.UniversalClient) *RedisCapacityLeaser {
 
 func (l *RedisCapacityLeaser) AcquireLease(ctx context.Context, projectID uuid.UUID, maxMembers int) (bool, error) {
 	key := fmt.Sprintf("recruitment:capacity:%s", projectID.String())
-	res, err := l.script.Run(ctx, l.client, []string{key}, maxMembers).Int()
+	res, err := l.script.Run(ctx, l.client, []string{key}, maxMembers, capacityLeaseTTLSeconds).Int()
 	if err != nil {
 		return false, err
 	}

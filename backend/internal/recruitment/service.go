@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ type Service struct {
 	repo             Repository
 	projectReader    ProjectReader
 	membershipReader MembershipReader
+	leaser           CapacityLeaser
 }
 
 // NewService constructs a recruitment domain service.
@@ -37,6 +39,40 @@ func NewService(repo Repository, projectReader ProjectReader, membershipReader M
 		repo:             repo,
 		projectReader:    projectReader,
 		membershipReader: membershipReader,
+	}
+}
+
+// WithCapacityLeaser attaches a front-line capacity leaser to the service.
+func (s *Service) WithCapacityLeaser(leaser CapacityLeaser) *Service {
+	s.leaser = leaser
+	return s
+}
+
+func maxMembersFromSettings(settings map[string]any) int {
+	if settings == nil {
+		return 0
+	}
+
+	value, ok := settings["max_members"]
+	if !ok || value == nil {
+		return 0
+	}
+
+	switch v := value.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			return 0
+		}
+		return parsed
+	default:
+		return 0
 	}
 }
 
@@ -278,6 +314,27 @@ func (s *Service) AcceptApplication(ctx context.Context, claims *auth.UserClaims
 
 	if app.Status == StatusAccepted || app.Status == StatusRejected || app.Status == StatusWithdrawn {
 		return ErrAlreadyDecided
+	}
+
+	if s.leaser != nil && s.projectReader != nil {
+		proj, err := s.projectReader.GetProjectByID(ctx, app.ProjectID)
+		if err == nil && proj != nil {
+			if maxMembers := maxMembersFromSettings(proj.Settings); maxMembers > 0 {
+				acquired, err := s.leaser.AcquireLease(ctx, app.ProjectID, maxMembers)
+				if err != nil {
+					return fmt.Errorf("failed to acquire capacity lease: %w", err)
+				}
+				if !acquired {
+					return ErrTeamCapacityExceeded
+				}
+
+				if err := s.repo.AcceptApplicationTx(ctx, appID, claims.UserID); err != nil {
+					_ = s.leaser.ReleaseLease(ctx, app.ProjectID)
+					return err
+				}
+				return nil
+			}
+		}
 	}
 
 	return s.repo.AcceptApplicationTx(ctx, appID, claims.UserID)

@@ -824,6 +824,9 @@ func main() {
 
 	recruitmentRepo := recruitment.NewRepository(pool)
 	recruitmentService := recruitment.NewService(recruitmentRepo, projectRepo, teamRepo)
+	if redisClient != nil {
+		recruitmentService = recruitmentService.WithCapacityLeaser(recruitment.NewRedisCapacityLeaser(redisClient))
+	}
 	recruitmentHandler := recruitment.NewHandler(recruitmentService)
 
 	workspaceRepo := workspace.NewRepository(pool)

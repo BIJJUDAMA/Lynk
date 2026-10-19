@@ -28,6 +28,7 @@ type mockRecruitmentRepo struct {
 	answers      map[uuid.UUID][]recruitment.ApplicationAnswer
 	members      map[string]*team.ProjectMember
 	projects     map[uuid.UUID]*project.Project
+	acceptErr    error
 }
 
 func newMockRecruitmentRepo() *mockRecruitmentRepo {
@@ -154,6 +155,10 @@ func (m *mockRecruitmentRepo) WithdrawApplication(ctx context.Context, id uuid.U
 func (m *mockRecruitmentRepo) AcceptApplicationTx(ctx context.Context, appID uuid.UUID, reviewerID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if m.acceptErr != nil {
+		return m.acceptErr
+	}
 
 	app, ok := m.applications[appID]
 	if !ok {
@@ -1025,6 +1030,100 @@ func TestRecruitmentService_ConcurrentCapacityRaceCondition(t *testing.T) {
 	}
 	if activeMemberCount != 1 {
 		t.Errorf("expected exactly 1 active member in repo, got %d", activeMemberCount)
+	}
+}
+
+func TestAcceptApplication_LeaseRefusesAtCapacity(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRecruitmentRepo()
+	projReader := newMockProjectReader()
+	memReader := newMockMembershipReader()
+	leaser := recruitment.NewInMemoryCapacityLeaser()
+	svc := recruitment.NewService(repo, projReader, memReader).WithCapacityLeaser(leaser)
+
+	projectID := uuid.New()
+	leadID := "lead-lease-capacity"
+	proj := &project.Project{
+		ID:                projectID,
+		Title:             "Lease Capacity Project",
+		RecruitmentStatus: project.RecruitmentOpen,
+		OwnerMemberID:     leadID,
+		Settings:          map[string]any{"max_members": 1},
+	}
+	projReader.projects[projectID] = proj
+	repo.projects[projectID] = proj
+
+	leadClaims := &auth.UserClaims{UserID: leadID, Email: "lead@mit.edu", EmailVerified: true}
+	app1Claims := &auth.UserClaims{UserID: "lease-applicant-1", Email: "one@mit.edu", EmailVerified: true}
+	app2Claims := &auth.UserClaims{UserID: "lease-applicant-2", Email: "two@mit.edu", EmailVerified: true}
+
+	app1, err := svc.SubmitApplication(ctx, app1Claims, projectID, recruitment.SubmitApplicationInput{
+		Statement: "First applicant for the leased capacity slot.",
+	})
+	if err != nil {
+		t.Fatalf("failed to submit app1: %v", err)
+	}
+	app2, err := svc.SubmitApplication(ctx, app2Claims, projectID, recruitment.SubmitApplicationInput{
+		Statement: "Second applicant for the leased capacity slot.",
+	})
+	if err != nil {
+		t.Fatalf("failed to submit app2: %v", err)
+	}
+
+	if err := svc.AcceptApplication(ctx, leadClaims, app1.ID); err != nil {
+		t.Fatalf("expected first accept to succeed, got: %v", err)
+	}
+
+	err = svc.AcceptApplication(ctx, leadClaims, app2.ID)
+	if !errors.Is(err, recruitment.ErrTeamCapacityExceeded) {
+		t.Fatalf("expected ErrTeamCapacityExceeded from the leaser, got: %v", err)
+	}
+}
+
+func TestAcceptApplication_LeaseReleasedWhenTxFails(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockRecruitmentRepo()
+	projReader := newMockProjectReader()
+	memReader := newMockMembershipReader()
+	leaser := recruitment.NewInMemoryCapacityLeaser()
+	svc := recruitment.NewService(repo, projReader, memReader).WithCapacityLeaser(leaser)
+
+	projectID := uuid.New()
+	leadID := "lead-lease-release"
+	proj := &project.Project{
+		ID:                projectID,
+		Title:             "Lease Release Project",
+		RecruitmentStatus: project.RecruitmentOpen,
+		OwnerMemberID:     leadID,
+		Settings:          map[string]any{"max_members": 1},
+	}
+	projReader.projects[projectID] = proj
+	repo.projects[projectID] = proj
+
+	leadClaims := &auth.UserClaims{UserID: leadID, Email: "lead@mit.edu", EmailVerified: true}
+	appClaims := &auth.UserClaims{UserID: "release-applicant", Email: "release@mit.edu", EmailVerified: true}
+
+	app, err := svc.SubmitApplication(ctx, appClaims, projectID, recruitment.SubmitApplicationInput{
+		Statement: "Applicant whose transactional accept will fail.",
+	})
+	if err != nil {
+		t.Fatalf("failed to submit app: %v", err)
+	}
+
+	txErr := errors.New("transactional accept failed")
+	repo.acceptErr = txErr
+
+	err = svc.AcceptApplication(ctx, leadClaims, app.ID)
+	if !errors.Is(err, txErr) {
+		t.Fatalf("expected transactional accept error, got: %v", err)
+	}
+
+	ok, err := leaser.AcquireLease(ctx, projectID, 1)
+	if err != nil {
+		t.Fatalf("acquire after failed tx: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected lease to have been released after transactional accept failure")
 	}
 }
 

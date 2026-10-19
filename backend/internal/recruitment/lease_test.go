@@ -5,11 +5,34 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
+
+func TestMaxMembersFromSettings(t *testing.T) {
+	cases := []struct {
+		name     string
+		settings map[string]any
+		want     int
+	}{
+		{"nil", nil, 0},
+		{"empty", map[string]any{}, 0},
+		{"float", map[string]any{"max_members": float64(3)}, 3},
+		{"string", map[string]any{"max_members": "4"}, 4},
+		{"int", map[string]any{"max_members": 2}, 2},
+		{"bad", map[string]any{"max_members": "not-a-number"}, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := maxMembersFromSettings(tc.settings); got != tc.want {
+				t.Fatalf("got %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
 
 func TestCapacityLeaser_MockAcquire(t *testing.T) {
 	// Standalone in-memory fallback leaser test
@@ -66,6 +89,29 @@ func redisCapacityCounter(t *testing.T, client redis.UniversalClient, key string
 		t.Fatalf("read counter %q: %v", key, err)
 	}
 	return value
+}
+
+func TestRedisCapacityLeaser_AcquireSetsTTL(t *testing.T) {
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	leaser := NewRedisCapacityLeaser(client)
+	ctx := context.Background()
+	projID := uuid.New()
+	key := redisCapacityKey(projID)
+
+	ok, err := leaser.AcquireLease(ctx, projID, 3)
+	if err != nil || !ok {
+		t.Fatalf("expected acquire to succeed: ok=%v, err=%v", ok, err)
+	}
+
+	ttl := mr.TTL(key)
+	if ttl <= 0 {
+		t.Fatalf("expected capacity key %q to have a positive TTL, got %s", key, ttl)
+	}
+	if ttl > 300*time.Second {
+		t.Fatalf("expected capacity key TTL to be at most 300s, got %s", ttl)
+	}
 }
 
 func TestRedisCapacityLeaser_AcquireRelease(t *testing.T) {
