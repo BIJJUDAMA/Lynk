@@ -271,6 +271,33 @@ services:
     networks:
       - lynk-net
 
+  autoscaler:
+    build:
+      context: ./deploy/autoscaler
+      dockerfile: Dockerfile
+    container_name: lynk-autoscaler
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/workspace:ro
+    environment:
+      AUTOSCALE_SERVICE: "api"
+      AUTOSCALE_GATEWAY: "lynk-gateway"
+      AUTOSCALE_MIN_REPLICAS: "2"
+      AUTOSCALE_MAX_REPLICAS: "6"
+      AUTOSCALE_CHECK_INTERVAL: "10"
+      SCALE_UP_SUSTAINED_SEC: "20"
+      SCALE_DOWN_SUSTAINED_SEC: "300"
+      SCALE_UP_COOLDOWN_SEC: "30"
+      SCALE_DOWN_COOLDOWN_SEC: "180"
+      COMPOSE_FILE: "/workspace/docker-compose.yml"
+      AUTOSCALE_DRY_RUN: "${AUTOSCALE_DRY_RUN:-false}"
+    networks:
+      - lynk-net
+    depends_on:
+      gateway:
+        condition: service_healthy
+
 networks:
   lynk-net:
     driver: bridge
