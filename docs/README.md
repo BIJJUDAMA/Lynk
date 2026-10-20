@@ -62,7 +62,8 @@ Lynk completely replaces the fragmented dual-account paradigm with the **Unified
 | **Authoritative Backend** | Go 1.25, Chi Router v5.3, `pgx/v5` 5.5, AWS SDK Go v2 (S3) | **Dockerised (`lynk-api`) at `http://localhost:8080`**. Layered architecture: Handler -> Service -> Repository. TwoTierCache (L1 Mem + L2 Redis). |
 | **High-Performance Ingress** | Nginx 1.25 (`lynk-gateway` on port `8080`) | Reverse proxy with 8,192 worker connections, 5s micro-caching, and request collapsing. |
 | **Caching & Rate Limiting** | TwoTierCache (L1 In-Memory LRU + L2 Redis 7+ on port `6379`) | Sub-microsecond local reads, distributed Redis L2 cache, and sliding-window rate limiter. |
-| **Connection Pooling** | PgBouncer (`lynk-pgbouncer` on port `6432`) | Transaction connection pooling multiplexing client connections onto 20 PostgreSQL backends. |
+| **Connection Pooling** | PgBouncer (`lynk-pgbouncer` on port `6432`) | Transaction connection pooling multiplexing client connections onto 25 PostgreSQL backends. |
+| **Intelligent Autoscaling** | Compose Controller (`deploy/autoscaler/`) | Dynamic single-host scaling (2-6 replicas) monitoring container metrics, host headroom, and active connections. |
 | **AI Backend (Internal)** | Python 3.11, FastAPI, CPU ONNX INT8, sentence-transformers, scikit-learn | **Dockerised (`ai-api`) at `http://ai-api:8000`**. Protected via `X-Internal-AI-Secret`. |
 | **AI Worker Daemon** | Python 3.11 (`ai-worker`) | Background worker consuming `ai_jobs` using PostgreSQL `FOR UPDATE SKIP LOCKED`. |
 | **Database** | PostgreSQL 16 (`pgvector/pgvector:pg16` on port `5432`) | Two logical databases: `lynk_db` (relational schema + `vector(384)`) and `supertokens_db`. Tuned with 1GB `shared_buffers` and 3GB `effective_cache_size`. |
@@ -169,7 +170,7 @@ The documentation suite is structured into dedicated modular domains under [`arc
 | **Operations, Runbook & Local Developer Guide** | [`development/runbook-and-operations.md`](development/runbook-and-operations.md) | First-time setup, Docker Compose lifecycle, environment variable matrices, database seed scripts, troubleshooting runbook, disaster recovery, and operational procedures. | All Developers, DevOps, Site Reliability Engineers |
 | **Testing, Quality Assurance & Verification Strategy** | [`development/testing-strategy.md`](development/testing-strategy.md) | Testing pyramid (unit, integration, HTTP handler, frontend), test execution commands, coverage targets, CI/CD pipeline specifications, and pre-release gates. | QA Engineers, Backend Engineers, Frontend Engineers |
 | **Permanent Tooling Architecture & CI Strategy** | [`tooling.md`](tooling.md) | Universal multi-language linting, formatting, type checking, security scanning, root Makefile control plane, pre-commit activation, and parallel GitHub Actions matrix across Go, Python, and TypeScript. | All Developers, DevOps, Platform Engineers |
-| **Performance, Concurrency & Scale Benchmarks** | [`architecture/performance-and-scale.md`](architecture/performance-and-scale.md) | 6-stage k6 load test results, 2,500 VU ultra-stress ceiling, 1,453.9 req/s peak, sub-13ms p95 latencies, Little's Law campus capacity calculations (~21,800+ concurrent students), and multi-tier scaling architecture. | System Architects, DevOps, SREs, Backend Engineers |
+| **Performance, Concurrency & Scale Benchmarks** | [`architecture/performance-and-scale.md`](architecture/performance-and-scale.md) | 8-stage k6 load test results, 2,042.3 RPS certified sustainable capacity (11.4ms p95), 3,193.4 RPS saturation ceiling, 20,000 concurrent connection hold, dynamic autoscaler controller, and single-server production sizing. | System Architects, DevOps, SREs, Backend Engineers |
 
 ---
 

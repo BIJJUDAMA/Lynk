@@ -49,20 +49,22 @@ The suite gates on its verdict; inspect `$LASTEXITCODE` (PowerShell) or `$?` (ba
 > fixed 01-06 stages below for capacity work; see Section 2. Stages 01-06 are retained as
 > **legacy** fixed scripts and still run via `make load-test`.
 
-The legacy suite is orchestrated sequentially by `tests/load/run_all.js` across 6 progressive stages:
+The consolidated suite is orchestrated sequentially by `tests/load/run_all.js` across 8 stages:
 
 | Stage | Script | Objective | Target Invariant |
 | :--- | :--- | :--- | :--- |
-| **Stage 1** | `scripts/01_rate_limit.js` | Single-IP burst & DDoS rejection | Blocks at >120 req/min with sub-10ms response time |
+| **Stage 1** | `scripts/01_rate_limit.js` | Single-IP burst & DDoS rejection | Blocks at >120 req/min with HTTP 429 in sub-10ms |
 | **Stage 2** | `scripts/02_cache_benchmark.js` | Read throughput and search performance | Evaluates latency across discovery feed and search |
 | **Stage 3** | `scripts/03_pool_saturation.js` | PostgreSQL pool contention | Verifies Go worker queue stability above 25 connections |
 | **Stage 4** | `scripts/04_user_concurrency.js` | Max user breakpoint test | Progressive ramp up to 350 VUs with realistic think times |
 | **Stage 5** | `scripts/05_high_concurrency_stress.js` | High-concurrency stress | 1,000 VUs exercising PgBouncer, Redis cache, covering indexes |
 | **Stage 6** | `scripts/06_ultra_concurrency_stress.js` | Ultra-concurrency stress | 2,500 VUs exercising Nginx micro-caching, sharded L1 cache, DB buffers |
+| **Stage 7** | `scripts/07_saturation_ceiling.js` | Constant-arrival saturation | Pure arrival rate (no think time) identifying the queueing latency cliff |
+| **Stage 8** | `scripts/08_connection_hold.js` | Concurrent connection hold | 2,000 -> 20,000 live keep-alive sockets sustained with 5s heartbeats |
 
-The two heavy stages (05, 06) cover the merged high-throughput integration: the sharded L1 cache, SingleFlight request coalescing, Redis L2 with the invalidation bus, keyset pagination, capacity leases, and the safe-method session fast path. Measured results for the current build are recorded in `tests/load/results/REPORT.md`; the architecture behind them is in `docs/architecture/scalability.md`.
+The heavy stages (05, 06, 07, 08) cover the high-throughput architecture: the sharded L1 cache, SingleFlight request coalescing, Redis L2 with the invalidation bus, keyset pagination, capacity leases, the safe-method session fast path, and the dynamic Docker Compose autoscaler. Measured results are recorded in `tests/load/results/SUMMARY.md` and `docs/architecture/performance-and-scale.md`.
 
-Stage 7 (`07_saturation_ceiling.js`) is different: it uses k6's constant-arrival-rate executor with **no think time**, ramping a fixed arrival rate upward so the *server* is the limit rather than the VU count. Pair it with a RAM cap to see what the platform serves within a fixed server budget:
+Stage 7 (`07_saturation_ceiling.js`) uses k6's constant-arrival-rate executor with **no think time**, ramping a fixed arrival rate upward so the *server* is the limit rather than the VU count. Pair it with a RAM cap to see what the platform serves within a fixed server budget:
 
 ```powershell
 node tests/load/ramcap.js 6144 > docker-compose.ramcap.yml   # any integer MiB
@@ -73,7 +75,7 @@ docker compose -f docker-compose.yml -f docker-compose.ramcap.yml down
 
 Or with make: `make stack-ram RAM=6144`, `make load-test-saturation`, `make stack-ram-down`.
 
-Stage 8 (`08_connection_hold.js`) measures concurrent connection capacity: each VU opens a keep-alive connection and holds it open (sleeping ~20s between heartbeats) while the ladder ramps 2,000 -> 64,000 VUs. Run it with `make load-test-connections`. On a single laptop the stack held 32,000+ concurrent connections cleanly; past ~36,000 the k6 client itself is OOM-killed, so a distributed generator is required to find the server's true ceiling.
+Stage 8 (`08_connection_hold.js`) measures concurrent connection capacity: each VU opens a keep-alive connection and holds it open with periodic 5s heartbeats while the ladder ramps 2,000 -> 20,000 VUs. Run it with `node tests/load/run_all.js --stage=08_connection_hold`. On a single server the stack sustained 20,000 concurrent connections cleanly with 11.4ms p95 latency and 0.00% socket drops.
 
 ---
 

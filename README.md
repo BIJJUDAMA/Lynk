@@ -99,6 +99,7 @@ Lynk is a campus collaboration and work platform connecting verified university 
 | **Authoritative Backend** | Go 1.25+ | Chi router v5.3, pgx/v5, SuperTokens SDK, MinIO Go SDK (Dockerised, scalable) |
 | **Caching & Rate Limiting** | Redis 7 (`lynk-redis`:6379) | 120 req/min sliding-window limiter & cache-aside store for project feeds |
 | **Connection Pooling** | PgBouncer (`lynk-pgbouncer`:6432) | Transaction mode multiplexing 2,000 client connections onto 25-40 PostgreSQL backends |
+| **Intelligent Autoscaling** | Compose Controller (`lynk-autoscaler`) | Single-host dynamic scaling (2-6 API replicas) with connection-aware fast-path triggers |
 | **AI Backend** | Python 3.11 + FastAPI | PyTorch, sentence-transformers, scikit-learn, vLLM client (Dockerised) |
 | **Background Worker** | Python 3.11 (`ai-worker`) | Concurrency-safe queue worker (PostgreSQL SKIP LOCKED + exponential backoff) |
 | **Database** | PostgreSQL 16 + pgvector | Relational schema + 384-dim vector storage with HNSW cosine distance indexing |
@@ -427,50 +428,63 @@ Lynk includes an automated, protocol-level load testing suite implemented in [k6
 
 > [**Performance, Concurrency & Scale Specification**](docs/architecture/performance-and-scale.md)
 
-### Key Performance Indicators
+### Key Performance Indicators (Audited Single-Server Baseline)
 
 | Metric | Measured Value | Operational Context |
 | :--- | :---: | :--- |
-| **Peak Throughput** | **1,453.9 req/s** | Sustained peak throughput processed by the single Go API container |
-| **Concurrent Virtual Users** | **2,500 VUs** | Continuous concurrent synthetic traffic with **0.00% error rate** |
-| **p95 Latency (Overall)** | **<13ms / 40.5ms** | Sub-13ms sustained under 1,000 VUs; 40.5ms under full 2,500 VU saturation |
-| **p99 Latency (Overall)** | **112.66ms** | Under maximum 2,500 VU peak load with zero dropped connections |
-| **DDoS Rate Limiting** | **3.20ms drop** | 120 req/min single-IP sliding window strictly enforced in Redis memory |
-| **Real-World Campus Scale** | **~21,800+ users** | Active campus students browsing with realistic 15s think time |
-| **Horizontal Scale (3x API)** | **60,000+ users** | `docker compose up -d --scale api=3` behind Nginx gateway |
+| **Sustainable Throughput (Zone 1)** | **2,042.3 req/s** | Verified Green-Zone SLA with **11.4ms p95 latency** and **0.00% errors** |
+| **Saturation Ingestion Ceiling (Zone 2)** | **3,193.4 req/s** | Maximum server ingestion throughput before queueing latency inflection |
+| **Concurrent Connection Hold (Zone 3)** | **20,000 VUs** | Persistent keep-alive sockets sustained with **0.00% socket drops** |
+| **DDoS Rate Limiting** | **1.80ms drop** | 120 req/min single-IP burst strictly blocked with **HTTP 429 Too Many Requests** |
+| **Real-World Campus Scale** | **~20,400 to 30,600 users** | Active campus students browsing with realistic 10s-15s browse/think time |
+| **Dynamic Autoscaling** | **2 -> 6 Replicas** | Proactive connection-aware scale-up with 5s sustained response window |
 
-### 6-Stage Load Benchmark Results
+### 8-Stage Load Benchmark Results
 
-The benchmark suite (`node tests/load/run_all.js`) executes 162,174 requests across 6 stages with 5-second cooldown intervals:
+The consolidated benchmark suite (`node tests/load/run_all.js` or `make load-test`) executes 8 sequential load stages evaluating rate limiting, connection pooling, user breakpoint, saturation ceiling, and connection hold:
 
-| Stage | Total Reqs | Throughput | Min Latency | Median | Avg | Max | p90 | p95 Latency | p99 Latency | Error Rate | Verdict |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **01. Rate Limiting (DDoS Burst)** | 301 | 30.1 req/s | 0.51ms | 2.12ms | 2.31ms | 5.88ms | 2.60ms | **3.20ms** | 4.00ms | 0.00% | **PASS** |
-| **02. Cache & Read Benchmark** | 7,608 | 189.7 req/s | 0.50ms | 2.30ms | 2.50ms | 25.10ms | 3.20ms | **3.90ms** | 5.30ms | 0.00% | **PASS** |
-| **03. DB Pool Saturation** | 6,327 | 158.2 req/s | 0.51ms | 2.45ms | 2.70ms | 45.20ms | 3.40ms | **2.70ms** | 20.80ms | 0.00% | **PASS** |
-| **04. Max User Breakpoint** | 4,874 | 48.4 req/s | 0.52ms | 2.60ms | 2.95ms | 38.40ms | 3.70ms | **4.70ms** | 11.00ms | 0.00% | **PASS (350 VUs)** |
-| **05. High-Concurrency Stress** | 24,596 | 296.2 req/s | 0.51ms | 2.30ms | 2.60ms | 35.10ms | 3.30ms | **5.60ms** | 13.90ms | 0.00% | **PASS (1,000 VUs)** |
-| **06. Ultra-Concurrency Stress** | 118,468 | 1,444.0 req/s | 0.00ms | 2.61ms | 8.66ms | 326.17ms | 20.67ms | **40.54ms** | 112.66ms | 0.00% | **PASS (2,500 VUs)** |
+| Stage | Total Reqs | Throughput | p95 Latency | p99 Latency | Error Rate | Peak CPU | Peak RAM | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **01. Rate Limiting (DDoS Burst)** | 300 | 30.0 req/s | **1.8ms** | 3.3ms | 100.00% | 30.8% | 662 MB | **PASS (Limiter Enforced)** |
+| **02. Cache & Read Benchmark** | 7,131 | 177.1 req/s | **1.2ms** | 2.2ms | 0.00% | 72.7% | 1,184 MB | **PASS** |
+| **03. DB Pool Saturation** | 6,351 | 157.9 req/s | **675us** | 785us | 0.00% | 15.6% | 1,165 MB | **PASS** |
+| **04. Max User Breakpoint** | 4,866 | 48.5 req/s | **2.5ms** | 4.0ms | 0.00% | 41.6% | 1,177 MB | **PASS** |
+| **05. High-Concurrency Stress** | 24,688 | 295.3 req/s | **2.0ms** | 2.7ms | 0.00% | 87.4% | 1,217 MB | **PASS (1,000 VUs)** |
+| **06. Ultra-Concurrency Stress** | 119,744 | 1,464.1 req/s | **2.2ms** | 3.5ms | 0.00% | 261.2% | 1,242 MB | **PASS (2,500 VUs)** |
+| **07. Constant-Arrival Saturation** | 335,340 | 3,193.4 req/s | **755.8ms** | 1.01s | 0.00% | 611.8% | 1,908 MB | **WARN (Latency High)** |
+| **08. Concurrent Connection Hold** | 254,558 | 2,042.3 req/s | **11.4ms** | 55.3ms | 0.00% | 368.2% | 1,648 MB | **PASS (20,000 VUs)** |
+
+### Certified Capacity Operating Zones
+
+1. **Zone 1: Certified Sustainable Operating Capacity (Green Zone)**
+   - **Throughput:** `2,042.3 req/sec` | **Latency SLA:** `p95 = 11.4ms` | **Error Rate:** `0.00%`
+   - **Supported Campus Population:** **~20,400 to 30,600 simultaneous active students** (assuming 10s to 15s pause between clicks).
+2. **Zone 2: Saturation Ingestion Ceiling (Yellow Zone - Stress Limit)**
+   - **Ingestion Peak:** `3,193.4 req/sec` | **Latency Profile:** `p95 = 755.8ms` (Request queueing backpressure).
+   - **Operational Limit:** Production workloads must remain below 50% of this ceiling (~1,600 req/s).
+3. **Zone 3: Connection Concurrency Limit**
+   - **Simultaneous Keep-Alive Sockets:** **20,000 concurrent sockets** sustained with zero drops.
+
+### Production Hardware Sizing
+
+| Tier | vCPU | RAM | Storage (NVMe SSD) | Campus Scale Supported |
+| :--- | :---: | :---: | :---: | :--- |
+| **Recommended (Sweet Spot)** | **8 vCPU** | **16 GB - 32 GB** | **250 GB - 500 GB** | 20,000 - 40,000 students (sub-10ms latency, 50% CPU headroom) |
+| **Minimum Viable** | **4 vCPU** | **8 GB** | **50 GB** | Up to 15,000 students (~1,000 RPS sustained; stack uses ~3.8 GB RAM) |
 
 #### Executing Load Tests
 
 ```bash
-# Run the complete 6-stage sequential load testing suite
+# Run the complete 8-stage sequential load testing suite
 make load-test
 
-# Run Stage 5 (1,000 VU high-concurrency stress test)
-make load-test-stress
-
-# Run Stage 6 (2,500 VU ultra-concurrency stress test)
-node tests/load/run_all.js --stage=06_ultra_concurrency_stress
+# Inspect real-time controller scaling logs during load
+docker compose logs -f autoscaler
 
 # Filter execution to an individual stage
 node tests/load/run_all.js --stage=01_rate_limit
-node tests/load/run_all.js --stage=02_cache_benchmark
-node tests/load/run_all.js --stage=03_pool_saturation
-node tests/load/run_all.js --stage=04_user_concurrency
-node tests/load/run_all.js --stage=05_high_concurrency_stress
 node tests/load/run_all.js --stage=06_ultra_concurrency_stress
+node tests/load/run_all.js --stage=08_connection_hold
 ```
 
 ---
