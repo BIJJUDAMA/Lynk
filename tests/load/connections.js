@@ -293,8 +293,10 @@ function serverConns(url) {
   return parseStubStatus(out.stdout);
 }
 
-// Prepare the shared k6 invocation: fresh summary path, script, args and env.
-function prepareRun(target, dwellSec) {
+// Prepare the shared run inputs that are path/env only: a fresh summary path
+// and the k6 script/env. Deliberately free of cmd/args so an async caller does
+// not build (and detect for) a native invocation it never uses.
+function prepareEnv(target, dwellSec) {
   const resultsDir = path.join(__dirname, 'results');
   fs.mkdirSync(resultsDir, { recursive: true });
   const outFile = path.join(resultsDir, '.connections.summary.json');
@@ -306,11 +308,9 @@ function prepareRun(target, dwellSec) {
 
   const script = path.join(__dirname, 'scripts', 'hold.js');
   const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080/api/v1';
-  const { cmd, args } = k6.buildK6Args({ script, summaryExport: outFile });
   return {
     outFile,
-    cmd,
-    args,
+    script,
     env: {
       ...process.env,
       API_BASE_URL: apiUrl,
@@ -318,6 +318,14 @@ function prepareRun(target, dwellSec) {
       DWELL: String(dwellSec),
     },
   };
+}
+
+// Prepare the synchronous k6 invocation: the shared inputs plus the resolved
+// cmd/args for the one spawnSync call.
+function prepareRun(target, dwellSec) {
+  const run = prepareEnv(target, dwellSec);
+  const { cmd, args } = k6.buildK6Args({ script: run.script, summaryExport: run.outFile, env: run.env });
+  return { outFile: run.outFile, script: run.script, cmd, args, env: run.env };
 }
 
 // Fold a finished k6 run into the driver's signal shape. Shared by the sync and
@@ -378,10 +386,10 @@ function runK6(target, dwellSec) {
 // can read child.pid and call child.kill().
 function runK6Async(target, dwellSec, opts) {
   const options = opts || {};
-  const run = prepareRun(target, dwellSec);
+  const run = prepareEnv(target, dwellSec);
   return k6
     .spawnK6({
-      script: path.join(__dirname, 'scripts', 'hold.js'),
+      script: run.script,
       summaryExport: run.outFile,
       env: run.env,
       onChild: options.onChild,

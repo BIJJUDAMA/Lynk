@@ -48,8 +48,13 @@ function toContainerPath(p) {
 //
 //   native: ['run', '--summary-export=<p>', ...extraArgs, script] on `k6`
 //   docker: ['run', '--rm', '--network=host', '-v', <ROOT>:/lynk, '-w', /lynk,
-//            'grafana/k6', 'run', '--summary-export=<rel>', ...extraArgs,
-//            <relScript>] on `docker`
+//            '-e', KEY=VAL..., 'grafana/k6', 'run', '--summary-export=<rel>',
+//            ...extraArgs, <relScript>] on `docker`
+//
+// Every entry of `env` becomes a `-e KEY=VAL` docker-run option placed before
+// the image name, because Docker does not inherit the host environment into the
+// container: without this the fallback would silently drop API_BASE_URL,
+// TARGET_VUS, DWELL and TARGET_RPS.
 //
 // `native` defaults to hasNativeK6() so callers can omit it in production and
 // override it deterministically in tests.
@@ -58,6 +63,7 @@ function buildK6Args(opts) {
   const script = options.script;
   const summaryExport = options.summaryExport;
   const extraArgs = options.extraArgs || [];
+  const env = options.env || {};
   const native = options.native === undefined ? hasNativeK6() : !!options.native;
 
   if (native) {
@@ -76,9 +82,12 @@ function buildK6Args(opts) {
     `${ROOT}:${CONTAINER_ROOT}`,
     '-w',
     CONTAINER_ROOT,
-    K6_IMAGE,
-    'run',
   ];
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined || value === null) continue;
+    args.push('-e', `${key}=${value}`);
+  }
+  args.push(K6_IMAGE, 'run');
   if (summaryExport) args.push(`--summary-export=${toContainerPath(summaryExport)}`);
   args.push(...extraArgs, relScript);
   return { cmd: 'docker', args };
@@ -93,13 +102,14 @@ function buildK6Args(opts) {
 function spawnK6(opts) {
   const options = opts || {};
   const summaryPath = options.summaryExport;
+  const env = options.env || {};
   const { cmd, args } = buildK6Args({
     script: options.script,
     summaryExport: summaryPath,
     extraArgs: options.extraArgs,
+    env,
     native: options.native,
   });
-  const env = options.env || {};
 
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
