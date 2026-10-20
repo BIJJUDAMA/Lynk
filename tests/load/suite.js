@@ -17,6 +17,7 @@ const k6 = require('./k6.js');
 const connections = require('./connections.js');
 const resources = require('./resources.js');
 const stack = require('./stack.js');
+const { writeReport, exitCodeFor } = require('./report.js');
 const { ResourceSampler } = require('./ResourceSampler.js');
 
 const MODES = ['throughput', 'connections', 'ram', 'smoke'];
@@ -142,12 +143,14 @@ export default function () {
 }
 `;
 
-function runSmoke(opts) {
-  const resultsDir = path.join(__dirname, 'results');
-  fs.mkdirSync(resultsDir, { recursive: true });
-  const script = path.join(resultsDir, '.smoke.js');
+function runSmoke(opts, deps) {
+  const d = deps || {};
+  const dir = path.join(__dirname, 'results');
+  fs.mkdirSync(dir, { recursive: true });
+  const script = path.join(dir, '.smoke.js');
   fs.writeFileSync(script, SMOKE_SCRIPT, 'utf8');
 
+  let status = 1;
   try {
     const apiUrl = process.env.API_BASE_URL || DEFAULT_API_URL;
     const { cmd, args } = k6.buildK6Args({ script });
@@ -156,7 +159,7 @@ function runSmoke(opts) {
       stdio: 'inherit',
       env: { ...process.env, API_BASE_URL: apiUrl },
     });
-    return proc.status === null ? 1 : proc.status;
+    status = proc.status === null ? 1 : proc.status;
   } finally {
     try {
       fs.unlinkSync(script);
@@ -164,11 +167,29 @@ function runSmoke(opts) {
       // best-effort cleanup
     }
   }
+
+  const result = { mode: 'smoke', exitCode: status, ok: status === 0 };
+  return reportResult(result, d);
 }
 
 // Print one driver's result as JSON so a run is self-describing.
 function emit(result) {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+// Where every mode drops its report artifacts (git-ignored).
+const resultsDir = path.join(__dirname, 'results');
+
+// Persist one mode's result as JSON + Markdown and print where they landed.
+// Returns the mode's exit code so callers can gate on it directly.
+function reportResult(result, deps) {
+  const d = deps || {};
+  const write = d.report || writeReport;
+  const { jsonPath, mdPath } = write(result, { dir: resultsDir, stamp: Date.now() });
+  const out = d.out || process.stdout;
+  out.write(`report json: ${jsonPath}\n`);
+  out.write(`report md:   ${mdPath}\n`);
+  return exitCodeFor(result);
 }
 
 // Return the first finite numeric field present in obj, else the fallback.
@@ -330,11 +351,12 @@ async function runWithSupervisor(run, opts) {
 }
 
 // connections mode: self-searching concurrent-connection ceiling.
-function runConnections(opts) {
-  const deps = connections.defaultDeps(
-    new ResourceSampler({ safetyMb: opts.safetyMb })
-  );
-  const result = connections.searchCeiling(
+function runConnections(opts, deps) {
+  const d = deps || {};
+  const connectionDeps =
+    d.connectionDeps ||
+    connections.defaultDeps(new ResourceSampler({ safetyMb: opts.safetyMb }));
+  const searchResult = connections.searchCeiling(
     {
       max: opts.max === null ? undefined : opts.max,
       dwell: opts.dwell === null ? undefined : opts.dwell,
@@ -342,10 +364,11 @@ function runConnections(opts) {
       iterations: opts.iterations,
       start: opts.target === null ? undefined : opts.target,
     },
-    deps
+    connectionDeps
   );
-  emit({ mode: 'connections', ...result });
-  return 0;
+  const result = { mode: 'connections', ...searchResult };
+  (d.emit || emit)(result);
+  return reportResult(result, d);
 }
 
 // ram mode (default): ramping arrival load with continuous resource sampling.
@@ -370,7 +393,7 @@ async function runRamRamp(opts, deps) {
     : { ...base, verdict: 'FAILURE_KNEE' };
 
   (d.emit || emit)(result);
-  return 0;
+  return reportResult(result, d);
 }
 
 // ram mode (--levels given): one row per fixed arrival level. Each level is
@@ -402,18 +425,19 @@ async function runRamLevels(opts, deps) {
     return table;
   }, { sampler });
 
-  (d.emit || emit)({ mode: 'levels', table: sup.result });
-  return 0;
+  const result = { mode: 'levels', table: sup.result };
+  (d.emit || emit)(result);
+  return reportResult(result, d);
 }
 
 // throughput mode: the arrival-ramp saturation ceiling on its own.
 async function runThroughput(opts, deps) {
   const d = deps || {};
   const job = d.runArrivalJob || runArrivalJob;
-  const result = await job(opts);
-  const out = { mode: 'throughput', ...result };
+  const jobResult = await job(opts);
+  const out = { mode: 'throughput', ...jobResult };
   (d.emit || emit)(out);
-  return result.exitCode === 0 ? 0 : 1;
+  return reportResult(out, d);
 }
 
 // The real driver set. Injecting an alternative object into runSuite() lets a
