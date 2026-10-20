@@ -215,10 +215,10 @@ def parse_mem_to_bytes(token: str) -> float:
         return 0.0
 
 
-def get_docker_stats(service_name: str) -> Tuple[int, float, float]:
+def get_docker_stats(service_name: str) -> Tuple[int, float, float, float]:
     """
     Executes 'docker stats --no-stream' and parses container stats matching the service.
-    Returns: (replica_count, avg_cpu_percent, avg_memory_percent)
+    Returns: (replica_count, avg_cpu_percent, avg_memory_percent, total_mem_mb)
     """
     cmd = [
         "docker",
@@ -238,11 +238,12 @@ def get_docker_stats(service_name: str) -> Tuple[int, float, float]:
         )
     except Exception as err:
         logger.warning("Could not execute docker stats: %s", err)
-        return 0, 0.0, 0.0
+        return 0, 0.0, 0.0, 0.0
 
     matching_containers = []
     total_cpu = 0.0
     total_mem_percent = 0.0
+    total_mem_bytes = 0.0
 
     for line in res.stdout.splitlines():
         line = line.strip()
@@ -257,17 +258,21 @@ def get_docker_stats(service_name: str) -> Tuple[int, float, float]:
         if f"-{service_name}-" in c_name or c_name.endswith(f"-{service_name}") or c_name == service_name:
             matching_containers.append(c_name)
             cpu_val = float(parts[1].replace("%", "").strip() or 0.0)
+            mem_usage_token = parts[2].split("/")[0].strip()
+            mem_bytes = parse_mem_to_bytes(mem_usage_token)
             mem_val = float(parts[3].replace("%", "").strip() or 0.0)
             total_cpu += cpu_val
             total_mem_percent += mem_val
+            total_mem_bytes += mem_bytes
 
     count = len(matching_containers)
     if count == 0:
-        return 0, 0.0, 0.0
+        return 0, 0.0, 0.0, 0.0
 
     avg_cpu = total_cpu / count
     avg_mem = total_mem_percent / count
-    return count, avg_cpu, avg_mem
+    total_mem_mb = total_mem_bytes / (1024.0 * 1024.0)
+    return count, avg_cpu, avg_mem, total_mem_mb
 
 
 def get_active_connections(
@@ -386,13 +391,14 @@ def record_scaling_event(
     avg_mem: float,
     host_headroom: float,
     active_conns: int = 0,
+    total_mem_mb: float = 0.0,
 ) -> None:
     """Appends structured scaling event to results log for load test summaries."""
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     action = "SCALED UP" if target > current else "SCALED DOWN"
     entry = (
         f"[{timestamp}] {action}: {service_name} {current} -> {target} replicas "
-        f"| CPU={avg_cpu:.1f}% | Mem={avg_mem:.1f}% | Conns={active_conns} | HostHeadroom={host_headroom:.1f}%\n"
+        f"| CPU={avg_cpu:.1f}% | RAM={total_mem_mb:.0f}MB ({avg_mem:.1f}% host) | Conns={active_conns} | HostHeadroom={host_headroom:.1f}%\n"
     )
     paths = [
         "tests/load/results/autoscaler_events.log",
@@ -476,9 +482,11 @@ def main():
     while running:
         loop_start = time.time()
         try:
-            replica_count, avg_cpu, avg_mem = get_docker_stats(service_name)
+            replica_count, avg_cpu, avg_mem, total_mem_mb = get_docker_stats(service_name)
             host_headroom = get_host_memory_headroom()
             current = replica_count if replica_count > 0 else min_replicas
+            host_cores = os.cpu_count() or 4
+            host_cpu_pct = (avg_cpu * current) / float(host_cores)
 
             active_connections = get_active_connections(
                 gateway_url=f"http://{gateway_container}:8080/nginx_status",
@@ -490,9 +498,13 @@ def main():
             rps_per_replica = 0.0
 
             logger.info(
-                "Metric Sample: replicas=%d, avg_cpu=%.1f%%, avg_mem=%.1f%%, conns=%d (%.1f/rep), host_headroom=%.1f%%",
+                "Metric Sample: replicas=%d | cpu=%.1f%% (%.1f cores / %.1f%% of %d vCPUs) | ram=%.0fMB (%.1f%% host) | conns=%d (%.1f/rep) | host_headroom=%.1f%%",
                 current,
                 avg_cpu,
+                (avg_cpu * current) / 100.0,
+                host_cpu_pct,
+                host_cores,
+                total_mem_mb,
                 avg_mem,
                 active_connections,
                 conns_per_replica,
@@ -535,6 +547,7 @@ def main():
                         avg_mem,
                         host_headroom,
                         active_conns=active_connections,
+                        total_mem_mb=total_mem_mb,
                     )
                     reload_gateway(gateway_container, dry_run=dry_run)
 
