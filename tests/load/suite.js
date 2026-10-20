@@ -453,6 +453,9 @@ function main() {
     process.exit(2);
   }
 
+  // The async IIFE always terminates via process.exit on every branch; this
+  // catch is a backstop so a throw before an explicit exit is still a clean 2
+  // rather than an unhandled rejection.
   return (async () => {
     // Bring the stack up (building images) and wait for the gateway to report
     // ready before applying any load, unless --no-up says it is already up.
@@ -492,7 +495,10 @@ function main() {
     } else {
       process.exit(code);
     }
-  })();
+  })().catch((err) => {
+    console.error(`[ERROR] ${err && err.message ? err.message : err}`);
+    process.exit(2);
+  });
 }
 
 if (require.main === module) {

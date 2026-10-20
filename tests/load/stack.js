@@ -106,9 +106,11 @@ async function waitForReady(opts) {
     }
     if (healthy) return true;
     if (Date.now() >= deadline) return false;
+    // Deliberately NOT unref'd: this timer is the only handle keeping the event
+    // loop alive between polls. Unref'ing it lets Node exit (code 0) mid-wait,
+    // silently bypassing the readiness gate.
     await new Promise((resolve) => {
-      const t = setTimeout(resolve, intervalMs);
-      if (t && typeof t.unref === 'function') t.unref();
+      setTimeout(resolve, intervalMs);
     });
   }
 }
