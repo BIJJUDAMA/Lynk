@@ -1,4 +1,4 @@
-.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check load-test load-test-rate-limit load-test-cache load-test-pool load-test-concurrency load-test-stress load-test-ultra load-test-saturation load-test-connections stack-ram stack-ram-down
+.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check load-test load-suite load-test-rate-limit load-test-cache load-test-pool load-test-concurrency load-test-stress load-test-ultra load-test-saturation load-test-connections stack-ram stack-ram-down
 
 help:
 	@echo "Available commands:"
@@ -12,6 +12,7 @@ help:
 	@echo "  make format         - Auto-format Go, Python, and TypeScript code"
 	@echo "  make format-check   - Verify code formatting across all services"
 	@echo "  make load-test      - Run complete sequential k6 backend load test suite"
+	@echo "  make load-suite     - Run parameterized load suite (MODE=smoke|throughput|connections|ram)"
 	@echo "  make load-test-ultra - Run Stage 6 ultra-concurrency stress test (2,500 VUs)"
 	@echo "  make load-test-saturation - Run Stage 7 constant-arrival saturation ceiling (no think time)"
 	@echo "  make load-test-connections - Run Stage 8 concurrent connection hold (500 -> 8,000 held connections)"
@@ -103,6 +104,12 @@ format-check:
 load-test:
 	@echo "==> Running complete backend load testing suite..."
 	node tests/load/run_all.js
+
+MODE ?= smoke
+
+load-suite:
+	@echo "==> Running parameterized load suite (mode=$(MODE))..."
+	node tests/load/suite.js --mode=$(MODE)
 
 load-test-rate-limit:
 	@echo "==> Running Stage 1: Rate limiter enforcement test..."
