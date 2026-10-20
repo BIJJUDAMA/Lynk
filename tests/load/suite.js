@@ -219,8 +219,10 @@ function spawnK6Async(args, env, onChild) {
 }
 
 // Arrival job: drive k6's arrival executor by reusing the Stage 7 saturation
-// script, then parse its exported summary. Best-effort parsing: a missing
-// summary leaves the exit code as the signal.
+// script, then parse its exported summary. When opts.arrivalTarget is set the
+// script is told to hold that constant arrival rate (TARGET_RPS); otherwise the
+// script falls back to its built-in ramp. Best-effort parsing: a missing summary
+// leaves the exit code as the signal.
 async function runArrivalJob(opts, onChild) {
   const options = opts || {};
   const resultsDir = path.join(__dirname, 'results');
@@ -235,6 +237,7 @@ async function runArrivalJob(opts, onChild) {
   const script = path.join(__dirname, 'scripts', '07_saturation_ceiling.js');
   const apiUrl = process.env.API_BASE_URL || DEFAULT_API_URL;
   const env = { API_BASE_URL: apiUrl };
+  if (options.arrivalTarget != null) env.TARGET_RPS = String(options.arrivalTarget);
   if (options.dwell != null) env.DWELL = String(options.dwell);
 
   const proc = await spawnK6Async(
@@ -400,7 +403,7 @@ async function runRamLevels(opts, deps) {
     const table = [];
     for (const rps of levels) {
       const before = sampler.samples().length;
-      const res = (await job({}, onChild)) || {};
+      const res = (await job({ arrivalTarget: rps }, onChild)) || {};
       sampler.tick();
       const window = sampler.samples().slice(before);
       table.push({

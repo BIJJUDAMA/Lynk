@@ -14,26 +14,44 @@ import {
   getSimulatedClientHeaders,
 } from '../helpers.js';
 
+// When the suite drives a single fixed level it sets TARGET_RPS and an optional
+// DWELL (seconds). Otherwise fall back to the built-in upward ramp below.
+const targetRps = Number(__ENV.TARGET_RPS || 0);
+const dwellSec = Number(__ENV.DWELL || 0);
+
 // Target arrivals per second, ramped in tiers. Start far above the VU-bound
 // measurements so the client, not the VU count, is the only limit.
+const rampScenario = {
+  executor: 'ramping-arrival-rate',
+  startRate: 500,
+  timeUnit: '1s',
+  preAllocatedVUs: 400,
+  maxVUs: 4000,
+  stages: [
+    { target: 1000, duration: '15s' },
+    { target: 2000, duration: '20s' },
+    { target: 4000, duration: '20s' },
+    { target: 6000, duration: '20s' },
+    { target: 8000, duration: '20s' },
+    { target: 0, duration: '10s' },
+  ],
+};
+
+// A fixed level: hold the requested arrival rate for the dwell (default 30s).
+// VU pools scale with the rate so the client is never the bottleneck.
+const fixedScenario = {
+  executor: 'constant-arrival-rate',
+  rate: targetRps,
+  timeUnit: '1s',
+  duration: `${dwellSec > 0 ? dwellSec : 30}s`,
+  preAllocatedVUs: Math.max(100, Math.ceil(targetRps / 5)),
+  maxVUs: Math.max(1000, targetRps),
+};
+
 export const options = {
   discardResponseBodies: true,
   scenarios: {
-    saturation: {
-      executor: 'ramping-arrival-rate',
-      startRate: 500,
-      timeUnit: '1s',
-      preAllocatedVUs: 400,
-      maxVUs: 4000,
-      stages: [
-        { target: 1000, duration: '15s' },
-        { target: 2000, duration: '20s' },
-        { target: 4000, duration: '20s' },
-        { target: 6000, duration: '20s' },
-        { target: 8000, duration: '20s' },
-        { target: 0, duration: '10s' },
-      ],
-    },
+    saturation: targetRps > 0 ? fixedScenario : rampScenario,
   },
   thresholds: {
     http_req_failed: ['rate<0.10'],

@@ -178,6 +178,23 @@ test('runRamRamp fails when the compose config caps memory', async () => {
   );
 });
 
+test('runRamLevels drives each level at its own arrival rate', async () => {
+  const targets = [];
+  const emitted = [];
+  await runRamLevels({ levels: [2000], safetyMb: 4096 }, {
+    readComposeConfig: () => 'services:\n  api:\n    image: lynk-api\n',
+    runArrivalJob: async (opts) => {
+      targets.push(opts.arrivalTarget);
+      return { exitCode: 0, p95: 6, failedRate: 0 };
+    },
+    sampler: fakeSampler(),
+    emit: (r) => emitted.push(r),
+  });
+  assert.deepStrictEqual(targets, [2000]);
+  assert.strictEqual(emitted[0].mode, 'levels');
+  assert.strictEqual(emitted[0].table[0].rps, 2000);
+});
+
 test('parseSummaryResult surfaces failedRate, p95 and RPS', () => {
   const fixture = {
     metrics: {
