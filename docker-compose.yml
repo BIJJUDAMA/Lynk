@@ -158,6 +158,10 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
 
   gateway:
     image: nginx:1.25-alpine
@@ -177,6 +181,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
 
   ai-api:
     build:
