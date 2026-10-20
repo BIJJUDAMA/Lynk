@@ -444,6 +444,62 @@ function runSuite(opts, deps) {
   }
 }
 
+// The bring-up -> readiness -> guard -> dispatch flow, as a value-returning
+// seam. Every external touchpoint (stack bring-up, readiness polling, the
+// compose config read, the guard, the mode drivers and the error sink) is
+// injectable so tests can assert the ordering without a live stack or k6.
+//
+// The mem-limit guard runs AFTER bring-up and only on the ram paths, so it
+// inspects the compose config the running stack actually produced rather than
+// the pre-bring-up tree. Resolves to the process exit code.
+async function runFlow(opts, deps) {
+  const d = deps || {};
+  const error = d.error || ((msg) => console.error(msg));
+  const healthUrl = d.healthUrl || stack.HEALTH_URL;
+
+  if (!opts.noUp) {
+    const up = (d.upStack || stack.upStack)({ build: true });
+    if (!up || !up.ok) {
+      error('[ERROR] stack failed to come up');
+      if (up && up.log) error(up.log);
+      return 2;
+    }
+    const ready = await (d.waitForReady || stack.waitForReady)({
+      url: healthUrl,
+      timeoutMs: 180000,
+      intervalMs: 3000,
+    });
+    if (!ready) {
+      error(`[ERROR] stack not ready at ${healthUrl}`);
+      return 2;
+    }
+  }
+
+  let code;
+  try {
+    // Guard placement is deliberate: after bring-up, ram modes only.
+    if (opts.mode === 'ram') {
+      const readConfig = d.readComposeConfig || readComposeConfig;
+      const assertNoMemLimit = d.assertNoMemLimit || resources.assertNoMemLimit;
+      assertNoMemLimit(readConfig());
+    }
+    code = runSuite(opts, d.suiteDeps);
+  } catch (err) {
+    error(`[ERROR] ${err.message}`);
+    return 2;
+  }
+
+  if (code && typeof code.then === 'function') {
+    try {
+      return await code;
+    } catch (err) {
+      error(`[ERROR] ${err.message}`);
+      return 2;
+    }
+  }
+  return code;
+}
+
 function main() {
   let opts;
   try {
@@ -453,52 +509,16 @@ function main() {
     process.exit(2);
   }
 
-  // The async IIFE always terminates via process.exit on every branch; this
-  // catch is a backstop so a throw before an explicit exit is still a clean 2
-  // rather than an unhandled rejection.
-  return (async () => {
-    // Bring the stack up (building images) and wait for the gateway to report
-    // ready before applying any load, unless --no-up says it is already up.
-    if (!opts.noUp) {
-      const up = stack.upStack({ build: true });
-      if (!up.ok) {
-        console.error('[ERROR] stack failed to come up');
-        console.error(up.log);
-        process.exit(2);
-      }
-      const ready = await stack.waitForReady({
-        url: stack.HEALTH_URL,
-        timeoutMs: 180000,
-        intervalMs: 3000,
-      });
-      if (!ready) {
-        console.error(`[ERROR] stack not ready at ${stack.HEALTH_URL}`);
-        process.exit(2);
-      }
-    }
-
-    let code;
-    try {
-      code = runSuite(opts);
-    } catch (err) {
-      console.error(`[ERROR] ${err.message}`);
+  // runFlow always resolves to an exit code and never rejects; the catch is a
+  // backstop so an unexpected throw is still a clean 2 rather than an
+  // unhandled rejection.
+  return runFlow(opts).then(
+    (code) => process.exit(code),
+    (err) => {
+      console.error(`[ERROR] ${err && err.message ? err.message : err}`);
       process.exit(2);
     }
-
-    if (code && typeof code.then === 'function') {
-      code
-        .then((resolved) => process.exit(resolved))
-        .catch((err) => {
-          console.error(`[ERROR] ${err.message}`);
-          process.exit(2);
-        });
-    } else {
-      process.exit(code);
-    }
-  })().catch((err) => {
-    console.error(`[ERROR] ${err && err.message ? err.message : err}`);
-    process.exit(2);
-  });
+  );
 }
 
 if (require.main === module) {
@@ -509,6 +529,7 @@ module.exports = {
   parseArgs,
   MODES,
   runSuite,
+  runFlow,
   runWithSupervisor,
   runRamRamp,
   runRamLevels,

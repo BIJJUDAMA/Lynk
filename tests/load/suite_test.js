@@ -14,8 +14,10 @@ const {
   runRamLevels,
   runThroughput,
   parseSummaryResult,
+  runFlow,
 } = require('./suite.js');
 const { ResourceSampler } = require('./ResourceSampler.js');
+const resources = require('./resources.js');
 
 // A minimal sampler double for exercising the ram orchestration without a host.
 function fakeSampler() {
@@ -176,6 +178,72 @@ test('runRamRamp fails when the compose config caps memory', async () => {
     }),
     /mem_limit/
   );
+});
+
+test('main-style flow runs the mem-limit guard after stack bring-up', async () => {
+  // Bring-up succeeds, readiness passes, then the guard inspects the config the
+  // running stack produced. A capped post-bring-up config must fail the ram path
+  // before the driver runs.
+  const capped = [];
+  const cappedCode = await runFlow(
+    { mode: 'ram', safetyMb: 4096, levels: null },
+    {
+      upStack: () => { capped.push('upStack'); return { ok: true, log: '' }; },
+      waitForReady: async () => { capped.push('waitForReady'); return true; },
+      readComposeConfig: () => {
+        capped.push('readComposeConfig');
+        return 'services:\n  api:\n    mem_limit: 512m\n';
+      },
+      assertNoMemLimit: resources.assertNoMemLimit,
+      suiteDeps: { runRamp: () => { capped.push('driver'); return 0; } },
+      error: () => {},
+    }
+  );
+  assert.strictEqual(cappedCode, 2, 'a capped ram run must exit 2');
+  assert.deepStrictEqual(
+    capped,
+    ['upStack', 'waitForReady', 'readComposeConfig'],
+    'guard must run after bring-up and the driver must not run when capped'
+  );
+
+  // A non-capped config proceeds from the guard to the driver.
+  const ok = [];
+  const okCode = await runFlow(
+    { mode: 'ram', safetyMb: 4096, levels: null },
+    {
+      upStack: () => { ok.push('upStack'); return { ok: true, log: '' }; },
+      waitForReady: async () => { ok.push('waitForReady'); return true; },
+      readComposeConfig: () => {
+        ok.push('readComposeConfig');
+        return 'services:\n  api:\n    image: lynk-api\n';
+      },
+      assertNoMemLimit: resources.assertNoMemLimit,
+      suiteDeps: { runRamp: () => { ok.push('driver'); return 0; } },
+      error: () => {},
+    }
+  );
+  assert.strictEqual(okCode, 0, 'a non-capped ram run must proceed to the driver');
+  assert.deepStrictEqual(ok, ['upStack', 'waitForReady', 'readComposeConfig', 'driver']);
+});
+
+test('main-style flow runs the guard without bring-up when --no-up', async () => {
+  const events = [];
+  const code = await runFlow(
+    { mode: 'ram', safetyMb: 4096, noUp: true, levels: null },
+    {
+      upStack: () => { events.push('upStack'); return { ok: true, log: '' }; },
+      waitForReady: async () => { events.push('waitForReady'); return true; },
+      readComposeConfig: () => {
+        events.push('readComposeConfig');
+        return 'services:\n  api:\n    mem_limit: 512m\n';
+      },
+      assertNoMemLimit: resources.assertNoMemLimit,
+      suiteDeps: { runRamp: () => { events.push('driver'); return 0; } },
+      error: () => {},
+    }
+  );
+  assert.strictEqual(code, 2, 'the guard still runs after an explicit no-up');
+  assert.deepStrictEqual(events, ['readComposeConfig']);
 });
 
 test('runRamLevels drives each level at its own arrival rate', async () => {
