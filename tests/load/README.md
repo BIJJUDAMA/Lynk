@@ -51,10 +51,10 @@ as legacy fixed scripts. Each mode is implemented by its own module (`connection
 | `smoke` | inline k6 health script | One VU for 2s against `/health`; a fast liveness check. |
 | `throughput` | `scripts/07_saturation_ceiling.js` | Constant-arrival (no think time) saturation ceiling: the server's true RPS limit. |
 | `connections` | `connections.searchCeiling` | Concurrent keep-alive connection ceiling, self-searched (doubling then binary search), attributing the wall to server, client, or the safety stop. |
-| `ram` | `resources.runRamp` / `runLevels` | RAM/CPU curve while resource-sampling; `--levels=...` runs fixed arrival levels one row each, otherwise a ramping run stops at the safety floor or failure knee. |
+| `ram` | `resources.runRamp` / `runLevels` | RAM/CPU curve while resource-sampling; a ramping run stops at the safety floor or failure knee (`runRamp`, the default). `--levels=...` produces one sampled row per listed rate, but each row currently runs the full arrival ramp rather than holding a flat rate, so treat the `rps` column as a label, not the applied load. |
 
-Flags: `--levels=500,2000,8000` (ram mode), `--target=N` (connection start VU),
-`--max=N`, `--dwell=SEC`, `--safety-mb=N`, `--tolerance=F`, `--iterations=N`, `--seed=N`.
+Flags: `--target=N`/`--max=N`/`--dwell=SEC` (connections mode), `--levels=500,2000,8000` (ram mode),
+`--safety-mb=N`, `--tolerance=F`, `--iterations=N`, and `--seed=N` (parsed; currently unused).
 
 ```bash
 make load-suite MODE=smoke
@@ -65,8 +65,8 @@ make load-throughput         # suite --mode=throughput
 
 The gateway exposes server-side connection counts at `GET /nginx_status` (an Nginx
 `stub_status` location restricted to the Docker network and localhost). The connections
-driver reads that endpoint through `NGINX_STUB_STATUS_URL`; set it to
-`http://localhost:8080/nginx_status` (its own default is `http://localhost:8080/stub_status`).
+driver already defaults to `http://localhost:8080/nginx_status`; set
+`NGINX_STUB_STATUS_URL` only to override it with a different host or port.
 
 ---
 
