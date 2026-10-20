@@ -123,3 +123,26 @@ test('runWithSupervisor kills the child when the sampler trips', async () => {
   assert.strictEqual(res.aborted, true);
   assert.strictEqual(res.tripped, true);
 });
+
+test('runRamRamp calls the mem-limit guard before load', async () => {
+  let guarded = false;
+  const emitted = [];
+  await runRamRamp({ safetyMb: 4096 }, {
+    readComposeConfig: () => { guarded = true; return 'services:\n  api:\n    image: lynk-api\n'; },
+    runArrivalJob: async () => ({ exitCode: 0, p95: 4, failedRate: 0 }),
+    sampler: fakeSampler(),
+    emit: (r) => emitted.push(r),
+  });
+  assert.ok(guarded, 'readComposeConfig must be consulted');
+  assert.strictEqual(emitted.length, 1);
+  assert.strictEqual(emitted[0].mode, 'ramp');
+});
+
+test('runRamRamp fails when the compose config caps memory', async () => {
+  await assert.rejects(
+    () => runRamRamp({ safetyMb: 4096 }, {
+      readComposeConfig: () => 'services:\n  api:\n    mem_limit: 512m\n',
+    }),
+    /mem_limit/
+  );
+});

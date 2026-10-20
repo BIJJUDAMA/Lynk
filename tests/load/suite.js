@@ -234,6 +234,25 @@ async function runArrivalJob(opts, onChild) {
   return { exitCode: proc.status, ...parseSummaryFile(outFile) };
 }
 
+// Read the effective compose config so the mem-limit guard can reject a capped
+// stack. Uses docker-compose.ramcap.yml as an override when it is present.
+function readComposeConfig() {
+  const override = path.join(ROOT, 'docker-compose.ramcap.yml');
+  const args = ['compose', '-f', path.join(ROOT, 'docker-compose.yml')];
+  if (fs.existsSync(override)) args.push('-f', override);
+  args.push('config');
+  const out = spawnSync('docker', args, {
+    cwd: ROOT,
+    encoding: 'utf8',
+    windowsHide: true,
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  if (out.error || out.status !== 0) {
+    throw new Error('docker compose config failed; cannot verify mem-limit guard');
+  }
+  return out.stdout || '';
+}
+
 // Resolve a promise after ms, without holding the event loop open.
 function delay(ms) {
   return new Promise((resolve) => {
@@ -333,6 +352,8 @@ function runConnections(opts) {
 // ram mode (default): ramping arrival load with continuous resource sampling.
 async function runRamRamp(opts, deps) {
   const d = deps || {};
+  const readConfig = d.readComposeConfig || readComposeConfig;
+  resources.assertNoMemLimit(readConfig());
 
   const sampler = d.sampler || new ResourceSampler({ safetyMb: opts.safetyMb });
   const job = d.runArrivalJob || runArrivalJob;
@@ -357,6 +378,8 @@ async function runRamRamp(opts, deps) {
 // driven at its own arrival rate so the applied load matches the row's rps.
 async function runRamLevels(opts, deps) {
   const d = deps || {};
+  const readConfig = d.readComposeConfig || readComposeConfig;
+  resources.assertNoMemLimit(readConfig());
 
   const sampler = d.sampler || new ResourceSampler({ safetyMb: opts.safetyMb });
   const job = d.runArrivalJob || runArrivalJob;
@@ -465,6 +488,7 @@ module.exports = {
   runThroughput,
   runArrivalJob,
   parseSummaryResult,
+  readComposeConfig,
   killChild,
   parsePositiveInt,
 };
