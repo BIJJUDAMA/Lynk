@@ -4,6 +4,45 @@ This directory contains the automated protocol-level load testing suite for the 
 
 ---
 
+## 0. Clone and Run
+
+A fresh clone of the repository can run a load test end to end with three commands. The suite brings the Docker Compose stack up itself, waits for the gateway to report healthy, then runs and writes a report.
+
+```bash
+git clone <repo-url> && cd Lynk
+make setup                # installs git hooks, deps, and k6 (apt on Linux, winget on Windows)
+make load-connections     # builds + waits for the stack, runs the connections mode, writes a report
+```
+
+What each step does:
+
+- **`make setup`** runs `setup-hooks`, `setup-go`, `setup-frontend`, `setup-ai`, and `setup-k6`. The `setup-k6` target checks for an existing `k6` binary and installs it from the official apt repository on Linux or via `winget` (`k6.k6`) on Windows if it is missing.
+- **`make load-connections`** calls `node tests/load/suite.js --mode=connections`. The suite runs `docker compose up -d --build` (`tests/load/stack.js` `upStack`), polls `http://localhost:8080/api/v1/health` until it returns 200 (`waitForReady`, up to 180s), then runs the mode and writes its report.
+
+### Docker k6 fallback
+
+A native `k6` on `PATH` is preferred. When `k6` is absent, `tests/load/k6.js` automatically falls back to the official `grafana/k6` Docker image, mounting the repository at `/lynk` with host networking and forwarding k6 environment variables (`API_BASE_URL`, `TARGET_RPS`, ...). This means the suite works even when `make setup-k6` was skipped, as long as Docker is available.
+
+### Skipping bring-up with `--no-up`
+
+Every suite mode accepts `--no-up`, which skips both the stack bring-up and the readiness wait. Use it when the stack is already running (for example right after `make load-up`):
+
+```bash
+node tests/load/suite.js --mode=connections --no-up
+```
+
+### Exit codes
+
+The suite gates on its verdict; inspect `$LASTEXITCODE` (PowerShell) or `$?` (bash) after a run:
+
+| Code | Meaning |
+| :---: | :--- |
+| `0` | OK: a usable result (verdict `SERVER_CEILING`, `FAILURE_KNEE`, or `HEALTHY`; or no failure signal). |
+| `1` | Failed verdict: the run is not usable (`CLIENT_BOUND`, `SAFETY_STOP`, `FAILURE`, a non-zero k6 exit, or `ok:false`). |
+| `2` | Usage/setup error: bad flags, a failed stack bring-up, the stack not becoming ready, or an unknown mode. |
+
+---
+
 ## 1. Test Architecture & Stages (legacy fixed scripts)
 
 > **New in this directory:** the parameterized suite (`tests/load/suite.js`) supersedes the
