@@ -135,13 +135,26 @@ function parseArgs(argv) {
 const SMOKE_SCRIPT = `import http from 'k6/http';
 import { check } from 'k6';
 
-export const options = { vus: 1, duration: '2s' };
+export const options = {
+  vus: 1,
+  duration: '2s',
+  thresholds: {
+    checks: ['rate>0.99'],
+    http_req_failed: ['rate<0.01'],
+  },
+};
 
 export default function () {
   const res = http.get(\`\${__ENV.API_BASE_URL}/health\`);
   check(res, { 'health status is 200': (r) => r.status === 200 });
 }
 `;
+
+// Default smoke runner: spawn k6 synchronously with the built argv and env.
+// Injected in tests so a smoke verdict can be exercised without a real k6.
+function defaultRunK6({ cmd, args, env }) {
+  return spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit', env });
+}
 
 function runSmoke(opts, deps) {
   const d = deps || {};
@@ -153,13 +166,15 @@ function runSmoke(opts, deps) {
   let status = 1;
   try {
     const apiUrl = process.env.API_BASE_URL || DEFAULT_API_URL;
-    const { cmd, args } = k6.buildK6Args({ script });
-    const proc = spawnSync(cmd, args, {
-      cwd: ROOT,
-      stdio: 'inherit',
-      env: { ...process.env, API_BASE_URL: apiUrl },
-    });
-    status = proc.status === null ? 1 : proc.status;
+    // Forward only API_BASE_URL through buildK6Args: the Docker form turns each
+    // env entry into a `-e KEY=VAL`, so passing the whole host environment here
+    // would leak secrets and override the container PATH with Windows paths. The
+    // native form is unchanged (buildK6Args emits no flags) and still reads the
+    // value from the child process environment.
+    const { cmd, args } = k6.buildK6Args({ script, env: { API_BASE_URL: apiUrl } });
+    const runK6 = d.runK6 || defaultRunK6;
+    const proc = runK6({ cmd, args, env: { ...process.env, API_BASE_URL: apiUrl } });
+    status = proc && proc.status !== null && proc.status !== undefined ? proc.status : 1;
   } finally {
     try {
       fs.unlinkSync(script);
@@ -561,6 +576,7 @@ module.exports = {
   runSuite,
   runFlow,
   runWithSupervisor,
+  runSmoke,
   runRamRamp,
   runRamLevels,
   runThroughput,
@@ -570,4 +586,5 @@ module.exports = {
   killChild,
   parsePositiveInt,
   parsePositiveNumber,
+  SMOKE_SCRIPT,
 };

@@ -10,11 +10,13 @@ const {
   MODES,
   runSuite,
   runWithSupervisor,
+  runSmoke,
   runRamRamp,
   runRamLevels,
   runThroughput,
   parseSummaryResult,
   runFlow,
+  SMOKE_SCRIPT,
 } = require('./suite.js');
 const { ResourceSampler } = require('./ResourceSampler.js');
 const resources = require('./resources.js');
@@ -323,4 +325,34 @@ test('runThroughput surfaces RPS from the injected job', async () => {
   });
   assert.strictEqual(code, 0);
   assert.strictEqual(emitted.rps, 1234);
+});
+
+test('SMOKE_SCRIPT declares failure thresholds so a down health check fails', () => {
+  assert.match(SMOKE_SCRIPT, /thresholds/);
+  assert.match(SMOKE_SCRIPT, /http_req_failed:\s*\['rate<0\.01'\]/);
+  assert.match(SMOKE_SCRIPT, /checks:\s*\['rate>0\.99'\]/);
+});
+
+test('runSmoke returns non-zero when k6 exits non-zero', () => {
+  let seen = null;
+  const code = runSmoke({}, {
+    runK6: (run) => { seen = run; return { status: 99 }; },
+    report: () => ({ jsonPath: 'json', mdPath: 'md' }),
+    out: { write() {} },
+  });
+  assert.notStrictEqual(code, 0);
+  assert.ok(seen, 'the injected runner must be used');
+  assert.ok(
+    seen.env && seen.env.API_BASE_URL,
+    'API_BASE_URL must be forwarded to the runner'
+  );
+});
+
+test('runSmoke returns 0 when k6 exits 0', () => {
+  const code = runSmoke({}, {
+    runK6: () => ({ status: 0 }),
+    report: () => ({ jsonPath: 'json', mdPath: 'md' }),
+    out: { write() {} },
+  });
+  assert.strictEqual(code, 0);
 });
