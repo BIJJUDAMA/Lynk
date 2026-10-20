@@ -24,6 +24,20 @@ test('parseArgs rejects unknown mode', () => {
   assert.throws(() => parseArgs(['--mode=nope']));
 });
 
+test('parseArgs coerces numeric flags to integers', () => {
+  const o = parseArgs(['--mode=connections', '--target=500', '--max=64000', '--dwell=20']);
+  assert.strictEqual(o.max, 64000);
+  assert.strictEqual(typeof o.max, 'number');
+  assert.strictEqual(o.dwell, 20);
+  assert.strictEqual(typeof o.dwell, 'number');
+  assert.strictEqual(o.target, 500);
+  assert.strictEqual(typeof o.target, 'number');
+});
+
+test('parseArgs rejects a non-integer max', () => {
+  assert.throws(() => parseArgs(['--mode=connections', '--max=x']));
+});
+
 test('MODES is the fixed set', () => {
   assert.deepStrictEqual(MODES, ['throughput', 'connections', 'ram', 'smoke']);
 });

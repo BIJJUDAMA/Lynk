@@ -11,10 +11,12 @@ const path = require('path');
 
 const MODES = ['throughput', 'connections', 'ram', 'smoke'];
 
+const DEFAULT_API_URL = 'http://localhost:8080/api/v1';
+
 const DEFAULTS = {
   mode: 'smoke',
   levels: null,
-  target: 'http://localhost:8080/api/v1',
+  target: null,
   max: null,
   dwell: null,
   safetyMb: 4096,
@@ -42,6 +44,15 @@ function parseLevels(raw) {
   });
 }
 
+// Coerce a flag to a positive integer, rejecting non-integers and <= 0.
+function parsePositiveInt(name, raw) {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`invalid ${name} "${raw}": must be a positive integer`);
+  }
+  return n;
+}
+
 function parseArgs(argv) {
   const opts = { ...DEFAULTS };
 
@@ -62,13 +73,13 @@ function parseArgs(argv) {
         opts.levels = parseLevels(value);
         break;
       case 'target':
-        opts.target = value;
+        opts.target = parsePositiveInt('target', value);
         break;
       case 'max':
-        opts.max = value;
+        opts.max = parsePositiveInt('max', value);
         break;
       case 'dwell':
-        opts.dwell = value;
+        opts.dwell = parsePositiveInt('dwell', value);
         break;
       case 'safety-mb':
         opts.safetyMb = Number(value);
@@ -111,11 +122,12 @@ function runSmoke(opts) {
   fs.writeFileSync(script, SMOKE_SCRIPT, 'utf8');
 
   try {
+    const apiUrl = process.env.API_BASE_URL || DEFAULT_API_URL;
     const args = ['run', script];
     const proc = spawnSync('k6', args, {
       cwd: path.resolve(__dirname, '../..'),
       stdio: 'inherit',
-      env: { ...process.env, API_BASE_URL: opts.target },
+      env: { ...process.env, API_BASE_URL: apiUrl },
     });
     return proc.status === null ? 1 : proc.status;
   } finally {
