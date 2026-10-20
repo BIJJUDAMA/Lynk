@@ -3,7 +3,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { searchCeiling, classify } = require('./connections.js');
+const { searchCeiling, classify, prepareEnv } = require('./connections.js');
 
 test('classify: server failure with healthy client is SERVER_CEILING', () => {
   const v = classify({ exitCode: 0, failedRate: 0.9, dropped: 0, tripped: false, timeWaitHigh: false });
@@ -43,4 +43,19 @@ test('searchCeiling converges into the bracket', () => {
   const res = searchCeiling({ max: 64000, dwell: 1, tolerance: 0.5, iterations: 8 }, deps);
   assert.strictEqual(res.verdict, 'SERVER_CEILING');
   assert.ok(res.n >= 4000 && res.n <= 16000, `expected between 4k and 16k, got ${res.n}`);
+});
+
+test('prepareEnv forwards only the variables the k6 script reads', () => {
+  process.env.SECRET_TOKEN = 'do-not-forward';
+  try {
+    const run = prepareEnv(500, 20);
+    assert.deepStrictEqual(
+      Object.keys(run.env).sort(),
+      ['API_BASE_URL', 'DWELL', 'TARGET_VUS']
+    );
+    assert.ok(!('PATH' in run.env), 'PATH must not leak into the docker fallback');
+    assert.ok(!('SECRET_TOKEN' in run.env), 'secrets must not leak into the docker fallback');
+  } finally {
+    delete process.env.SECRET_TOKEN;
+  }
 });

@@ -308,11 +308,13 @@ function prepareEnv(target, dwellSec) {
 
   const script = path.join(__dirname, 'scripts', 'hold.js');
   const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080/api/v1';
+  // Forward ONLY the variables hold.js reads. buildK6Args turns each entry into
+  // a `-e KEY=VAL` on the Docker path, so spreading the whole host environment
+  // here would leak secrets and clobber the container PATH with host paths.
   return {
     outFile,
     script,
     env: {
-      ...process.env,
       API_BASE_URL: apiUrl,
       TARGET_VUS: String(target),
       DWELL: String(dwellSec),
@@ -417,6 +419,8 @@ module.exports = {
   runK6,
   runK6Async,
   defaultDeps,
+  prepareEnv,
+  prepareRun,
   FAILURE_RATE_THRESHOLD,
   TIME_WAIT_HIGH,
   PORT_RANGE_NEAR_FRACTION,
