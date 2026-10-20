@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Lynk Intelligent Autoscaling Controller for Docker Compose.
-Monitors CPU, Memory, Host Headroom, and Traffic RPS on a single host,
+Monitors CPU, Memory, Host Headroom, Active Connections, and Traffic RPS on a single host,
 dynamically adjusting Go API container replicas without Kubernetes overhead.
 
 100% pure ASCII.
@@ -32,19 +32,22 @@ def choose_replicas(
     cpu_percent: float,
     memory_percent: float,
     host_memory_headroom: float,
+    active_connections: int = 0,
     minimum: int = 2,
     maximum: int = 6,
 ) -> int:
     """
     Core decision algorithm.
     Evaluates resource pressure vs host safety floor and returns desired replica count.
+    Supports connection-aware scaling to absorb connection bursts.
     """
-    overloaded = rps_per_replica > 40.0 or cpu_percent > 65.0
+    conns_per_replica = float(active_connections) / max(1.0, float(current))
+    overloaded = rps_per_replica > 40.0 or cpu_percent > 65.0 or conns_per_replica > 1500.0
     memory_pressure = memory_percent > 75.0
 
     # CRITICAL SAFETY: If host memory headroom is low (< 20%), NEVER scale up!
     # Adding containers when host RAM is scarce triggers kernel OOM thrashing.
-    if memory_pressure and host_memory_headroom < 20.0:
+    if (overloaded or memory_pressure) and host_memory_headroom < 20.0:
         logger.warning(
             "Host memory headroom critically low (%.1f%% < 20%%). Refusing to scale up.",
             host_memory_headroom,
@@ -53,10 +56,17 @@ def choose_replicas(
 
     if overloaded or memory_pressure:
         if host_memory_headroom >= 20.0:
-            return min(maximum, current + 1)
+            # Under severe surge (connections > 3000/rep or CPU > 85%), step up by 2 replicas
+            step = 2 if (conns_per_replica >= 3000.0 or cpu_percent >= 85.0) else 1
+            return min(maximum, current + step)
 
     # Scale down only when all signals are well below low-water marks
-    if rps_per_replica < 15.0 and cpu_percent < 35.0 and memory_percent < 60.0:
+    if (
+        rps_per_replica < 15.0
+        and cpu_percent < 35.0
+        and memory_percent < 60.0
+        and conns_per_replica < 500.0
+    ):
         return max(minimum, current - 1)
 
     return current
@@ -67,9 +77,9 @@ class AutoscalerState:
 
     def __init__(
         self,
-        scale_up_sustained_sec: int = 20,
+        scale_up_sustained_sec: int = 5,
         scale_down_sustained_sec: int = 300,
-        scale_up_cooldown_sec: int = 30,
+        scale_up_cooldown_sec: int = 15,
         scale_down_cooldown_sec: int = 180,
     ):
         self.scale_up_sustained_sec = scale_up_sustained_sec
@@ -83,28 +93,45 @@ class AutoscalerState:
         self.scale_down_condition_start: Optional[float] = None
 
     def evaluate_decision(
-        self, current_replicas: int, proposed_replicas: int, now: float
+        self,
+        current_replicas: int,
+        proposed_replicas: int,
+        now: float,
+        is_urgent: bool = False,
     ) -> int:
         """
         Applies sustained duration filters and cooldowns to the proposed replica count.
+        Urgent surges bypass the sustained window for immediate protection.
         """
-        # 1. Obey cooldown from last scaling event
-        if self.last_scale_time > 0:
-            cooldown = (
-                self.scale_up_cooldown_sec
-                if self.last_scale_action == "up"
-                else self.scale_down_cooldown_sec
-            )
-            time_since_last_scale = now - self.last_scale_time
-            if time_since_last_scale < cooldown:
-                # Cooldown active; stay at current count
-                self.scale_up_condition_start = None
-                self.scale_down_condition_start = None
-                return current_replicas
-
-        # 2. Case: Proposed Scale Up
+        # 1. Case: Proposed Scale Up
         if proposed_replicas > current_replicas:
             self.scale_down_condition_start = None
+
+            # Urgent spike path: bypass sustained window if not in immediate scale spam
+            if is_urgent:
+                if self.last_scale_time > 0 and (now - self.last_scale_time) < 3.0:
+                    return current_replicas
+                self.scale_up_condition_start = None
+                self.last_scale_time = now
+                self.last_scale_action = "up"
+                logger.info(
+                    "Urgent load spike detected! Bypassing sustained window, scaling immediately to %d replicas.",
+                    proposed_replicas,
+                )
+                return proposed_replicas
+
+            # Standard scale up: obey cooldown from last scaling event
+            if self.last_scale_time > 0:
+                cooldown = (
+                    self.scale_up_cooldown_sec
+                    if self.last_scale_action == "up"
+                    else self.scale_down_cooldown_sec
+                )
+                time_since_last_scale = now - self.last_scale_time
+                if time_since_last_scale < cooldown:
+                    self.scale_up_condition_start = None
+                    return current_replicas
+
             if self.scale_up_condition_start is None:
                 self.scale_up_condition_start = now
                 logger.info(
@@ -121,9 +148,22 @@ class AutoscalerState:
                 return proposed_replicas
             return current_replicas
 
-        # 3. Case: Proposed Scale Down
+        # 2. Case: Proposed Scale Down
         if proposed_replicas < current_replicas:
             self.scale_up_condition_start = None
+
+            # Scale down always respects cooldown
+            if self.last_scale_time > 0:
+                cooldown = (
+                    self.scale_up_cooldown_sec
+                    if self.last_scale_action == "up"
+                    else self.scale_down_cooldown_sec
+                )
+                time_since_last_scale = now - self.last_scale_time
+                if time_since_last_scale < cooldown:
+                    self.scale_down_condition_start = None
+                    return current_replicas
+
             if self.scale_down_condition_start is None:
                 self.scale_down_condition_start = now
                 logger.info(
@@ -140,7 +180,7 @@ class AutoscalerState:
                 return proposed_replicas
             return current_replicas
 
-        # 4. Steady state
+        # 3. Steady state
         self.scale_up_condition_start = None
         self.scale_down_condition_start = None
         return current_replicas
@@ -160,7 +200,6 @@ def parse_mem_to_bytes(token: str) -> float:
         "GIB": 1024 * 1024 * 1024,
         "GB": 1000 * 1000 * 1000,
     }
-    # Separate numeric part and unit
     num_str = ""
     unit_str = ""
     for char in token:
@@ -231,6 +270,59 @@ def get_docker_stats(service_name: str) -> Tuple[int, float, float]:
     return count, avg_cpu, avg_mem
 
 
+def get_active_connections(
+    gateway_url: str = "http://lynk-gateway:8080/nginx_status",
+    gateway_container: str = "lynk-gateway",
+) -> int:
+    """
+    Retrieves the count of active TCP connections from Nginx stub_status.
+    Falls back to docker exec or socket inspection if direct HTTP fails.
+    """
+    # 1. Try querying nginx stub_status over HTTP
+    try:
+        import urllib.request
+        req = urllib.request.Request(gateway_url, headers={"User-Agent": "Lynk-Autoscaler"})
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
+            text = resp.read().decode("ascii", errors="replace")
+            for line in text.splitlines():
+                if "Active connections:" in line:
+                    parts = line.split(":")
+                    if len(parts) > 1:
+                        return int(parts[1].strip())
+    except Exception:
+        pass
+
+    # 2. Fallback: try docker exec into gateway container to query localhost
+    try:
+        cmd = ["docker", "exec", gateway_container, "wget", "-qO-", "http://127.0.0.1:8080/nginx_status"]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=2)
+        if res.returncode == 0:
+            for line in res.stdout.splitlines():
+                if "Active connections:" in line:
+                    parts = line.split(":")
+                    if len(parts) > 1:
+                        return int(parts[1].strip())
+    except Exception:
+        pass
+
+    # 3. Fallback: inspect /proc/net/tcp and /proc/net/tcp6 for port 8080 (0x1F90) in ESTABLISHED (01) state
+    conn_count = 0
+    for proc_path in ("/proc/net/tcp", "/proc/net/tcp6"):
+        if os.path.exists(proc_path):
+            try:
+                with open(proc_path, "r", encoding="ascii") as f:
+                    for line in f:
+                        parts = line.strip().split()
+                        if len(parts) >= 4 and parts[3] == "01" and parts[1].endswith(":1F90"):
+                            conn_count += 1
+            except Exception:
+                pass
+    if conn_count > 0:
+        return conn_count
+
+    return 0
+
+
 def get_host_memory_headroom() -> float:
     """
     Computes available host RAM percentage.
@@ -293,13 +385,14 @@ def record_scaling_event(
     avg_cpu: float,
     avg_mem: float,
     host_headroom: float,
+    active_conns: int = 0,
 ) -> None:
     """Appends structured scaling event to results log for load test summaries."""
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     action = "SCALED UP" if target > current else "SCALED DOWN"
     entry = (
         f"[{timestamp}] {action}: {service_name} {current} -> {target} replicas "
-        f"| CPU={avg_cpu:.1f}% | Mem={avg_mem:.1f}% | HostHeadroom={host_headroom:.1f}%\n"
+        f"| CPU={avg_cpu:.1f}% | Mem={avg_mem:.1f}% | Conns={active_conns} | HostHeadroom={host_headroom:.1f}%\n"
     )
     paths = [
         "tests/load/results/autoscaler_events.log",
@@ -338,14 +431,14 @@ def main():
     gateway_container = os.getenv("AUTOSCALE_GATEWAY", "lynk-gateway")
     min_replicas = int(os.getenv("AUTOSCALE_MIN_REPLICAS", "2"))
     max_replicas = int(os.getenv("AUTOSCALE_MAX_REPLICAS", "6"))
-    interval_sec = int(os.getenv("AUTOSCALE_CHECK_INTERVAL", "10"))
+    interval_sec = int(os.getenv("AUTOSCALE_CHECK_INTERVAL", "5"))
     compose_file = os.getenv("COMPOSE_FILE", "docker-compose.yml")
     dry_run = os.getenv("AUTOSCALE_DRY_RUN", "false").lower() in ("true", "1", "yes")
 
     state = AutoscalerState(
-        scale_up_sustained_sec=int(os.getenv("SCALE_UP_SUSTAINED_SEC", "20")),
+        scale_up_sustained_sec=int(os.getenv("SCALE_UP_SUSTAINED_SEC", "5")),
         scale_down_sustained_sec=int(os.getenv("SCALE_DOWN_SUSTAINED_SEC", "300")),
-        scale_up_cooldown_sec=int(os.getenv("SCALE_UP_COOLDOWN_SEC", "30")),
+        scale_up_cooldown_sec=int(os.getenv("SCALE_UP_COOLDOWN_SEC", "15")),
         scale_down_cooldown_sec=int(os.getenv("SCALE_DOWN_COOLDOWN_SEC", "180")),
     )
 
@@ -367,7 +460,10 @@ def main():
         interval_sec,
         dry_run,
     )
-    init_entry = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] INITIALIZED: Autoscaler online for service '{service_name}' (min={min_replicas}, max={max_replicas}, check_interval={interval_sec}s)\n"
+    init_entry = (
+        f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] INITIALIZED: Autoscaler online for service '{service_name}' "
+        f"(min={min_replicas}, max={max_replicas}, check_interval={interval_sec}s)\n"
+    )
     for p in ["tests/load/results/autoscaler_events.log", "/workspace/tests/load/results/autoscaler_events.log"]:
         try:
             os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -377,24 +473,29 @@ def main():
         except Exception:
             pass
 
-
     while running:
         loop_start = time.time()
         try:
             replica_count, avg_cpu, avg_mem = get_docker_stats(service_name)
             host_headroom = get_host_memory_headroom()
-            # If unable to count replicas, fallback to min_replicas
             current = replica_count if replica_count > 0 else min_replicas
 
+            active_connections = get_active_connections(
+                gateway_url=f"http://{gateway_container}:8080/nginx_status",
+                gateway_container=gateway_container,
+            )
+            conns_per_replica = float(active_connections) / max(1.0, float(current))
+
             # Default RPS calculation (can be wired to Prometheus /metrics)
-            # When CPU is high, RPS per replica is inferred from capacity
             rps_per_replica = 0.0
 
             logger.info(
-                "Metric Sample: replicas=%d, avg_cpu=%.1f%%, avg_mem=%.1f%%, host_headroom=%.1f%%",
+                "Metric Sample: replicas=%d, avg_cpu=%.1f%%, avg_mem=%.1f%%, conns=%d (%.1f/rep), host_headroom=%.1f%%",
                 current,
                 avg_cpu,
                 avg_mem,
+                active_connections,
+                conns_per_replica,
                 host_headroom,
             )
 
@@ -404,11 +505,18 @@ def main():
                 cpu_percent=avg_cpu,
                 memory_percent=avg_mem,
                 host_memory_headroom=host_headroom,
+                active_connections=active_connections,
                 minimum=min_replicas,
                 maximum=max_replicas,
             )
 
-            target = state.evaluate_decision(current, proposed, loop_start)
+            is_urgent = (
+                avg_cpu >= 80.0
+                or conns_per_replica >= 2500.0
+                or rps_per_replica >= 100.0
+            )
+
+            target = state.evaluate_decision(current, proposed, loop_start, is_urgent=is_urgent)
 
             if target != current:
                 logger.info(
@@ -419,7 +527,15 @@ def main():
                 )
                 success = apply_scale(service_name, target, compose_file, dry_run=dry_run)
                 if success:
-                    record_scaling_event(service_name, current, target, avg_cpu, avg_mem, host_headroom)
+                    record_scaling_event(
+                        service_name,
+                        current,
+                        target,
+                        avg_cpu,
+                        avg_mem,
+                        host_headroom,
+                        active_conns=active_connections,
+                    )
                     reload_gateway(gateway_container, dry_run=dry_run)
 
         except Exception as err:
