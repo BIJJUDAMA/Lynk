@@ -64,7 +64,8 @@ function parseMemToMb(token) {
 
 // Parse `docker stats --no-stream` output of the form:
 //   lynk-api-1|45.83MiB / 512MiB
-// into { total, perContainer }. A container's usage is the left-hand side of
+// into { total, perContainer }, scoped to the platform's own containers
+// (names beginning with "lynk-"). A container's usage is the left-hand side of
 // the slash; failures are skipped. Returns { total: 0, perContainer: {} } when
 // nothing parses.
 function parseDockerStats(text) {
@@ -81,6 +82,7 @@ function parseDockerStats(text) {
     const usedToken = usage.split('/')[0];
     const mb = parseMemToMb(usedToken);
     if (!name || mb == null) continue;
+    if (!name.startsWith('lynk-')) continue;
     perContainer[name] = mb;
     total += mb;
   }
@@ -141,6 +143,8 @@ class ResourceSampler {
 
     this._samples = [];
     this._timer = null;
+    this._running = false;
+    this._stopped = false;
     this.tripped = false;
     this.tripReason = null;
   }
@@ -170,20 +174,32 @@ class ResourceSampler {
     return this._samples[this._samples.length - 1];
   }
 
-  // Begin periodic sampling. Safe to call more than once.
+  // Begin periodic sampling. Self-scheduling: each tick runs the probes and
+  // only then schedules the next one, so a slow probe (docker/tasklist/ps can
+  // each block for seconds) delays the cadence instead of piling up ticks.
+  // Safe to call more than once.
   start() {
-    if (this._timer) return this;
-    this._timer = setInterval(() => this.tick(), this.intervalMs);
-    if (this._timer && typeof this._timer.unref === 'function') {
-      this._timer.unref();
-    }
+    if (this._running) return this;
+    this._running = true;
+    this._stopped = false;
+    const run = () => {
+      this.tick();
+      if (this._stopped) return;
+      this._timer = setTimeout(run, this.intervalMs);
+      if (this._timer && typeof this._timer.unref === 'function') {
+        this._timer.unref();
+      }
+    };
+    run();
     return this;
   }
 
-  // Stop periodic sampling.
+  // Stop periodic sampling and cancel any pending tick.
   stop() {
+    this._stopped = true;
+    this._running = false;
     if (this._timer) {
-      clearInterval(this._timer);
+      clearTimeout(this._timer);
       this._timer = null;
     }
     return this;

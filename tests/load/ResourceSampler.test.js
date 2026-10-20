@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { ResourceSampler } = require('./ResourceSampler.js');
+const { ResourceSampler, parseDockerStats } = require('./ResourceSampler.js');
 
 test('trips when free memory falls to the floor', () => {
   let t = 0;
@@ -31,4 +31,31 @@ test('attributes client vs container memory separately', () => {
   assert.strictEqual(sample.totalContainerMb, 850);
   assert.strictEqual(sample.clientMb, 1200);
   assert.strictEqual(sample.perContainer['lynk-api-1'], 60);
+});
+
+test('container totals exclude non-lynk- rows', () => {
+  const { total, perContainer } = parseDockerStats(
+    'lynk-api-1|45.83MiB / 512MiB\nsome-other-1|100MiB / 1GiB'
+  );
+  assert.strictEqual(perContainer['lynk-api-1'], 45.83);
+  assert.strictEqual(perContainer['some-other-1'], undefined);
+  assert.strictEqual(total, 45.83);
+});
+
+test('start/stop schedules ticks and cancels cleanly', async () => {
+  let count = 0;
+  const s = new ResourceSampler({
+    intervalMs: 5,
+    safetyMb: 1,
+    readFree: () => { count += 1; return 20000; },
+    readContainers: () => ({ total: 0, perContainer: {} }),
+    readClientMb: () => 0,
+  });
+  s.start();
+  await new Promise((r) => setTimeout(r, 30));
+  s.stop();
+  const atStop = count;
+  await new Promise((r) => setTimeout(r, 30));
+  assert.strictEqual(count, atStop, 'no ticks after stop');
+  assert.ok(atStop >= 2, 'ticks were self-scheduled repeatedly');
 });
