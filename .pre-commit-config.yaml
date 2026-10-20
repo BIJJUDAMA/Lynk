@@ -27,6 +27,13 @@ repos:
         language: system
         types: [go]
         files: ^backend/
+      - id: golangci-lint
+        name: golangci-lint
+        entry: sh -c 'command -v golangci-lint >/dev/null 2>&1 && golangci-lint run --timeout=5m || echo "golangci-lint not installed; skipping (CI enforces it)"'
+        language: system
+        types: [go]
+        files: ^backend/
+        pass_filenames: false
 
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v3.1.0

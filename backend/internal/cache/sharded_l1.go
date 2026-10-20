@@ -45,6 +45,12 @@ func NewShardedL1Cache(numShards int, defaultTTL time.Duration) *ShardedL1Cache 
 	if numShards <= 0 {
 		numShards = 32
 	}
+	// Bound the shard count so the int->uint64 conversion below is provably safe
+	// (gosec G115) and the shard slice cannot be made unboundedly large.
+	const maxShards = 1 << 16
+	if numShards > maxShards {
+		numShards = maxShards
+	}
 	shards := make([]*l1Shard, numShards)
 	for i := 0; i < numShards; i++ {
 		shards[i] = &l1Shard{
@@ -53,7 +59,7 @@ func NewShardedL1Cache(numShards int, defaultTTL time.Duration) *ShardedL1Cache 
 	}
 	return &ShardedL1Cache{
 		shards:    shards,
-		numShards: uint64(numShards),
+		numShards: uint64(numShards), //nolint:gosec // G115: numShards is bounded to [1, 65536] above
 		ttl:       defaultTTL,
 	}
 }

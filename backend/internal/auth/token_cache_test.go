@@ -107,10 +107,11 @@ func TestTokenCache_SweepsExpiredEntriesOnSet(t *testing.T) {
 		Roles:         []string{"member"},
 	}
 
-	expiredToken := "sAccessToken=expired-entry"
+	// Test fixtures only; the values are opaque keys, not credentials.
+	expiredToken := "sAccessToken=expired-entry" //nolint:gosec // G101: test fixture, not a credential
 	tc.Set(expiredToken, claims, 10*time.Millisecond)
 
-	keepToken := "sAccessToken=unexpired-entry"
+	keepToken := "sAccessToken=unexpired-entry" //nolint:gosec // G101: test fixture, not a credential
 	tc.Set(keepToken, claims, time.Minute)
 
 	time.Sleep(20 * time.Millisecond)
