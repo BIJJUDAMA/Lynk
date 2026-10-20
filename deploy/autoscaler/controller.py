@@ -285,6 +285,35 @@ def apply_scale(
         return False
 
 
+def record_scaling_event(
+    service_name: str,
+    current: int,
+    target: int,
+    avg_cpu: float,
+    avg_mem: float,
+    host_headroom: float,
+) -> None:
+    """Appends structured scaling event to results log for load test summaries."""
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    action = "SCALED UP" if target > current else "SCALED DOWN"
+    entry = (
+        f"[{timestamp}] {action}: {service_name} {current} -> {target} replicas "
+        f"| CPU={avg_cpu:.1f}% | Mem={avg_mem:.1f}% | HostHeadroom={host_headroom:.1f}%\n"
+    )
+    paths = [
+        "tests/load/results/autoscaler_events.log",
+        "/workspace/tests/load/results/autoscaler_events.log",
+    ]
+    for p in paths:
+        try:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "a", encoding="ascii") as f:
+                f.write(entry)
+            break
+        except Exception:
+            pass
+
+
 def reload_gateway(gateway_container: str, dry_run: bool = False) -> None:
     """Signals Nginx gateway to reload upstream container IPs without connection drops."""
     cmd = ["docker", "exec", gateway_container, "nginx", "-s", "reload"]
@@ -379,6 +408,7 @@ def main():
                 )
                 success = apply_scale(service_name, target, compose_file, dry_run=dry_run)
                 if success:
+                    record_scaling_event(service_name, current, target, avg_cpu, avg_mem, host_headroom)
                     reload_gateway(gateway_container, dry_run=dry_run)
 
         except Exception as err:

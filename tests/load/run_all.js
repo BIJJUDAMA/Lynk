@@ -405,6 +405,14 @@ async function main() {
   console.log(`    (Calculated based on ${maxThroughput.toFixed(1)} req/s * ${realisticThinkTimeSec}s student browse/think time)`);
   console.log('------------------------------------------------------------------------\n');
 
+  const autoscalerEvents = getAutoscalerEvents();
+  if (autoscalerEvents.length > 0) {
+    console.log('------------------------------------------------------------------------');
+    console.log('AUTOSCALING ACTIVITY & TIMELINE:');
+    autoscalerEvents.forEach((evt) => console.log(`  ${evt}`));
+    console.log('------------------------------------------------------------------------\n');
+  }
+
   // 7. Write Markdown Summary Report
   const mdReport = generateMarkdownReport(rows, maxThroughput, maxVUsRecorded, estimatedActiveCampusUsers);
   const summaryMdPath = path.join(RESULTS_DIR, 'SUMMARY.md');
@@ -412,7 +420,35 @@ async function main() {
   console.log(`Full markdown report saved to: ${summaryMdPath}\n`);
 }
 
+function getAutoscalerEvents() {
+  const eventsFile = path.join(RESULTS_DIR, 'autoscaler_events.log');
+  if (fs.existsSync(eventsFile)) {
+    try {
+      const content = fs.readFileSync(eventsFile, 'utf8').trim();
+      if (content) return content.split(/\r?\n/).filter(Boolean);
+    } catch (e) {}
+  }
+  try {
+    const raw = execSync('docker logs --tail 40 lynk-autoscaler', {
+      encoding: 'utf8',
+      timeout: 3000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return raw
+      .split(/\r?\n/)
+      .filter((l) => l.includes('SCALING') || l.includes('Autoscaler') || l.includes('Metric Sample'))
+      .slice(-15);
+  } catch (e) {
+    return [];
+  }
+}
+
 function generateMarkdownReport(rows, peakRps, maxVUs, estimatedUsers) {
+  const autoscalerEvents = getAutoscalerEvents();
+  let autoscalerSection = '';
+  if (autoscalerEvents.length > 0) {
+    autoscalerSection = `\n---\n\n## 4. Dynamic Autoscaling Timeline & Events\n\n\`\`\`text\n${autoscalerEvents.join('\n')}\n\`\`\`\n`;
+  }
   return `# Lynk Backend Load Testing & Capacity Benchmark Report
 
 **Generated:** ${new Date().toISOString()}
@@ -450,7 +486,7 @@ ${rows.map((r) => `| **${r.stage}** | ${r.totalRequests} | ${r.rps} req/s | ${r.
 
 > [!NOTE]
 > In real campus usage, students browse, read project overviews, and review requirements with an average think time of 10 to 30 seconds between requests. A backend processing ${peakRps.toFixed(1)} requests/second comfortably supports thousands of simultaneous browsing students.
-`;
+` + autoscalerSection;
 }
 
 main().catch((err) => {
