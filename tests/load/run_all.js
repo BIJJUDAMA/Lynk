@@ -312,7 +312,7 @@ async function main() {
     if (finalStats.mem > peakMem) peakMem = finalStats.mem;
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`\n==> Stage completed in ${elapsed}s (Exit code: ${proc.status ?? 0}).`);
+    console.log(`\n==> Stage completed in ${elapsed}s (Exit code: ${exitCode}).`);
 
     // Parse output JSON if created
     let metrics = null;
