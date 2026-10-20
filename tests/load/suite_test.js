@@ -91,6 +91,12 @@ test('runSuite dispatches each mode to the right driver', () => {
   assert.deepStrictEqual(calls, ['smoke', 'connections', 'ram-ramp', 'ram-levels', 'throughput']);
 });
 
+test('parseArgs rejects non-numeric and non-positive safety flags', () => {
+  assert.throws(() => parseArgs(['--mode=ram', '--safety-mb=abc']), /safety-mb/);
+  assert.throws(() => parseArgs(['--mode=ram', '--tolerance=0']), /tolerance/);
+  assert.throws(() => parseArgs(['--mode=ram', '--iterations=-1']), /iterations/);
+});
+
 test('runWithSupervisor starts/stops the sampler and records the child pid', async () => {
   const sampler = fakeSampler();
   const fakeChild = { pid: 4242, exitCode: null, signalCode: null, kill() { this.exitCode = 0; } };

@@ -64,6 +64,16 @@ function parsePositiveInt(name, raw) {
   return n;
 }
 
+// Coerce a flag to a positive finite number (fractions allowed), rejecting NaN
+// and <= 0.
+function parsePositiveNumber(name, raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(`invalid ${name} "${raw}": must be a positive number`);
+  }
+  return n;
+}
+
 function parseArgs(argv) {
   const opts = { ...DEFAULTS };
 
@@ -93,13 +103,13 @@ function parseArgs(argv) {
         opts.dwell = parsePositiveInt('dwell', value);
         break;
       case 'safety-mb':
-        opts.safetyMb = Number(value);
+        opts.safetyMb = parsePositiveInt('safety-mb', value);
         break;
       case 'tolerance':
-        opts.tolerance = Number(value);
+        opts.tolerance = parsePositiveNumber('tolerance', value);
         break;
       case 'iterations':
-        opts.iterations = Number(value);
+        opts.iterations = parsePositiveInt('iterations', value);
         break;
       case 'seed':
         opts.seed = Number(value);
@@ -491,4 +501,5 @@ module.exports = {
   readComposeConfig,
   killChild,
   parsePositiveInt,
+  parsePositiveNumber,
 };
