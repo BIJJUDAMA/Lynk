@@ -16,6 +16,7 @@ const path = require('path');
 const k6 = require('./k6.js');
 const connections = require('./connections.js');
 const resources = require('./resources.js');
+const stack = require('./stack.js');
 const { ResourceSampler } = require('./ResourceSampler.js');
 
 const MODES = ['throughput', 'connections', 'ram', 'smoke'];
@@ -35,6 +36,7 @@ const DEFAULTS = {
   tolerance: 0.05,
   iterations: 8,
   seed: 1,
+  noUp: false,
 };
 
 // Windows default install paths for k6, mirroring run_all.js.
@@ -114,6 +116,9 @@ function parseArgs(argv) {
         break;
       case 'seed':
         opts.seed = Number(value);
+        break;
+      case 'no-up':
+        opts.noUp = true;
         break;
       default:
         throw new Error(`unknown flag "${arg}"`);
@@ -448,24 +453,46 @@ function main() {
     process.exit(2);
   }
 
-  let code;
-  try {
-    code = runSuite(opts);
-  } catch (err) {
-    console.error(`[ERROR] ${err.message}`);
-    process.exit(2);
-  }
-
-  if (code && typeof code.then === 'function') {
-    code
-      .then((resolved) => process.exit(resolved))
-      .catch((err) => {
-        console.error(`[ERROR] ${err.message}`);
+  return (async () => {
+    // Bring the stack up (building images) and wait for the gateway to report
+    // ready before applying any load, unless --no-up says it is already up.
+    if (!opts.noUp) {
+      const up = stack.upStack({ build: true });
+      if (!up.ok) {
+        console.error('[ERROR] stack failed to come up');
+        console.error(up.log);
         process.exit(2);
+      }
+      const ready = await stack.waitForReady({
+        url: stack.HEALTH_URL,
+        timeoutMs: 180000,
+        intervalMs: 3000,
       });
-  } else {
-    process.exit(code);
-  }
+      if (!ready) {
+        console.error(`[ERROR] stack not ready at ${stack.HEALTH_URL}`);
+        process.exit(2);
+      }
+    }
+
+    let code;
+    try {
+      code = runSuite(opts);
+    } catch (err) {
+      console.error(`[ERROR] ${err.message}`);
+      process.exit(2);
+    }
+
+    if (code && typeof code.then === 'function') {
+      code
+        .then((resolved) => process.exit(resolved))
+        .catch((err) => {
+          console.error(`[ERROR] ${err.message}`);
+          process.exit(2);
+        });
+    } else {
+      process.exit(code);
+    }
+  })();
 }
 
 if (require.main === module) {
