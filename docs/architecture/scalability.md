@@ -119,6 +119,8 @@ The stack's working set fits in under 1 GiB; per-pod CPU (~3 cores at ~3.5k req/
 
 **Concurrent connections (Stage 8, `08_connection_hold.js`):** the stack held **at least 32,000 simultaneous keep-alive connections cleanly** (0.00% errors, p95 3.3 ms) in the 2k -> 64k ladder. Beyond ~36,000 the single-laptop k6 process was OOM-killed before the server struggled, so the measured wall is the load generator, not Lynk. The server's connection ceiling is far higher: Nginx `worker_connections 8192` x `worker_processes auto` (16) ~= 131k theoretical accepts, with PgBouncer multiplexing onto 25 PostgreSQL backends. Measuring the server's true ceiling requires a distributed load generator (`k6 --execution-segment` or the k8s k6 operator).
 
+These measurements are reproducible with the parameterized load suite, which supersedes the fixed stages above for capacity work: `node tests/load/suite.js --mode=smoke|throughput|connections|ram` (or `make load-connections`, `make load-resources`, `make load-throughput`). The `connections` and `ram` modes read server-side connection counts from the gateway's Nginx `stub_status` endpoint (`GET /nginx_status`); `--mode=ram --levels=...` walks fixed arrival levels one row each. See `tests/load/README.md`.
+
 Full numbers and methodology: `tests/load/results/REPORT.md` (and the auto-generated `SUMMARY.md`).
 
 ---

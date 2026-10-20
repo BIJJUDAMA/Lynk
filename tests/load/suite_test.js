@@ -3,7 +3,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseArgs, MODES } = require('./suite.js');
+const fs = require('node:fs');
+const path = require('node:path');
+const { parseArgs, MODES, runSuite } = require('./suite.js');
 
 test('parseArgs defaults', () => {
   const o = parseArgs(['--mode=ram']);
@@ -40,4 +42,27 @@ test('parseArgs rejects a non-integer max', () => {
 
 test('MODES is the fixed set', () => {
   assert.deepStrictEqual(MODES, ['throughput', 'connections', 'ram', 'smoke']);
+});
+
+test('nginx.conf declares stub_status', () => {
+  const conf = path.resolve(__dirname, '..', '..', '.docker', 'nginx', 'nginx.conf');
+  const c = fs.readFileSync(conf, 'utf8');
+  assert.match(c, /stub_status/);
+});
+
+test('runSuite dispatches each mode to the right driver', () => {
+  const calls = [];
+  const deps = {
+    runSmoke: () => { calls.push('smoke'); return 0; },
+    searchCeiling: () => { calls.push('connections'); return 0; },
+    runRamp: () => { calls.push('ram-ramp'); return 0; },
+    runLevels: () => { calls.push('ram-levels'); return 0; },
+    runThroughput: () => { calls.push('throughput'); return 0; },
+  };
+  assert.strictEqual(runSuite({ mode: 'smoke' }, deps), 0);
+  assert.strictEqual(runSuite({ mode: 'connections' }, deps), 0);
+  assert.strictEqual(runSuite({ mode: 'ram' }, deps), 0);
+  assert.strictEqual(runSuite({ mode: 'ram', levels: [500] }, deps), 0);
+  assert.strictEqual(runSuite({ mode: 'throughput' }, deps), 0);
+  assert.deepStrictEqual(calls, ['smoke', 'connections', 'ram-ramp', 'ram-levels', 'throughput']);
 });

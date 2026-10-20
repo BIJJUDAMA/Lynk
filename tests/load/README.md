@@ -4,9 +4,13 @@ This directory contains the automated protocol-level load testing suite for the 
 
 ---
 
-## 1. Test Architecture & Stages
+## 1. Test Architecture & Stages (legacy fixed scripts)
 
-The test suite is orchestrated sequentially by `tests/load/run_all.js` across 6 progressive stages:
+> **New in this directory:** the parameterized suite (`tests/load/suite.js`) supersedes the
+> fixed 01-06 stages below for capacity work; see Section 2. Stages 01-06 are retained as
+> **legacy** fixed scripts and still run via `make load-test`.
+
+The legacy suite is orchestrated sequentially by `tests/load/run_all.js` across 6 progressive stages:
 
 | Stage | Script | Objective | Target Invariant |
 | :--- | :--- | :--- | :--- |
@@ -34,7 +38,39 @@ Stage 8 (`08_connection_hold.js`) measures concurrent connection capacity: each 
 
 ---
 
-## 2. Prerequisites
+## 2. The Parameterized Suite (`suite.js`)
+
+`node tests/load/suite.js --mode=<mode>` is a single entrypoint that dispatches to one
+of four modes. It supersedes the fixed 01-06 stages for capacity measurement; 01-06 remain
+as legacy fixed scripts. Each mode is implemented by its own module (`connections.js`,
+`resources.js`, `ResourceSampler.js`, `hostmetrics.js`) and the driver reads the Nginx
+`stub_status` connection count for server-side context.
+
+| Mode | Driver | What it answers |
+| :--- | :--- | :--- |
+| `smoke` | inline k6 health script | One VU for 2s against `/health`; a fast liveness check. |
+| `throughput` | `scripts/07_saturation_ceiling.js` | Constant-arrival (no think time) saturation ceiling: the server's true RPS limit. |
+| `connections` | `connections.searchCeiling` | Concurrent keep-alive connection ceiling, self-searched (doubling then binary search), attributing the wall to server, client, or the safety stop. |
+| `ram` | `resources.runRamp` / `runLevels` | RAM/CPU curve while resource-sampling; `--levels=...` runs fixed arrival levels one row each, otherwise a ramping run stops at the safety floor or failure knee. |
+
+Flags: `--levels=500,2000,8000` (ram mode), `--target=N` (connection start VU),
+`--max=N`, `--dwell=SEC`, `--safety-mb=N`, `--tolerance=F`, `--iterations=N`, `--seed=N`.
+
+```bash
+make load-suite MODE=smoke
+make load-connections        # suite --mode=connections
+make load-resources          # suite --mode=ram
+make load-throughput         # suite --mode=throughput
+```
+
+The gateway exposes server-side connection counts at `GET /nginx_status` (an Nginx
+`stub_status` location restricted to the Docker network and localhost). The connections
+driver reads that endpoint through `NGINX_STUB_STATUS_URL`; set it to
+`http://localhost:8080/nginx_status` (its own default is `http://localhost:8080/stub_status`).
+
+---
+
+## 3. Prerequisites
 
 You need **either** the native `k6` CLI **or** Docker:
 
@@ -48,7 +84,7 @@ If `k6` is not installed on PATH, the master orchestrator automatically detects 
 
 ---
 
-## 3. Running the Tests
+## 4. Running the Tests
 
 Ensure the Go backend and PostgreSQL database are running:
 
@@ -87,7 +123,7 @@ make load-test-concurrency
 
 ---
 
-## 4. Understanding Output Metrics
+## 5. Understanding Output Metrics
 
 * **`http_reqs (rate)`**: Processed requests per second (RPS).
 * **`http_req_duration (p95)`**: 95th percentile latency. The target is `< 500ms` under peak load.
@@ -97,6 +133,6 @@ make load-test-concurrency
 
 ---
 
-## 5. Artifacts & Reports
+## 6. Artifacts & Reports
 
 Every run generates individual stage outputs in `tests/load/results/*.json` and produces a consolidated summary report at `tests/load/results/SUMMARY.md`. The full write-up for the current build, including the compute profile and measured RPS/VU/latency table, lives at `tests/load/results/REPORT.md`, and the architecture it validates is documented in `docs/architecture/scalability.md`.

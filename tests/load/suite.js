@@ -9,6 +9,10 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+const connections = require('./connections.js');
+const resources = require('./resources.js');
+const { ResourceSampler } = require('./ResourceSampler.js');
+
 const MODES = ['throughput', 'connections', 'ram', 'smoke'];
 
 const DEFAULT_API_URL = 'http://localhost:8080/api/v1';
@@ -139,14 +143,125 @@ function runSmoke(opts) {
   }
 }
 
-function runSuite(opts) {
+// Print one driver's result as JSON so a run is self-describing.
+function emit(result) {
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+// Return the first finite numeric field present in obj, else the fallback.
+function pickNumber(obj, keys, fallback) {
+  if (obj) {
+    for (const key of keys) {
+      const value = obj[key];
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+    }
+  }
+  return fallback;
+}
+
+// Arrival-ramp job: drive k6's constant-arrival-rate executor (no think time)
+// by reusing the Stage 7 saturation script, then parse its exported summary.
+// Best-effort parsing: a missing summary leaves the exit code as the signal.
+function runArrivalJob() {
+  const resultsDir = path.join(__dirname, 'results');
+  fs.mkdirSync(resultsDir, { recursive: true });
+  const outFile = path.join(resultsDir, '.arrival.summary.json');
+  try {
+    fs.unlinkSync(outFile);
+  } catch (e) {
+    // no previous summary
+  }
+
+  const script = path.join(__dirname, 'scripts', '07_saturation_ceiling.js');
+  const apiUrl = process.env.API_BASE_URL || DEFAULT_API_URL;
+  const proc = spawnSync('k6', ['run', `--summary-export=${outFile}`, script], {
+    cwd: path.resolve(__dirname, '../..'),
+    stdio: 'inherit',
+    env: { ...process.env, API_BASE_URL: apiUrl },
+  });
+
+  let failedRate = 0;
+  let p95 = null;
+  try {
+    const summary = JSON.parse(fs.readFileSync(outFile, 'utf8'));
+    const metrics = (summary && summary.metrics) || {};
+    failedRate = pickNumber(metrics.http_req_failed, ['value', 'rate'], 0);
+    p95 = pickNumber(metrics.http_req_duration, ['p(95)'], null);
+  } catch (e) {
+    // summary unavailable; report the exit code alone
+  }
+
+  return { exitCode: proc.status === null ? 1 : proc.status, failedRate, p95 };
+}
+
+// connections mode: self-searching concurrent-connection ceiling.
+function runConnections(opts) {
+  const deps = connections.defaultDeps(
+    new ResourceSampler({ safetyMb: opts.safetyMb })
+  );
+  const result = connections.searchCeiling(
+    {
+      max: opts.max === null ? undefined : opts.max,
+      dwell: opts.dwell === null ? undefined : opts.dwell,
+      tolerance: opts.tolerance,
+      iterations: opts.iterations,
+      start: opts.target === null ? undefined : opts.target,
+    },
+    deps
+  );
+  emit({ mode: 'connections', ...result });
+  return 0;
+}
+
+// ram mode (default): ramping arrival load with continuous resource sampling.
+function runRamRamp(opts) {
+  const sampler = new ResourceSampler({ safetyMb: opts.safetyMb });
+  const result = resources.runRamp(opts, { runRamp: runArrivalJob, sampler });
+  emit(result);
+  return 0;
+}
+
+// ram mode (--levels given): one row per fixed arrival level.
+function runRamLevels(opts) {
+  const sampler = new ResourceSampler({ safetyMb: opts.safetyMb });
+  const result = resources.runLevels(opts, {
+    runLevel: () => runArrivalJob(),
+    sampler,
+  });
+  emit(result);
+  return 0;
+}
+
+// throughput mode: the arrival-ramp saturation ceiling on its own.
+function runThroughput(opts) {
+  const result = runArrivalJob();
+  emit({ mode: 'throughput', ...result });
+  return result.exitCode === 0 ? 0 : 1;
+}
+
+// The real driver set. Injecting an alternative object into runSuite() lets a
+// test assert mode routing without spawning k6 or touching a live stack.
+function defaultDeps() {
+  return {
+    runSmoke,
+    searchCeiling: runConnections,
+    runRamp: runRamRamp,
+    runLevels: runRamLevels,
+    runThroughput,
+  };
+}
+
+function runSuite(opts, deps) {
+  const d = deps || defaultDeps();
   switch (opts.mode) {
     case 'smoke':
-      return runSmoke(opts);
-    case 'throughput':
+      return d.runSmoke(opts);
     case 'connections':
+      return d.searchCeiling(opts);
     case 'ram':
-      throw new Error('not implemented');
+      return opts.levels ? d.runLevels(opts) : d.runRamp(opts);
+    case 'throughput':
+      return d.runThroughput(opts);
     default:
       throw new Error(`unknown mode "${opts.mode}"`);
   }
