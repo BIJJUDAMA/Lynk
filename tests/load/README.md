@@ -51,7 +51,7 @@ as legacy fixed scripts. Each mode is implemented by its own module (`connection
 | `smoke` | inline k6 health script | One VU for 2s against `/health`; a fast liveness check. |
 | `throughput` | `scripts/07_saturation_ceiling.js` | Constant-arrival (no think time) saturation ceiling: the server's true RPS limit. |
 | `connections` | `connections.searchCeiling` | Concurrent keep-alive connection ceiling, self-searched (doubling then binary search), attributing the wall to server, client, or the safety stop. |
-| `ram` | `resources.runRamp` / `runLevels` | RAM/CPU curve while resource-sampling; a ramping run stops at the safety floor or failure knee (`runRamp`, the default). `--levels=...` produces one sampled row per listed rate, but each row currently runs the full arrival ramp rather than holding a flat rate, so treat the `rps` column as a label, not the applied load. |
+| `ram` | `resources.runRamp` / `runLevels` | RAM/CPU curve while resource-sampling; a ramping run stops at the safety floor or failure knee (`runRamp`, the default). `--levels=500,2000,8000` drives a constant-arrival run at each listed rate and samples one row per level. |
 
 Flags: `--target=N`/`--max=N`/`--dwell=SEC` (connections mode), `--levels=500,2000,8000` (ram mode),
 `--safety-mb=N`, `--tolerance=F`, `--iterations=N`, and `--seed=N` (parsed; currently unused).
