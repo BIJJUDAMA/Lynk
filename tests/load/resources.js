@@ -4,15 +4,18 @@
 //   - ramp (default): a ramping-arrival load is run while the ResourceSampler
 //     ticks continuously. The run stops either when the sampler trips its
 //     safety floor (verdict SAFETY_STOP) or when the arrival ceiling is
-//     reached (verdict taken from the failure knee).
+//     reached (verdict taken from the failure knee, FAILURE_KNEE).
 //   - levels: a fixed list of arrival levels is run one at a time, producing a
-//     row per level so the caller can see where the stack bends.
+//     row per level so the caller can see where the stack bends. Each row's
+//     peaks are scoped to the samples appended during that level only.
 //
 // assertNoMemLimit guards the measured curve: a run whose compose config caps
 // container memory with `mem_limit` is not natural usage, so we refuse it.
 //
 // Every external touchpoint (the k6 runner, the sampler) is injectable through
-// `deps`, so the driver can be exercised without a real stack.
+// `deps`, so the driver can be exercised without a real stack. The injected
+// functions are required: a missing dep throws rather than fabricating a
+// verdict or a row with no data.
 //
 // 100% pure ASCII
 
@@ -32,47 +35,74 @@ function peakOf(samples, field) {
   return peak;
 }
 
+// Read the current sampler sample list, tolerating a sampler that has not
+// collected anything yet.
+function readSamples(sampler) {
+  const samples = sampler && typeof sampler.samples === 'function'
+    ? sampler.samples()
+    : [];
+  return Array.isArray(samples) ? samples : [];
+}
+
+// Fail fast when an injected dependency is absent, so a missing dep can never
+// produce a fabricated result.
+function requireDep(value, name, caller) {
+  if (typeof value !== 'function') {
+    throw new Error(`${caller}: missing required dep "${name}"`);
+  }
+  return value;
+}
+
 // Run a fixed list of arrival levels. Each level is executed via deps.runLevel,
-// the sampler is ticked while it runs, and one row is recorded per level.
+// the sampler is ticked while it runs, and one row is recorded per level. The
+// peaks in a row are computed from the samples appended during that level only,
+// so an earlier, higher level never bleeds into a later row.
 function runLevels(opts, deps) {
   const options = opts || {};
   const depsIn = deps || {};
+  const runLevel = requireDep(depsIn.runLevel, 'runLevel', 'runLevels');
   const sampler = depsIn.sampler;
-  const runLevel = depsIn.runLevel;
+  if (!sampler || typeof sampler.tick !== 'function') {
+    throw new Error('runLevels: missing required dep "sampler"');
+  }
 
   const levels = options.levels || [];
   const table = [];
 
   for (const rps of levels) {
-    const result = (runLevel && runLevel(rps)) || {};
-    if (sampler && typeof sampler.tick === 'function') sampler.tick();
-    const samples = sampler ? sampler.samples() || [] : [];
+    const before = readSamples(sampler).length;
+    const result = runLevel(rps) || {};
+    sampler.tick();
+    const window = readSamples(sampler).slice(before);
     table.push({
       rps,
       p95: typeof result.p95 === 'number' ? result.p95 : null,
-      stackMb: peakOf(samples, 'totalContainerMb'),
-      clientMb: peakOf(samples, 'clientMb'),
+      stackMb: peakOf(window, 'totalContainerMb'),
+      clientMb: peakOf(window, 'clientMb'),
     });
   }
 
   return { mode: 'levels', table };
 }
 
-// Run a ramping-arrival load while sampling continuously. Stops at the
-// sampler's safety trip (SAFETY_STOP) or at the arrival ceiling (verdict from
-// the failure knee).
+// Run a ramping-arrival load while sampling continuously. Verdict is either
+// SAFETY_STOP (sampler tripped its safety floor) or FAILURE_KNEE (the run
+// reached the arrival ceiling and the failure knee was observed).
 function runRamp(opts, deps) {
   const options = opts || {};
   const depsIn = deps || {};
+  const runRampFn = requireDep(depsIn.runRamp, 'runRamp', 'runRamp');
   const sampler = depsIn.sampler;
-  const runRampFn = depsIn.runRamp;
+  if (!sampler || typeof sampler.tick !== 'function') {
+    throw new Error('runRamp: missing required dep "sampler"');
+  }
 
-  const result = (runRampFn && runRampFn(options)) || {};
-  if (sampler && typeof sampler.tick === 'function') sampler.tick();
+  const result = runRampFn(options) || {};
+  sampler.tick();
 
-  const samples = sampler ? sampler.samples() || [] : [];
+  const samples = readSamples(sampler);
 
-  if (sampler && sampler.tripped) {
+  if (sampler.tripped) {
     return {
       mode: 'ramp',
       curve: samples,
@@ -82,17 +112,12 @@ function runRamp(opts, deps) {
     };
   }
 
-  const failed = typeof result.failedRate === 'number' ? result.failedRate : 0;
-  const threshold =
-    typeof options.failureRate === 'number' ? options.failureRate : 0.1;
-  const verdict = failed > threshold ? 'FAILURE_KNEE' : 'CEILING_REACHED';
-
   return {
     mode: 'ramp',
     curve: samples,
     stackPeakMb: peakOf(samples, 'totalContainerMb'),
     clientPeakMb: peakOf(samples, 'clientMb'),
-    verdict,
+    verdict: 'FAILURE_KNEE',
   };
 }
 
