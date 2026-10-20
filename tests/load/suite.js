@@ -177,12 +177,13 @@ function pickNumber(obj, keys, fallback) {
 }
 
 // Parse a k6 --summary-export document into the fields the suite reports:
-// failure rate and latency p95.
+// failure rate, latency p95, and the achieved request rate (RPS).
 function parseSummaryResult(summary) {
   const metrics = (summary && summary.metrics) || {};
   return {
     failedRate: pickNumber(metrics.http_req_failed, ['value', 'rate'], 0),
     p95: pickNumber(metrics.http_req_duration, ['p(95)'], null),
+    rps: pickNumber(metrics.http_reqs, ['rate', 'value'], null),
   };
 }
 
@@ -191,7 +192,7 @@ function parseSummaryFile(outFile) {
   try {
     return parseSummaryResult(JSON.parse(fs.readFileSync(outFile, 'utf8')));
   } catch (e) {
-    return { failedRate: 0, p95: null };
+    return { failedRate: 0, p95: null, rps: null };
   }
 }
 

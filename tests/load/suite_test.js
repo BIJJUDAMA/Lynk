@@ -177,3 +177,27 @@ test('runRamRamp fails when the compose config caps memory', async () => {
     /mem_limit/
   );
 });
+
+test('parseSummaryResult surfaces failedRate, p95 and RPS', () => {
+  const fixture = {
+    metrics: {
+      http_reqs: { count: 60000, rate: 2000 },
+      http_req_failed: { value: 0.01 },
+      http_req_duration: { 'p(95)': 12 },
+    },
+  };
+  const r = parseSummaryResult(fixture);
+  assert.strictEqual(r.rps, 2000);
+  assert.strictEqual(r.failedRate, 0.01);
+  assert.strictEqual(r.p95, 12);
+});
+
+test('runThroughput surfaces RPS from the injected job', async () => {
+  let emitted = null;
+  const code = await runThroughput({}, {
+    runArrivalJob: async () => ({ exitCode: 0, failedRate: 0, p95: 5, rps: 1234 }),
+    emit: (r) => { emitted = r; },
+  });
+  assert.strictEqual(code, 0);
+  assert.strictEqual(emitted.rps, 1234);
+});
