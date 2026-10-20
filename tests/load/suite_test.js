@@ -124,6 +124,31 @@ test('runWithSupervisor kills the child when the sampler trips', async () => {
   assert.strictEqual(res.tripped, true);
 });
 
+test('runWithSupervisor populates clientMb from an injected reader and child pid', async () => {
+  let seenPid = null;
+  const sampler = new ResourceSampler({
+    intervalMs: 100000,
+    safetyMb: 0,
+    readFree: () => 1000000,
+    readContainers: () => ({ total: 10, perContainer: {} }),
+    readClientMb: () => {
+      seenPid = sampler.clientPid;
+      return sampler.clientPid ? 321 : null;
+    },
+  });
+
+  const fakeChild = { pid: 4242, exitCode: null, signalCode: null, kill() { this.exitCode = 0; } };
+  await runWithSupervisor((onChild) => {
+    onChild(fakeChild);
+    return Promise.resolve({ exitCode: 0 });
+  }, { sampler, pollMs: 5, graceMs: 5 });
+
+  sampler.tick();
+  assert.strictEqual(sampler.clientPid, 4242);
+  assert.strictEqual(seenPid, 4242);
+  assert.ok(sampler.samples().some((s) => s.clientMb === 321));
+});
+
 test('runRamRamp calls the mem-limit guard before load', async () => {
   let guarded = false;
   const emitted = [];
