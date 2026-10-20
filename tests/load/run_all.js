@@ -2,7 +2,56 @@
 // Executes k6 stages sequentially and outputs a unified metric summary.
 // 100% pure ASCII
 
-const { execSync, spawnSync } = require('child_process');
+const { execSync, spawnSync, spawn } = require('child_process');
+
+function parseMemToMb(token) {
+  if (token == null) return 0;
+  const m = String(token).trim().match(/^([\d.]+)\s*([KMGTP]i?B)?$/i);
+  if (!m) return 0;
+  const value = Number(m[1]);
+  if (!Number.isFinite(value)) return 0;
+  const unit = (m[2] || 'B').toUpperCase();
+  const factor = {
+    B: 1 / (1024 * 1024),
+    KIB: 1 / 1024,
+    KB: 1 / 1024,
+    MIB: 1,
+    MB: 1,
+    GIB: 1024,
+    GB: 1024,
+    TIB: 1024 * 1024,
+    TB: 1024 * 1024,
+  }[unit];
+  return factor ? value * factor : 0;
+}
+
+function sampleDockerStats() {
+  try {
+    const out = execSync('docker stats --no-stream --format "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}"', {
+      timeout: 3000,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    let totalCpu = 0;
+    let totalMem = 0;
+    for (const line of out.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const parts = trimmed.split('|');
+      if (parts.length >= 3 && (parts[0].includes('lynk-') || parts[0].includes('lynk_') || parts[0].includes('lynk'))) {
+        const cpuStr = parts[1].replace('%', '').trim();
+        const cpuVal = parseFloat(cpuStr) || 0;
+        totalCpu += cpuVal;
+        const memStr = parts[2].split('/')[0].trim();
+        const memMb = parseMemToMb(memStr) || 0;
+        totalMem += memMb;
+      }
+    }
+    return { cpu: totalCpu, mem: totalMem };
+  } catch (e) {
+    return { cpu: 0, mem: 0 };
+  }
+}
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -195,8 +244,19 @@ async function main() {
     }
 
     const startTime = Date.now();
-    let proc;
+    let peakCpu = 0;
+    let peakMem = 0;
+    const initialStats = sampleDockerStats();
+    peakCpu = initialStats.cpu;
+    peakMem = initialStats.mem;
 
+    const sampleTimer = setInterval(() => {
+      const stats = sampleDockerStats();
+      if (stats.cpu > peakCpu) peakCpu = stats.cpu;
+      if (stats.mem > peakMem) peakMem = stats.mem;
+    }, 1500);
+
+    let exitCode = 0;
     if (runnerType === 'native') {
       const args = [
         'run',
@@ -204,10 +264,17 @@ async function main() {
         `--summary-export=${stage.resultFile}`,
         stage.script,
       ];
-      proc = spawnSync('k6', args, {
+      const proc = spawn('k6', args, {
         cwd: ROOT_DIR,
         stdio: 'inherit',
         env: { ...process.env, API_BASE_URL: apiUrl },
+      });
+      await new Promise((resolve) => {
+        proc.on('close', (code) => {
+          exitCode = code ?? 0;
+          resolve();
+        });
+        proc.on('error', () => resolve());
       });
     } else {
       // Docker runner
@@ -226,11 +293,23 @@ async function main() {
         `--summary-export=${relResult}`,
         relScript,
       ];
-      proc = spawnSync('docker', dockerArgs, {
+      const proc = spawn('docker', dockerArgs, {
         cwd: ROOT_DIR,
         stdio: 'inherit',
       });
+      await new Promise((resolve) => {
+        proc.on('close', (code) => {
+          exitCode = code ?? 0;
+          resolve();
+        });
+        proc.on('error', () => resolve());
+      });
     }
+
+    clearInterval(sampleTimer);
+    const finalStats = sampleDockerStats();
+    if (finalStats.cpu > peakCpu) peakCpu = finalStats.cpu;
+    if (finalStats.mem > peakMem) peakMem = finalStats.mem;
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`\n==> Stage completed in ${elapsed}s (Exit code: ${proc.status ?? 0}).`);
@@ -249,8 +328,10 @@ async function main() {
     summaryData.push({
       stage: stage.name,
       id: stage.id,
-      exitCode: proc.status ?? 0,
+      exitCode,
       elapsed,
+      peakCpu: peakCpu > 0 ? `${peakCpu.toFixed(1)}%` : 'N/A',
+      peakMem: peakMem > 0 ? `${peakMem.toFixed(0)} MB` : 'N/A',
       metrics,
     });
 
@@ -301,6 +382,8 @@ async function main() {
       p95: formatDuration(p95),
       p99: formatDuration(p99),
       errorRate: formatRate(errorRate),
+      peakCpu: item.peakCpu,
+      peakMem: item.peakMem,
       verdict,
     });
   }
@@ -352,9 +435,9 @@ The Lynk backend test suite executed ${rows.length} sequential load stage(s) eva
 
 ## 2. Consolidated Stage Results
 
-| Stage | Total Requests | Throughput (RPS) | p95 Latency | p99 Latency | Error Rate | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-${rows.map((r) => `| **${r.stage}** | ${r.totalRequests} | ${r.rps} req/s | ${r.p95} | ${r.p99} | ${r.errorRate} | ${r.verdict} |`).join('\n')}
+| Stage | Total Requests | Throughput (RPS) | p95 Latency | p99 Latency | Error Rate | Peak CPU | Peak RAM | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+${rows.map((r) => `| **${r.stage}** | ${r.totalRequests} | ${r.rps} req/s | ${r.p95} | ${r.p99} | ${r.errorRate} | ${r.peakCpu} | ${r.peakMem} | ${r.verdict} |`).join('\n')}
 
 ---
 
