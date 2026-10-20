@@ -47,7 +47,7 @@ const PORT_RANGE_NEAR_FRACTION = 0.8;
 const K6_THRESHOLD_EXIT = 99;
 
 const DEFAULT_STUB_STATUS_URL =
-  process.env.NGINX_STUB_STATUS_URL || 'http://localhost:8080/stub_status';
+  process.env.NGINX_STUB_STATUS_URL || 'http://localhost:8080/nginx_status';
 
 // Classify a single probe's signals into a verdict.
 //
