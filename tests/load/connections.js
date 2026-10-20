@@ -28,7 +28,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const hostmetrics = require('./hostmetrics.js');
 
 // Server request-failure rate above which the server is considered saturated.
@@ -292,9 +292,8 @@ function serverConns(url) {
   return parseStubStatus(out.stdout);
 }
 
-// Real runner: spawn k6 on scripts/hold.js with the target/dwell from env and
-// parse the exported summary. Best-effort parsing; a missing summary yields 0s.
-function runK6(target, dwellSec) {
+// Prepare the shared k6 invocation: fresh summary path, script, args and env.
+function prepareRun(target, dwellSec) {
   const resultsDir = path.join(__dirname, 'results');
   fs.mkdirSync(resultsDir, { recursive: true });
   const outFile = path.join(resultsDir, '.connections.summary.json');
@@ -306,21 +305,21 @@ function runK6(target, dwellSec) {
 
   const script = path.join(__dirname, 'scripts', 'hold.js');
   const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080/api/v1';
-  const proc = spawnSync(
-    'k6',
-    ['run', `--summary-export=${outFile}`, script],
-    {
-      cwd: path.resolve(__dirname, '../..'),
-      stdio: 'inherit',
-      env: {
-        ...process.env,
-        API_BASE_URL: apiUrl,
-        TARGET_VUS: String(target),
-        DWELL: String(dwellSec),
-      },
-    }
-  );
+  return {
+    outFile,
+    args: ['run', `--summary-export=${outFile}`, script],
+    env: {
+      ...process.env,
+      API_BASE_URL: apiUrl,
+      TARGET_VUS: String(target),
+      DWELL: String(dwellSec),
+    },
+  };
+}
 
+// Fold a finished k6 run into the driver's signal shape. Shared by the sync and
+// async runners so both classify identically.
+function buildRunResult(outFile, target, status) {
   let failedRate = 0;
   let dropped = 0;
   let vusMax = target;
@@ -340,7 +339,7 @@ function runK6(target, dwellSec) {
   // code is the threshold code) the run completed and must be classified from
   // its parsed metrics, never read as a client death. Only a genuine crash --
   // no summary JSON produced -- keeps a non-zero exit as the client-death signal.
-  let exitCode = proc.status === null ? 1 : proc.status;
+  let exitCode = status === null ? 1 : status;
   if (exitCode === K6_THRESHOLD_EXIT || summaryPresent) {
     exitCode = 0;
   }
@@ -354,6 +353,46 @@ function runK6(target, dwellSec) {
     timeWaitHigh: ports.timeWaitHigh,
     clientPortsExhausted: ports.clientPortsExhausted,
   };
+}
+
+// Real synchronous runner: spawn k6 on scripts/hold.js with the target/dwell
+// from env and parse the exported summary. Best-effort parsing; a missing
+// summary yields 0s. NOTE: spawnSync blocks the event loop, so a live sampler
+// cannot tick during this run. Prefer runK6Async when a supervisor is present.
+function runK6(target, dwellSec) {
+  const run = prepareRun(target, dwellSec);
+  const proc = spawnSync('k6', run.args, {
+    cwd: path.resolve(__dirname, '../..'),
+    stdio: 'inherit',
+    env: run.env,
+  });
+  return buildRunResult(run.outFile, target, proc.status);
+}
+
+// Asynchronous runner: spawn k6 without blocking the event loop so a live
+// supervisor can keep sampling and interrupt the run. Resolves to the same
+// shape as runK6. opts.onChild(child) receives the ChildProcess so the caller
+// can read child.pid and call child.kill().
+function runK6Async(target, dwellSec, opts) {
+  const options = opts || {};
+  const run = prepareRun(target, dwellSec);
+  return new Promise((resolve) => {
+    const child = spawn('k6', run.args, {
+      cwd: path.resolve(__dirname, '../..'),
+      stdio: 'inherit',
+      env: run.env,
+    });
+    if (typeof options.onChild === 'function') options.onChild(child);
+
+    let settled = false;
+    const done = (status) => {
+      if (settled) return;
+      settled = true;
+      resolve(buildRunResult(run.outFile, target, status));
+    };
+    child.on('error', () => done(1));
+    child.on('close', (code) => done(code === null ? 1 : code));
+  });
 }
 
 // The real dependency set used when the driver runs against a live stack.
@@ -374,6 +413,7 @@ module.exports = {
   clientPortSignal,
   serverConns,
   runK6,
+  runK6Async,
   defaultDeps,
   FAILURE_RATE_THRESHOLD,
   TIME_WAIT_HIGH,

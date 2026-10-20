@@ -5,7 +5,31 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
-const { parseArgs, MODES, runSuite } = require('./suite.js');
+const {
+  parseArgs,
+  MODES,
+  runSuite,
+  runWithSupervisor,
+  runRamRamp,
+  runRamLevels,
+  runThroughput,
+  parseSummaryResult,
+} = require('./suite.js');
+const { ResourceSampler } = require('./ResourceSampler.js');
+
+// A minimal sampler double for exercising the ram orchestration without a host.
+function fakeSampler() {
+  return {
+    clientPid: null,
+    tripped: false,
+    started: false,
+    stopped: false,
+    start() { this.started = true; return this; },
+    stop() { this.stopped = true; return this; },
+    tick() {},
+    samples() { return []; },
+  };
+}
 
 test('parseArgs defaults', () => {
   const o = parseArgs(['--mode=ram']);
@@ -65,4 +89,37 @@ test('runSuite dispatches each mode to the right driver', () => {
   assert.strictEqual(runSuite({ mode: 'ram', levels: [500] }, deps), 0);
   assert.strictEqual(runSuite({ mode: 'throughput' }, deps), 0);
   assert.deepStrictEqual(calls, ['smoke', 'connections', 'ram-ramp', 'ram-levels', 'throughput']);
+});
+
+test('runWithSupervisor starts/stops the sampler and records the child pid', async () => {
+  const sampler = fakeSampler();
+  const fakeChild = { pid: 4242, exitCode: null, signalCode: null, kill() { this.exitCode = 0; } };
+  const res = await runWithSupervisor((onChild) => {
+    onChild(fakeChild);
+    return Promise.resolve({ exitCode: 0 });
+  }, { sampler, pollMs: 5, graceMs: 5 });
+
+  assert.ok(sampler.started, 'sampler.start() must be called');
+  assert.ok(sampler.stopped, 'sampler.stop() must be called');
+  assert.strictEqual(sampler.clientPid, 4242);
+  assert.strictEqual(res.tripped, false);
+});
+
+test('runWithSupervisor kills the child when the sampler trips', async () => {
+  const kills = [];
+  const sampler = fakeSampler();
+  const res = await runWithSupervisor((onChild) => {
+    onChild({
+      pid: 7,
+      exitCode: null,
+      signalCode: null,
+      kill(sig) { kills.push(sig); this.exitCode = 0; },
+    });
+    setTimeout(() => { sampler.tripped = true; }, 5);
+    return new Promise((resolve) => setTimeout(() => resolve({ exitCode: 0 }), 40));
+  }, { sampler, pollMs: 5, graceMs: 10 });
+
+  assert.ok(kills.includes('SIGTERM'), `expected SIGTERM, got ${JSON.stringify(kills)}`);
+  assert.strictEqual(res.aborted, true);
+  assert.strictEqual(res.tripped, true);
 });

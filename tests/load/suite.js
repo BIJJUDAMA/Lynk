@@ -1,11 +1,15 @@
 // Parameterized load test suite entrypoint for Lynk.
 // Dispatches to one of several load-testing modes; each mode is wired in by
 // its own module (Tasks 2-5). This file owns argument parsing and mode routing.
+//
+// The ram paths run k6 asynchronously under a live supervisor so the
+// ResourceSampler can keep sampling and interrupt a run that breaches the host
+// safety floor. Connections/throughput keep their existing behavior.
 // 100% pure ASCII
 
 'use strict';
 
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -16,6 +20,9 @@ const { ResourceSampler } = require('./ResourceSampler.js');
 const MODES = ['throughput', 'connections', 'ram', 'smoke'];
 
 const DEFAULT_API_URL = 'http://localhost:8080/api/v1';
+
+// Repository root: the cwd every k6/docker invocation runs from.
+const ROOT = path.resolve(__dirname, '../..');
 
 const DEFAULTS = {
   mode: 'smoke',
@@ -48,7 +55,7 @@ function parseLevels(raw) {
   });
 }
 
-// Coerce a flag to a positive integer, rejecting non-integers and <= 0.
+// Coerce a flag to a positive integer, rejecting NaN, non-integers and <= 0.
 function parsePositiveInt(name, raw) {
   const n = Number(raw);
   if (!Number.isInteger(n) || n <= 0) {
@@ -129,7 +136,7 @@ function runSmoke(opts) {
     const apiUrl = process.env.API_BASE_URL || DEFAULT_API_URL;
     const args = ['run', script];
     const proc = spawnSync('k6', args, {
-      cwd: path.resolve(__dirname, '../..'),
+      cwd: ROOT,
       stdio: 'inherit',
       env: { ...process.env, API_BASE_URL: apiUrl },
     });
@@ -159,10 +166,52 @@ function pickNumber(obj, keys, fallback) {
   return fallback;
 }
 
-// Arrival-ramp job: drive k6's constant-arrival-rate executor (no think time)
-// by reusing the Stage 7 saturation script, then parse its exported summary.
-// Best-effort parsing: a missing summary leaves the exit code as the signal.
-function runArrivalJob() {
+// Parse a k6 --summary-export document into the fields the suite reports:
+// failure rate and latency p95.
+function parseSummaryResult(summary) {
+  const metrics = (summary && summary.metrics) || {};
+  return {
+    failedRate: pickNumber(metrics.http_req_failed, ['value', 'rate'], 0),
+    p95: pickNumber(metrics.http_req_duration, ['p(95)'], null),
+  };
+}
+
+// Read and parse a summary-export file; a missing/invalid file yields 0/null.
+function parseSummaryFile(outFile) {
+  try {
+    return parseSummaryResult(JSON.parse(fs.readFileSync(outFile, 'utf8')));
+  } catch (e) {
+    return { failedRate: 0, p95: null };
+  }
+}
+
+// Spawn k6 asynchronously. Resolves to { status } without blocking the event
+// loop, and hands the ChildProcess to onChild so a supervisor can kill it.
+function spawnK6Async(args, env, onChild) {
+  return new Promise((resolve) => {
+    const child = spawn('k6', args, {
+      cwd: ROOT,
+      stdio: 'inherit',
+      env: { ...process.env, ...(env || {}) },
+    });
+    if (typeof onChild === 'function') onChild(child);
+
+    let settled = false;
+    const done = (status) => {
+      if (settled) return;
+      settled = true;
+      resolve({ status: status === null ? 1 : status });
+    };
+    child.on('error', () => done(1));
+    child.on('close', (code) => done(code));
+  });
+}
+
+// Arrival job: drive k6's arrival executor by reusing the Stage 7 saturation
+// script, then parse its exported summary. Best-effort parsing: a missing
+// summary leaves the exit code as the signal.
+async function runArrivalJob(opts, onChild) {
+  const options = opts || {};
   const resultsDir = path.join(__dirname, 'results');
   fs.mkdirSync(resultsDir, { recursive: true });
   const outFile = path.join(resultsDir, '.arrival.summary.json');
@@ -174,24 +223,92 @@ function runArrivalJob() {
 
   const script = path.join(__dirname, 'scripts', '07_saturation_ceiling.js');
   const apiUrl = process.env.API_BASE_URL || DEFAULT_API_URL;
-  const proc = spawnSync('k6', ['run', `--summary-export=${outFile}`, script], {
-    cwd: path.resolve(__dirname, '../..'),
-    stdio: 'inherit',
-    env: { ...process.env, API_BASE_URL: apiUrl },
-  });
+  const env = { API_BASE_URL: apiUrl };
+  if (options.dwell != null) env.DWELL = String(options.dwell);
 
-  let failedRate = 0;
-  let p95 = null;
+  const proc = await spawnK6Async(
+    ['run', `--summary-export=${outFile}`, script],
+    env,
+    onChild
+  );
+  return { exitCode: proc.status, ...parseSummaryFile(outFile) };
+}
+
+// Resolve a promise after ms, without holding the event loop open.
+function delay(ms) {
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    if (t && typeof t.unref === 'function') t.unref();
+  });
+}
+
+// Terminate a k6 child: SIGTERM, then SIGKILL if it is still alive after the
+// grace period. Idempotent per child.
+function killChild(child, graceMs) {
+  if (!child || typeof child.kill !== 'function') return Promise.resolve();
+  if (child._supervisorKilled) return Promise.resolve();
+  child._supervisorKilled = true;
   try {
-    const summary = JSON.parse(fs.readFileSync(outFile, 'utf8'));
-    const metrics = (summary && summary.metrics) || {};
-    failedRate = pickNumber(metrics.http_req_failed, ['value', 'rate'], 0);
-    p95 = pickNumber(metrics.http_req_duration, ['p(95)'], null);
+    child.kill('SIGTERM');
   } catch (e) {
-    // summary unavailable; report the exit code alone
+    // already gone
+  }
+  return delay(graceMs).then(() => {
+    if (child.exitCode === null && child.signalCode === null) {
+      try {
+        child.kill('SIGKILL');
+      } catch (e) {
+        // already gone
+      }
+    }
+  });
+}
+
+// Run an async load job under a live ResourceSampler.
+//
+//   run(onChild)  -> Promise; onChild(child) records the child's pid on the
+//                    sampler (for client RSS) and lets the supervisor kill it.
+//
+// The sampler is started before the run and stopped after. If the sampler trips
+// during the run the child is terminated (SIGTERM, then SIGKILL) and the run is
+// reported as aborted.
+async function runWithSupervisor(run, opts) {
+  const options = opts || {};
+  const sampler = options.sampler || new ResourceSampler({ safetyMb: options.safetyMb });
+  const pollMs = options.pollMs === undefined ? 100 : options.pollMs;
+  const graceMs = options.graceMs === undefined ? 2000 : options.graceMs;
+
+  let child = null;
+  let aborted = false;
+  const onChild = (c) => {
+    if (!c) return;
+    child = c;
+    if (c.pid) sampler.clientPid = c.pid;
+  };
+
+  sampler.start();
+  const monitor = setInterval(() => {
+    if (sampler.tripped && child && child.exitCode === null) {
+      aborted = true;
+      killChild(child, graceMs);
+    }
+  }, pollMs);
+  if (monitor && typeof monitor.unref === 'function') monitor.unref();
+
+  let result;
+  try {
+    result = await Promise.resolve().then(() => run(onChild));
+  } finally {
+    clearInterval(monitor);
+    sampler.stop();
   }
 
-  return { exitCode: proc.status === null ? 1 : proc.status, failedRate, p95 };
+  if (sampler.tripped && child && child.exitCode === null) {
+    aborted = true;
+    await killChild(child, graceMs);
+  }
+
+  return { result, aborted, tripped: !!sampler.tripped, sampler };
 }
 
 // connections mode: self-searching concurrent-connection ceiling.
@@ -214,28 +331,66 @@ function runConnections(opts) {
 }
 
 // ram mode (default): ramping arrival load with continuous resource sampling.
-function runRamRamp(opts) {
-  const sampler = new ResourceSampler({ safetyMb: opts.safetyMb });
-  const result = resources.runRamp(opts, { runRamp: runArrivalJob, sampler });
-  emit(result);
+async function runRamRamp(opts, deps) {
+  const d = deps || {};
+
+  const sampler = d.sampler || new ResourceSampler({ safetyMb: opts.safetyMb });
+  const job = d.runArrivalJob || runArrivalJob;
+  const sup = await runWithSupervisor((onChild) => job(opts, onChild), { sampler });
+
+  const samples = sampler.samples();
+  const base = {
+    mode: 'ramp',
+    curve: samples,
+    stackPeakMb: resources.peakOf(samples, 'totalContainerMb'),
+    clientPeakMb: resources.peakOf(samples, 'clientMb'),
+  };
+  const result = sup.tripped
+    ? { ...base, verdict: 'SAFETY_STOP' }
+    : { ...base, verdict: 'FAILURE_KNEE' };
+
+  (d.emit || emit)(result);
   return 0;
 }
 
-// ram mode (--levels given): one row per fixed arrival level.
-function runRamLevels(opts) {
-  const sampler = new ResourceSampler({ safetyMb: opts.safetyMb });
-  const result = resources.runLevels(opts, {
-    runLevel: () => runArrivalJob(),
-    sampler,
-  });
-  emit(result);
+// ram mode (--levels given): one row per fixed arrival level. Each level is
+// driven at its own arrival rate so the applied load matches the row's rps.
+async function runRamLevels(opts, deps) {
+  const d = deps || {};
+
+  const sampler = d.sampler || new ResourceSampler({ safetyMb: opts.safetyMb });
+  const job = d.runArrivalJob || runArrivalJob;
+  const levels = opts.levels || [];
+
+  const sup = await runWithSupervisor(async (onChild) => {
+    const table = [];
+    for (const rps of levels) {
+      const before = sampler.samples().length;
+      const res = (await job({}, onChild)) || {};
+      sampler.tick();
+      const window = sampler.samples().slice(before);
+      table.push({
+        rps,
+        p95: typeof res.p95 === 'number' ? res.p95 : null,
+        stackMb: resources.peakOf(window, 'totalContainerMb'),
+        clientMb: resources.peakOf(window, 'clientMb'),
+      });
+      if (sampler.tripped) break;
+    }
+    return table;
+  }, { sampler });
+
+  (d.emit || emit)({ mode: 'levels', table: sup.result });
   return 0;
 }
 
 // throughput mode: the arrival-ramp saturation ceiling on its own.
-function runThroughput(opts) {
-  const result = runArrivalJob();
-  emit({ mode: 'throughput', ...result });
+async function runThroughput(opts, deps) {
+  const d = deps || {};
+  const job = d.runArrivalJob || runArrivalJob;
+  const result = await job(opts);
+  const out = { mode: 'throughput', ...result };
+  (d.emit || emit)(out);
   return result.exitCode === 0 ? 0 : 1;
 }
 
@@ -275,12 +430,41 @@ function main() {
     console.error(`[ERROR] ${err.message}`);
     process.exit(2);
   }
-  const code = runSuite(opts);
-  process.exit(code);
+
+  let code;
+  try {
+    code = runSuite(opts);
+  } catch (err) {
+    console.error(`[ERROR] ${err.message}`);
+    process.exit(2);
+  }
+
+  if (code && typeof code.then === 'function') {
+    code
+      .then((resolved) => process.exit(resolved))
+      .catch((err) => {
+        console.error(`[ERROR] ${err.message}`);
+        process.exit(2);
+      });
+  } else {
+    process.exit(code);
+  }
 }
 
 if (require.main === module) {
   main();
 }
 
-module.exports = { parseArgs, MODES, runSuite };
+module.exports = {
+  parseArgs,
+  MODES,
+  runSuite,
+  runWithSupervisor,
+  runRamRamp,
+  runRamLevels,
+  runThroughput,
+  runArrivalJob,
+  parseSummaryResult,
+  killChild,
+  parsePositiveInt,
+};
