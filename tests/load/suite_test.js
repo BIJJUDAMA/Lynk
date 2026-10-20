@@ -263,6 +263,44 @@ test('runRamLevels drives each level at its own arrival rate', async () => {
   assert.strictEqual(emitted[0].table[0].rps, 2000);
 });
 
+test('runRamLevels exits 1 when the supervisor trips', async () => {
+  const emitted = [];
+  const code = await runRamLevels({ levels: [2000], safetyMb: 4096 }, {
+    readComposeConfig: () => 'services:\n  api:\n    image: lynk-api\n',
+    runArrivalJob: async () => ({ exitCode: 0, p95: 6, failedRate: 0 }),
+    sampler: fakeSampler(),
+    runWithSupervisor: async () => ({
+      result: [{ rps: 2000, p95: 6, stackMb: 1, clientMb: 1 }],
+      aborted: true,
+      tripped: true,
+    }),
+    report: () => ({ jsonPath: 'json', mdPath: 'md' }),
+    out: { write() {} },
+    emit: (r) => emitted.push(r),
+  });
+  assert.strictEqual(code, 1);
+  assert.strictEqual(emitted[0].verdict, 'SAFETY_STOP');
+});
+
+test('runRamLevels stays exit 0 when the supervisor does not trip', async () => {
+  const emitted = [];
+  const code = await runRamLevels({ levels: [2000], safetyMb: 4096 }, {
+    readComposeConfig: () => 'services:\n  api:\n    image: lynk-api\n',
+    runArrivalJob: async () => ({ exitCode: 0, p95: 6, failedRate: 0 }),
+    sampler: fakeSampler(),
+    runWithSupervisor: async () => ({
+      result: [{ rps: 2000, p95: 6, stackMb: 1, clientMb: 1 }],
+      aborted: false,
+      tripped: false,
+    }),
+    report: () => ({ jsonPath: 'json', mdPath: 'md' }),
+    out: { write() {} },
+    emit: (r) => emitted.push(r),
+  });
+  assert.strictEqual(code, 0);
+  assert.strictEqual(emitted[0].verdict, undefined);
+});
+
 test('parseSummaryResult surfaces failedRate, p95 and RPS', () => {
   const fixture = {
     metrics: {

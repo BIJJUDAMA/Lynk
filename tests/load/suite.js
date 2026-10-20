@@ -407,7 +407,7 @@ async function runRamLevels(opts, deps) {
   const job = d.runArrivalJob || runArrivalJob;
   const levels = opts.levels || [];
 
-  const sup = await runWithSupervisor(async (onChild) => {
+  const sup = await (d.runWithSupervisor || runWithSupervisor)(async (onChild) => {
     const table = [];
     for (const rps of levels) {
       const before = sampler.samples().length;
@@ -425,7 +425,13 @@ async function runRamLevels(opts, deps) {
     return table;
   }, { sampler });
 
-  const result = { mode: 'levels', table: sup.result };
+  // A tripped supervisor means the host safety floor aborted the run; that is a
+  // SAFETY_STOP, not a healthy result, so it must exit non-zero via exitCodeFor.
+  const result = {
+    mode: 'levels',
+    table: sup.result,
+    verdict: sup.tripped ? 'SAFETY_STOP' : undefined,
+  };
   (d.emit || emit)(result);
   return reportResult(result, d);
 }
