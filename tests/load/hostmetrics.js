@@ -72,7 +72,7 @@ function freeMemMb() {
 
 // --- timeWaitCount --------------------------------------------------------
 
-// Count lines depicting a TCP socket in TIME_WAIT.
+// Count lines depicting a TCP socket in TIME_WAIT (netstat style).
 function countTimeWait(text) {
   if (!text) return null;
   let count = 0;
@@ -82,16 +82,23 @@ function countTimeWait(text) {
   return count;
 }
 
+// Parse the `ss -s -t` summary line. Modern ss prints the token as a single
+// lowercase word: "TCP:   41 (estab 12, closed 5, orphaned 0, timewait 6/0)".
+// Take the first number after the token; null when absent.
+function parseSsSummaryTimeWait(text) {
+  if (!text) return null;
+  const m = text.match(/\btimewait\s+(\d+)/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isInteger(n) || n < 0) return null;
+  return n;
+}
+
 function timeWaitCountLinux() {
   // Prefer `ss -s` summary when available.
   const sum = tryExec('ss', ['-s', '-t']);
-  if (sum) {
-    const m = sum.match(/TIME-WAIT\s+(\d+)/i) || sum.match(/TIME_WAIT\s+(\d+)/i);
-    if (m) {
-      const n = Number(m[1]);
-      if (Number.isInteger(n) && n >= 0) return n;
-    }
-  }
+  const fromSummary = parseSsSummaryTimeWait(sum);
+  if (fromSummary !== null) return fromSummary;
   const netstat = tryExec('netstat', ['-an']);
   return countTimeWait(netstat);
 }
@@ -144,15 +151,20 @@ function ephemeralPortRange() {
 
 // --- primaryEgressConnCount ----------------------------------------------
 
-// Count ESTABLISHED TCP sockets, excluding loopback endpoints. This proxies
+// Count established TCP sockets, excluding loopback endpoints. This proxies
 // "connections the host is holding on its primary egress path", which is the
 // quantity the connection-scaling load mode cares about.
-function countEstablishedNonLoopback(text) {
+//
+// Accepts both `netstat` (state column "ESTABLISHED") and `ss` (state column
+// "ESTAB") output. Note `\b` cannot sit beside a colon, so the IPv6 loopback
+// `::1` is bounded by non-hex/non-digit characters on the left instead.
+function countEstablished(text) {
   if (!text) return null;
+  const loopback = /(^|[^0-9a-f:])(127\.0\.0\.1|0\.0\.0\.0|::1)(?![0-9a-f])/i;
   let count = 0;
   for (const line of text.split(/\r?\n/)) {
-    if (!/\bESTABLISHED\b/i.test(line)) continue;
-    if (/\b(127\.0\.0\.1|0\.0\.0\.0|::1|\[::1\])\b/.test(line)) continue;
+    if (!/\bESTAB(LISHED)?\b/i.test(line)) continue;
+    if (loopback.test(line)) continue;
     count += 1;
   }
   return count;
@@ -160,15 +172,15 @@ function countEstablishedNonLoopback(text) {
 
 function primaryEgressConnCountLinux() {
   const netstat = tryExec('netstat', ['-an']);
-  const fromNetstat = countEstablishedNonLoopback(netstat);
+  const fromNetstat = countEstablished(netstat);
   if (fromNetstat !== null) return fromNetstat;
   const ss = tryExec('ss', ['-tan', 'state', 'established']);
-  return countEstablishedNonLoopback(ss);
+  return countEstablished(ss);
 }
 
 function primaryEgressConnCountWindows() {
   const netstat = tryExec('netstat', ['-an']);
-  return countEstablishedNonLoopback(netstat);
+  return countEstablished(netstat);
 }
 
 // Number of non-loopback ESTABLISHED TCP connections, or null.
@@ -183,4 +195,6 @@ module.exports = {
   timeWaitCount,
   ephemeralPortRange,
   primaryEgressConnCount,
+  parseSsSummaryTimeWait,
+  countEstablished,
 };
