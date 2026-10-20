@@ -1,4 +1,4 @@
-.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai test lint format format-check load-test load-suite load-connections load-resources load-throughput load-test-rate-limit load-test-cache load-test-pool load-test-concurrency load-test-stress load-test-ultra load-test-saturation load-test-connections stack-ram stack-ram-down
+.PHONY: help setup setup-hooks setup-go setup-frontend setup-ai setup-k6 load-up test lint format format-check load-test load-suite load-connections load-resources load-throughput load-test-rate-limit load-test-cache load-test-pool load-test-concurrency load-test-stress load-test-ultra load-test-saturation load-test-connections stack-ram stack-ram-down
 
 help:
 	@echo "Available commands:"
@@ -7,6 +7,8 @@ help:
 	@echo "  make setup-go       - Download Go backend modules"
 	@echo "  make setup-frontend - Install Next.js frontend npm dependencies"
 	@echo "  make setup-ai       - Create Python venv and install AI dependencies"
+	@echo "  make setup-k6       - Install k6 (apt on Linux, winget on Windows)"
+	@echo "  make load-up        - Build and start the stack, waiting until /api/v1/health is 200"
 	@echo "  make test           - Run backend, frontend, and AI unit test suites"
 	@echo "  make lint           - Run all static analyzers and linters"
 	@echo "  make format         - Auto-format Go, Python, and TypeScript code"
@@ -45,7 +47,36 @@ setup-ai:
 		pip install -r ai/requirements.txt; \
 	fi
 
-setup: setup-hooks setup-go setup-frontend setup-ai
+setup-k6:
+	@echo "==> Checking for k6..."
+	@if k6 version >/dev/null 2>&1; then \
+		echo "k6 is already installed."; \
+		exit 0; \
+	fi; \
+	os="$$(uname -s 2>/dev/null || echo unknown)"; \
+	case "$$os" in \
+		Linux) \
+			echo "==> Installing k6 on Linux (Debian/Ubuntu)..."; \
+			sudo apt-get update && \
+			sudo apt-get install -y gnupg ca-certificates && \
+			sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69 && \
+			echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list && \
+			sudo apt-get update && \
+			sudo apt-get install -y k6 ;; \
+		MINGW*|MSYS*|CYGWIN*) \
+			echo "==> Installing k6 on Windows (winget)..."; \
+			winget install --id k6.k6 --accept-source-agreements --accept-package-agreements ;; \
+		*) \
+			if [ "$$OS" = "Windows_NT" ]; then \
+				echo "==> Installing k6 on Windows (winget)..."; \
+				winget install --id k6.k6 --accept-source-agreements --accept-package-agreements; \
+			else \
+				echo "ERROR: unsupported OS '$$os'; install k6 manually from https://grafana.com/docs/k6/latest/set-up/install-k6/"; \
+				exit 1; \
+			fi ;; \
+	esac
+
+setup: setup-hooks setup-go setup-frontend setup-ai setup-k6
 	@echo "==> All Lynk services and pre-commit hooks successfully setup!"
 
 test:
@@ -103,6 +134,23 @@ format-check:
 	else \
 		ruff format --check ai/; \
 	fi
+
+load-up:
+	@echo "==> Starting the local stack (docker compose up -d --build)..."
+	docker compose up -d --build
+	@echo "==> Waiting for http://localhost:8080/api/v1/health (up to 180s)..."
+	@i=0; \
+	while [ $$i -lt 180 ]; do \
+		code=$$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/v1/health 2>/dev/null); \
+		if [ "$$code" = "200" ]; then \
+			echo "==> Stack is healthy (HTTP 200)."; \
+			exit 0; \
+		fi; \
+		i=$$((i + 1)); \
+		sleep 1; \
+	done; \
+	echo "ERROR: stack did not become healthy within 180s"; \
+	exit 1
 
 load-test:
 	@echo "==> Running complete backend load testing suite..."
