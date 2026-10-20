@@ -28,8 +28,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn, spawnSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const hostmetrics = require('./hostmetrics.js');
+const k6 = require('./k6.js');
 
 // Server request-failure rate above which the server is considered saturated.
 const FAILURE_RATE_THRESHOLD = 0.05;
@@ -305,9 +306,11 @@ function prepareRun(target, dwellSec) {
 
   const script = path.join(__dirname, 'scripts', 'hold.js');
   const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080/api/v1';
+  const { cmd, args } = k6.buildK6Args({ script, summaryExport: outFile });
   return {
     outFile,
-    args: ['run', `--summary-export=${outFile}`, script],
+    cmd,
+    args,
     env: {
       ...process.env,
       API_BASE_URL: apiUrl,
@@ -361,7 +364,7 @@ function buildRunResult(outFile, target, status) {
 // cannot tick during this run. Prefer runK6Async when a supervisor is present.
 function runK6(target, dwellSec) {
   const run = prepareRun(target, dwellSec);
-  const proc = spawnSync('k6', run.args, {
+  const proc = spawnSync(run.cmd, run.args, {
     cwd: path.resolve(__dirname, '../..'),
     stdio: 'inherit',
     env: run.env,
@@ -376,23 +379,14 @@ function runK6(target, dwellSec) {
 function runK6Async(target, dwellSec, opts) {
   const options = opts || {};
   const run = prepareRun(target, dwellSec);
-  return new Promise((resolve) => {
-    const child = spawn('k6', run.args, {
-      cwd: path.resolve(__dirname, '../..'),
-      stdio: 'inherit',
+  return k6
+    .spawnK6({
+      script: path.join(__dirname, 'scripts', 'hold.js'),
+      summaryExport: run.outFile,
       env: run.env,
-    });
-    if (typeof options.onChild === 'function') options.onChild(child);
-
-    let settled = false;
-    const done = (status) => {
-      if (settled) return;
-      settled = true;
-      resolve(buildRunResult(run.outFile, target, status));
-    };
-    child.on('error', () => done(1));
-    child.on('close', (code) => done(code === null ? 1 : code));
-  });
+      onChild: options.onChild,
+    })
+    .then((proc) => buildRunResult(run.outFile, target, proc.exitCode));
 }
 
 // The real dependency set used when the driver runs against a live stack.

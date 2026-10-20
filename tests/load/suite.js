@@ -9,10 +9,11 @@
 
 'use strict';
 
-const { spawn, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+const k6 = require('./k6.js');
 const connections = require('./connections.js');
 const resources = require('./resources.js');
 const { ResourceSampler } = require('./ResourceSampler.js');
@@ -144,8 +145,8 @@ function runSmoke(opts) {
 
   try {
     const apiUrl = process.env.API_BASE_URL || DEFAULT_API_URL;
-    const args = ['run', script];
-    const proc = spawnSync('k6', args, {
+    const { cmd, args } = k6.buildK6Args({ script });
+    const proc = spawnSync(cmd, args, {
       cwd: ROOT,
       stdio: 'inherit',
       env: { ...process.env, API_BASE_URL: apiUrl },
@@ -196,28 +197,6 @@ function parseSummaryFile(outFile) {
   }
 }
 
-// Spawn k6 asynchronously. Resolves to { status } without blocking the event
-// loop, and hands the ChildProcess to onChild so a supervisor can kill it.
-function spawnK6Async(args, env, onChild) {
-  return new Promise((resolve) => {
-    const child = spawn('k6', args, {
-      cwd: ROOT,
-      stdio: 'inherit',
-      env: { ...process.env, ...(env || {}) },
-    });
-    if (typeof onChild === 'function') onChild(child);
-
-    let settled = false;
-    const done = (status) => {
-      if (settled) return;
-      settled = true;
-      resolve({ status: status === null ? 1 : status });
-    };
-    child.on('error', () => done(1));
-    child.on('close', (code) => done(code));
-  });
-}
-
 // Arrival job: drive k6's arrival executor by reusing the Stage 7 saturation
 // script, then parse its exported summary. When opts.arrivalTarget is set the
 // script is told to hold that constant arrival rate (TARGET_RPS); otherwise the
@@ -240,12 +219,13 @@ async function runArrivalJob(opts, onChild) {
   if (options.arrivalTarget != null) env.TARGET_RPS = String(options.arrivalTarget);
   if (options.dwell != null) env.DWELL = String(options.dwell);
 
-  const proc = await spawnK6Async(
-    ['run', `--summary-export=${outFile}`, script],
+  const proc = await k6.spawnK6({
+    script,
+    summaryExport: outFile,
     env,
-    onChild
-  );
-  return { exitCode: proc.status, ...parseSummaryFile(outFile) };
+    onChild,
+  });
+  return { exitCode: proc.exitCode, ...parseSummaryFile(outFile) };
 }
 
 // Read the effective compose config so the mem-limit guard can reject a capped
