@@ -457,6 +457,20 @@ async function runThroughput(opts, deps) {
   const job = d.runArrivalJob || runArrivalJob;
   const jobResult = await job(opts);
   const out = { mode: 'throughput', ...jobResult };
+
+  // k6 exits 99 when the saturation threshold is breached. At the throughput
+  // ceiling that breach is the expected, successful outcome, so a raw exit 99
+  // must never be surfaced as a failed run. Normalize it and let exitCodeFor
+  // judge a computed verdict instead of the transport exit code, exactly as the
+  // connections driver does. Only a run that did not complete (a non-threshold
+  // non-zero exit) stays a failure.
+  const completed =
+    out.exitCode === connections.K6_THRESHOLD_EXIT || out.exitCode === 0;
+  if (out.exitCode === connections.K6_THRESHOLD_EXIT) out.exitCode = 0;
+  if (completed && out.verdict === undefined) {
+    out.verdict = Number(out.failedRate) > 0 ? 'SERVER_CEILING' : 'FAILURE_KNEE';
+  }
+
   (d.emit || emit)(out);
   return reportResult(out, d);
 }

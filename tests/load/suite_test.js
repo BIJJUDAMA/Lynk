@@ -356,3 +356,26 @@ test('runSmoke returns 0 when k6 exits 0', () => {
   });
   assert.strictEqual(code, 0);
 });
+
+test('runThroughput treats a k6 threshold exit as a successful saturation', async () => {
+  let emitted = null;
+  const code = await runThroughput({}, {
+    runArrivalJob: async () => ({ exitCode: 99, failedRate: 0.42, p95: 12, rps: 6000 }),
+    emit: (r) => { emitted = r; },
+    report: () => ({ jsonPath: 'json', mdPath: 'md' }),
+    out: { write() {} },
+  });
+  assert.strictEqual(code, 0);
+  assert.strictEqual(emitted.exitCode, 0);
+  assert.strictEqual(emitted.verdict, 'SERVER_CEILING');
+});
+
+test('runThroughput fails on a genuine crash with no summary', async () => {
+  const code = await runThroughput({}, {
+    runArrivalJob: async () => ({ exitCode: 1, failedRate: 0, p95: null, rps: null }),
+    emit: () => {},
+    report: () => ({ jsonPath: 'json', mdPath: 'md' }),
+    out: { write() {} },
+  });
+  assert.notStrictEqual(code, 0);
+});
