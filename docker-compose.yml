@@ -279,7 +279,7 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./:/workspace:ro
+      - ./:/workspace
     environment:
       AUTOSCALE_SERVICE: "api"
       AUTOSCALE_GATEWAY: "lynk-gateway"

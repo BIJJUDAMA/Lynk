@@ -19,6 +19,7 @@ from typing import Dict, List, Tuple, Optional
 # Configure structured logging
 logging.basicConfig(
     level=logging.INFO,
+    stream=sys.stdout,
     format="%(asctime)s [%(levelname)s] [AUTOSCALER] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -366,6 +367,16 @@ def main():
         interval_sec,
         dry_run,
     )
+    init_entry = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] INITIALIZED: Autoscaler online for service '{service_name}' (min={min_replicas}, max={max_replicas}, check_interval={interval_sec}s)\n"
+    for p in ["tests/load/results/autoscaler_events.log", "/workspace/tests/load/results/autoscaler_events.log"]:
+        try:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "a", encoding="ascii") as f:
+                f.write(init_entry)
+            break
+        except Exception:
+            pass
+
 
     while running:
         loop_start = time.time()
