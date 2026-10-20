@@ -34,9 +34,6 @@ export const options = {
       gracefulStop: '30s',
     },
   },
-  thresholds: {
-    http_req_failed: ['rate<0.05'],
-  },
 };
 
 export default function () {

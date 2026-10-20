@@ -13,7 +13,10 @@
 //   - SAFETY_STOP:    the host safety sampler tripped (free memory floor).
 //
 // Controller ruling: client-death signals are evaluated BEFORE server failure,
-// so a client-bound run is never mislabeled as a server ceiling.
+// so a client-bound run is never mislabeled as a server ceiling. A k6 threshold
+// exit (code 99) is explicitly NOT a client death: the server-saturation probe
+// trips the failure threshold, and treating that exit as a crash would invert
+// the very ceiling this driver exists to report.
 //
 // Every external effect is injectable through a `deps` seam so the search logic
 // is unit-testable without k6 or a live stack. The real defaults are best-effort
@@ -35,16 +38,29 @@ const FAILURE_RATE_THRESHOLD = 0.05;
 // port-exhausted rather than the server being saturated.
 const TIME_WAIT_HIGH = 20000;
 
+// Fraction of the ephemeral port range at which the client is considered
+// port-bound when TIME_WAIT is not readable on this host.
+const PORT_RANGE_NEAR_FRACTION = 0.8;
+
+// k6 exits with this code when a threshold is breached. That is a metric
+// verdict, not a client crash, so it must never be read as a client death.
+const K6_THRESHOLD_EXIT = 99;
+
 const DEFAULT_STUB_STATUS_URL =
   process.env.NGINX_STUB_STATUS_URL || 'http://localhost:8080/stub_status';
 
 // Classify a single probe's signals into a verdict.
 //
 // Precedence (client-death before server-failure):
-//   1. tripped                 -> SAFETY_STOP
-//   2. exitCode != 0, dropped, or timeWaitHigh -> CLIENT_BOUND
-//   3. failedRate > threshold  -> SERVER_CEILING
-//   4. otherwise               -> healthy (verdict null)
+//   1. tripped                          -> SAFETY_STOP
+//   2. genuine client crash (exit != 0 and != k6 threshold exit), or dropped
+//      iterations, or client port exhaustion -> CLIENT_BOUND
+//   3. failedRate > threshold           -> SERVER_CEILING
+//   4. otherwise                        -> healthy (verdict null)
+//
+// A k6 threshold exit (99) is deliberately NOT a client-death signal: without
+// this, a server-saturation probe (which trips the threshold) would be inverted
+// into a client bound -- exactly the misattribution this driver prevents.
 function classify(signals) {
   const s = signals || {};
 
@@ -52,7 +68,9 @@ function classify(signals) {
     return { verdict: 'SAFETY_STOP', reason: 'host safety floor tripped' };
   }
 
-  if (s.exitCode !== undefined && s.exitCode !== null && s.exitCode !== 0) {
+  const exited =
+    s.exitCode !== undefined && s.exitCode !== null && s.exitCode !== 0;
+  if (exited && s.exitCode !== K6_THRESHOLD_EXIT) {
     return {
       verdict: 'CLIENT_BOUND',
       reason: `load client exited with code ${s.exitCode}`,
@@ -63,6 +81,13 @@ function classify(signals) {
     return {
       verdict: 'CLIENT_BOUND',
       reason: `load client dropped ${s.dropped} iterations`,
+    };
+  }
+
+  if (s.clientPortsExhausted) {
+    return {
+      verdict: 'CLIENT_BOUND',
+      reason: 'client ephemeral port range exhausted',
     };
   }
 
@@ -92,6 +117,7 @@ function readSignals(run, deps) {
     dropped: Number(r.dropped) || 0,
     tripped: !!(deps.sampler && deps.sampler.tripped),
     timeWaitHigh: !!r.timeWaitHigh,
+    clientPortsExhausted: !!r.clientPortsExhausted,
   };
 }
 
@@ -228,6 +254,31 @@ function parseStubStatus(body) {
   return Number.isFinite(n) ? n : null;
 }
 
+// Best-effort client-side port-pressure signal.
+//
+// Preferred probe: the host TIME_WAIT socket count. When the host cannot report
+// it (timeWaitCount() returns null -- unsupported platform), fall back to
+// comparing live non-loopback egress connections against the ephemeral port
+// range, so a port-bound client is still classified CLIENT_BOUND and never
+// mistaken for the server's ceiling.
+function clientPortSignal() {
+  const tw = hostmetrics.timeWaitCount();
+  if (typeof tw === 'number') {
+    return { timeWaitHigh: tw >= TIME_WAIT_HIGH, clientPortsExhausted: false };
+  }
+
+  const range = hostmetrics.ephemeralPortRange();
+  const conns = hostmetrics.primaryEgressConnCount();
+  let exhausted = false;
+  if (range && typeof conns === 'number') {
+    const size = range.end - range.start + 1;
+    if (size > 0) {
+      exhausted = conns >= Math.floor(size * PORT_RANGE_NEAR_FRACTION);
+    }
+  }
+  return { timeWaitHigh: false, clientPortsExhausted: exhausted };
+}
+
 // Synchronously read Nginx stub_status (dep seam requires number|null).
 // Best-effort: any failure returns null.
 function serverConns(url) {
@@ -273,9 +324,11 @@ function runK6(target, dwellSec) {
   let failedRate = 0;
   let dropped = 0;
   let vusMax = target;
+  let summaryPresent = false;
   try {
     const raw = fs.readFileSync(outFile, 'utf8');
     const parsed = parseSummary(JSON.parse(raw));
+    summaryPresent = true;
     failedRate = parsed.failedRate;
     dropped = parsed.dropped;
     vusMax = parsed.vusMax != null ? parsed.vusMax : target;
@@ -283,15 +336,23 @@ function runK6(target, dwellSec) {
     // summary unavailable; fall back to exit-code-only signal
   }
 
-  const tw = hostmetrics.timeWaitCount();
-  const timeWaitHigh = typeof tw === 'number' && tw >= TIME_WAIT_HIGH;
+  // k6 exits 99 when a threshold is breached. When the summary exists (or the
+  // code is the threshold code) the run completed and must be classified from
+  // its parsed metrics, never read as a client death. Only a genuine crash --
+  // no summary JSON produced -- keeps a non-zero exit as the client-death signal.
+  let exitCode = proc.status === null ? 1 : proc.status;
+  if (exitCode === K6_THRESHOLD_EXIT || summaryPresent) {
+    exitCode = 0;
+  }
 
+  const ports = clientPortSignal();
   return {
-    exitCode: proc.status === null ? 1 : proc.status,
+    exitCode,
     failedRate,
     dropped,
     vusMax,
-    timeWaitHigh,
+    timeWaitHigh: ports.timeWaitHigh,
+    clientPortsExhausted: ports.clientPortsExhausted,
   };
 }
 
@@ -310,9 +371,12 @@ module.exports = {
   classify,
   parseSummary,
   parseStubStatus,
+  clientPortSignal,
   serverConns,
   runK6,
   defaultDeps,
   FAILURE_RATE_THRESHOLD,
   TIME_WAIT_HIGH,
+  PORT_RANGE_NEAR_FRACTION,
+  K6_THRESHOLD_EXIT,
 };

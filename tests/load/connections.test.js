@@ -20,6 +20,19 @@ test('classify: safety trip is SAFETY_STOP', () => {
   assert.strictEqual(v.verdict, 'SAFETY_STOP');
 });
 
+test('classify: k6 threshold exit 99 with server failures is SERVER_CEILING', () => {
+  // k6 exits 99 when a threshold is breached; that is NOT a client crash.
+  const v = classify({ exitCode: 99, failedRate: 0.9, dropped: 0, tripped: false, timeWaitHigh: false });
+  assert.strictEqual(v.verdict, 'SERVER_CEILING');
+});
+
+test('classify: client port exhaustion with server failures is CLIENT_BOUND', () => {
+  // Port-bound client (unsupported host, TIME_WAIT unreadable) must never be
+  // reported as the server's ceiling.
+  const v = classify({ exitCode: 0, failedRate: 0.9, dropped: 0, tripped: false, timeWaitHigh: false, clientPortsExhausted: true });
+  assert.strictEqual(v.verdict, 'CLIENT_BOUND');
+});
+
 test('searchCeiling converges into the bracket', () => {
   // Stubbed runner: server "fails" above 8000 connections.
   const deps = {
