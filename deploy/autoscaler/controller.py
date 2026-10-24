@@ -324,9 +324,9 @@ def get_active_connections(
     except Exception:
         pass
 
-    # 3. Fallback: inspect /proc/net/tcp and /proc/net/tcp6 for ports 8080-8083 (0x1F90-0x1F93) in ESTABLISHED (01) state
+    # 3. Fallback: inspect /proc/net/tcp and /proc/net/tcp6 for ports 8080-8119 in ESTABLISHED (01) state
     conn_count = 0
-    ingress_hex_ports = (":1F90", ":1F91", ":1F92", ":1F93")
+    ingress_hex_ports = tuple(f":{p:04X}" for p in range(8080, 8120))
     for proc_path in ("/proc/net/tcp", "/proc/net/tcp6"):
         if os.path.exists(proc_path):
             try:

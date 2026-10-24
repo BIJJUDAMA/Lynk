@@ -221,12 +221,13 @@ services:
     container_name: lynk-gateway
     restart: unless-stopped
     ports:
-      - "8080:8080"
-      - "8081:8081"
-      - "8082:8082"
-      - "8083:8083"
+      - "8080-8119:8080-8119"
+
+
+
     volumes:
       - ./.docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./.docker/nginx/ports.conf:/etc/nginx/ports.conf:ro
     depends_on:
       api:
         condition: service_healthy
