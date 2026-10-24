@@ -2,13 +2,14 @@
 
 > **Authoritative System Architecture Specification**
 > **Platform:** Lynk - Campus work and student freelance platform
-> **Status:** Active (Post-MVP Expansion - Phase 1 baseline, Phase 1.5 hardening, and the 1M+ RPS scaling program complete)
-> **IAM Specification:** Self-Hosted SuperTokens Core 9.3 (`:3567`)
-> **Object Storage:** MinIO S3 (`:9000` API / `:9001` Web Console) - Exclusively for Resumes
-> **Caching & Rate Limiting:** TwoTierCache (L1 In-Memory LRU + L2 Redis 7+ `:6379`) & Sliding Window Limiter
-> **Connection Pooling:** PgBouncer (`:6432`) in transaction pooling mode
-> **High-Performance Ingress:** Nginx 1.25 Reverse Proxy (`:8080`) with 5s Micro-Caching & Request Collapsing
-> **Container Boundary:** Docker Compose (`lynk-gateway`, `lynk-api`, PostgreSQL 16 tuned, PgBouncer, Redis, SuperTokens Core, MinIO, FastAPI AI, AI Worker) + Host (`frontend/`)
+> **Status:** Active (Post-MVP Expansion - Phase 1 baseline, Phase 1.5 hardening, 1M+ RPS scaling program, and RabbitMQ/Audit event broker complete)
+> **IAM Specification:** Self-Hosted SuperTokens Core 9.3 (:3567)
+> **Object Storage:** MinIO S3 (:9000 API / :9001 Web Console) - Exclusively for Resumes
+> **Message Broker:** RabbitMQ 3.13 (:5672 AMQP / :15672 Management UI) with Durable Queues & DLX
+> **Caching & Rate Limiting:** TwoTierCache (L1 In-Memory LRU + L2 Redis 7+ :6379) & Sliding Window Limiter
+> **Connection Pooling:** PgBouncer (:6432) in transaction pooling mode (5,000 client conns max)
+> **High-Performance Ingress:** Nginx 1.25 Reverse Proxy (:8080) with 5s Micro-Caching & Request Collapsing
+> **Container Boundary:** Docker Compose (lynk-gateway, lynk-api, lynk-rabbitmq, PostgreSQL 16 tuned, PgBouncer, Redis, SuperTokens Core, MinIO, FastAPI AI, AI Worker) + Host (rontend/)
 
 ---
 
