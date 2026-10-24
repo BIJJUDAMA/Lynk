@@ -91,6 +91,29 @@ services:
       timeout: 3s
       retries: 5
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: lynk-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: "guest"
+      RABBITMQ_DEFAULT_PASS: "guest"
+      RABBITMQ_DEFAULT_VHOST: "/"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./.docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    networks:
+      - lynk-net
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_port_connectivity || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   pgbouncer:
     image: edoburu/pgbouncer:latest
     container_name: lynk-pgbouncer
@@ -135,6 +158,7 @@ services:
       AI_API_URL: "http://ai-api:8000"
       INTERNAL_AI_SECRET: "${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}"
       REDIS_URL: "redis://redis:6379"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
       RATE_LIMIT_PER_MINUTE: "${RATE_LIMIT_PER_MINUTE:-120}"
       TRUST_FORWARDED_FOR: "${TRUST_FORWARDED_FOR:-true}"
       GOMEMLIMIT: "750MiB"
@@ -151,6 +175,8 @@ services:
       minio:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - lynk-net
@@ -290,7 +316,7 @@ services:
       AUTOSCALE_SERVICE: "api"
       AUTOSCALE_GATEWAY: "lynk-gateway"
       AUTOSCALE_MIN_REPLICAS: "2"
-      AUTOSCALE_MAX_REPLICAS: "6"
+      AUTOSCALE_MAX_REPLICAS: "4"
       AUTOSCALE_CHECK_INTERVAL: "5"
       SCALE_UP_SUSTAINED_SEC: "5"
       SCALE_DOWN_SUSTAINED_SEC: "300"
@@ -312,3 +338,4 @@ volumes:
   postgres_data:
   minio_data:
   redis_data:
+  rabbitmq_data:
