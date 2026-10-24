@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/lynk/backend/internal/database"
 )
 
 // Repository defines data access operations for projects.
@@ -30,12 +31,31 @@ type Repository interface {
 
 // pgxRepository implements Repository backed by PostgreSQL.
 type pgxRepository struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	router database.Router
 }
 
 // NewRepository creates a new PostgreSQL-backed project repository.
 func NewRepository(db *pgxpool.Pool) Repository {
 	return &pgxRepository{db: db}
+}
+
+// NewRepositoryWithRouter creates a project repository using a database router for read/write splitting.
+func NewRepositoryWithRouter(router database.Router) Repository {
+	if router == nil {
+		return &pgxRepository{}
+	}
+	return &pgxRepository{
+		db:     router.Primary(),
+		router: router,
+	}
+}
+
+func (r *pgxRepository) readPool(ctx context.Context) *pgxpool.Pool {
+	if r.router != nil {
+		return r.router.Route(ctx)
+	}
+	return r.db
 }
 
 var _ Repository = (*pgxRepository)(nil)
@@ -113,7 +133,7 @@ func (r *pgxRepository) GetProjectByID(ctx context.Context, id uuid.UUID) (*Proj
 		FROM projects
 		WHERE id = $1
 	`
-	row := r.db.QueryRow(ctx, query, id)
+	row := r.readPool(ctx).QueryRow(ctx, query, id)
 	return scanProject(row)
 }
 
@@ -126,7 +146,7 @@ func (r *pgxRepository) GetProjectBySlug(ctx context.Context, slug string) (*Pro
 		FROM projects
 		WHERE slug = $1
 	`
-	row := r.db.QueryRow(ctx, query, slug)
+	row := r.readPool(ctx).QueryRow(ctx, query, slug)
 	return scanProject(row)
 }
 
@@ -186,7 +206,7 @@ func (r *pgxRepository) ListProjects(ctx context.Context, filter ListFilter) ([]
 
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM projects WHERE %s", whereClause)
 	var total int
-	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := r.readPool(ctx).QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("failed to count projects: %w", err)
 	}
 
@@ -230,7 +250,7 @@ func (r *pgxRepository) ListProjects(ctx context.Context, filter ListFilter) ([]
 
 	queryArgs := append(append([]any{}, dataArgs...), limit, offset)
 
-	rows, err := r.db.Query(ctx, dataQuery, queryArgs...)
+	rows, err := r.readPool(ctx).Query(ctx, dataQuery, queryArgs...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to query projects: %w", err)
 	}

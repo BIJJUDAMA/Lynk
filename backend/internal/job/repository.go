@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/lynk/backend/internal/database"
 )
 
 // JobRepository defines persistence operations for jobs.
@@ -24,12 +25,31 @@ type JobRepository interface {
 
 // Repository implements JobRepository backed by PostgreSQL with pgxpool.Pool.
 type Repository struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	router database.Router
 }
 
 // NewRepository creates a new job repository.
 func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
+}
+
+// NewRepositoryWithRouter creates a new job repository with read/write splitting support.
+func NewRepositoryWithRouter(router database.Router) *Repository {
+	if router == nil {
+		return &Repository{}
+	}
+	return &Repository{
+		db:     router.Primary(),
+		router: router,
+	}
+}
+
+func (r *Repository) readPool(ctx context.Context) *pgxpool.Pool {
+	if r.router != nil {
+		return r.router.Route(ctx)
+	}
+	return r.db
 }
 
 var _ JobRepository = (*Repository)(nil)
@@ -67,10 +87,10 @@ func (r *Repository) CreateJob(ctx context.Context, job *Job) error {
 // GetJobByID retrieves a job by UUID along with public creator profile info.
 func (r *Repository) GetJobByID(ctx context.Context, id uuid.UUID) (*Job, error) {
 	query := `
-		SELECT 
-			j.id, j.created_by, j.title, j.description, 
+		SELECT
+			j.id, j.created_by, j.title, j.description,
 			j.required_skills, j.department, j.deadline, j.status, j.created_at, j.updated_at,
-			u.id, COALESCE(u.email, ''), 
+			u.id, COALESCE(u.email, ''),
 			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.department, ''),
 			COALESCE(p.organization, ''), COALESCE(p.organization_website, '')
 		FROM jobs j
@@ -222,10 +242,10 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 	}
 
 	query := fmt.Sprintf(`
-		SELECT 
-			j.id, j.created_by, j.title, j.description, 
+		SELECT
+			j.id, j.created_by, j.title, j.description,
 			j.required_skills, j.department, j.deadline, j.status, j.created_at, j.updated_at,
-			u.id, COALESCE(u.email, ''), 
+			u.id, COALESCE(u.email, ''),
 			COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), COALESCE(p.department, ''),
 			COALESCE(p.organization, ''), COALESCE(p.organization_website, '')
 		FROM jobs j
@@ -238,7 +258,7 @@ func (r *Repository) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, er
 
 	args = append(args, limit, offset)
 
-	rows, err := r.db.Query(ctx, query, args...)
+	rows, err := r.readPool(ctx).Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
