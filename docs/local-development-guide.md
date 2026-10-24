@@ -9,7 +9,7 @@
 
 Before starting, ensure your workstation has:
 - **Docker & Docker Compose** (v24+ / Compose v2.20+)
-- **Node.js 20+ / npm 10+** (only required if running frontend on host via Option 2)
+- **Node.js 22.6+ / npm 10+** (only required if running frontend on host via Option 2)
 - **PowerShell** (Windows) or **Bash** (macOS / Linux)
 
 ---
@@ -57,7 +57,7 @@ All 8 services should report `[PASS]`:
 | :--- | :--- | :--- |
 | **Web App (Next.js)** | `http://localhost:3000` | Landing page, discovery, activity |
 | **Project Workspaces** | `http://localhost:3000/projects` | Browse and filter campus projects and roles |
-| **Auth & Registration** | `http://localhost:3000/register` | Requires valid institutional `.edu` email |
+| **Auth & Registration** | `http://localhost:3000/login` | Requires valid institutional `.edu` email |
 | **Login** | `http://localhost:3000/login` | Direct login with credentials |
 | **MinIO S3 Console** | `http://localhost:9001` | Username: `minio_admin`<br/>Password: `minio_password` |
 | **Gateway / Go API** | `http://localhost:8080/health` | High-performance Nginx reverse proxy & Go API health |
@@ -90,7 +90,7 @@ If you plan on editing frontend code and want instant Next.js Hot Module Reloadi
 From repository root:
 
 ```bash
-docker compose up -d postgres supertokens minio redis api ai-api
+docker compose up -d postgres pgbouncer supertokens minio redis api gateway
 ```
 
 ### Step 2: Start Next.js on Your Host

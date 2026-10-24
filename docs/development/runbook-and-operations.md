@@ -17,7 +17,7 @@ Before setting up Lynk locally, ensure your developer workstation satisfies the 
 | Tool | Version Floor | Purpose | Installation Check |
 | :--- | :--- | :--- | :--- |
 | **Docker & Compose** | Docker v24+ / Compose v2.20+ | Backend containerization & service orchestration | `docker compose version` |
-| **Node.js** | Node.js v20.0.0+ | Frontend development & native type-stripping ESM test runner | `node -v` |
+| **Node.js** | Node.js >= v22.6.0 | Frontend development & native type-stripping ESM test runner | `node -v` |
 | **npm** | npm v10.0.0+ | Package management for Next.js frontend | `npm -v` |
 | **Go** | Go 1.22+ (Recommended: 1.25.x) | Direct Go compilation, testing, and toolchain checks | `go version` |
 | **Python** | Python v3.11+ | AI subsystem service, queue worker daemon, and pytest suite | `python --version` |
@@ -97,7 +97,7 @@ pip install -r ai/requirements.txt
 deactivate
 
 # 6. Spin up backend container infrastructure
-docker compose up -d --build
+docker compose --profile full up -d --build
 
 # 7. Verify all container services are healthy
 docker compose ps

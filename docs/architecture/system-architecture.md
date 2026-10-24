@@ -22,7 +22,7 @@
 3. **Self-Hosted IAM (SuperTokens Core):** Fully self-hosted identity engine running inside Docker Compose on port 3567. Manages session tokens (`sAccessToken`, `sRefreshToken`), credential hashing, and email verification.
 4. **Dedicated Object Storage (MinIO S3):** Student resumes are stored exclusively in an S3-compatible MinIO bucket (`resumes`) via direct pre-signed upload URLs and secure download streaming.
 5. **Clean Layered Backend & High-Concurrency Scale:** Go REST API following idiomatic `Handler -> Service -> Repository` separation with `pgx/v5` connection pooling, TwoTierCache (L1 in-memory + L2 Redis), Redis sliding-window rate limiting, transactional outbox worker, and real-time SSE stream, protected by an Nginx micro-caching gateway and PgBouncer connection multiplexer.
-6. **Decoupled Frontend Development:** Next.js 16 App Router executes directly on the developer's host machine (`npm run dev`) for instant Hot Module Replacement (HMR), backed by React 19 and TanStack Query for cache synchronization and optimistic UI updates.
+6. **Decoupled Frontend Development:** Next.js 16 App Router executes directly on the developer's host machine (`npm run dev`) for instant Hot Module Replacement (HMR), backed by React 18.3 and TanStack Query for cache synchronization and optimistic UI updates.
 
 ---
 
@@ -34,13 +34,13 @@ The Lynk architecture strictly enforces a containerization boundary between pers
 flowchart TB
     subgraph Host["HOST ENVIRONMENT (Local Workstation)"]
         Browser["Web Browser / Client<br/>http://localhost:3000"]
-        NextHost["Next.js 16 App Router (Node 22+)<br/>Host Process (npm run dev)<br/>Port: 3000 (React 19 + TanStack Query + SSE)"]
+        NextHost["Next.js 16 App Router (Node 22+)<br/>Host Process (npm run dev)<br/>Port: 3000 (React 18.3 + TanStack Query + SSE)"]
         Browser <-->|HMR & UI Pages| NextHost
     end
 
     subgraph DockerBridge["DOCKER COMPOSE NETWORK (lynk-net)"]
         subgraph IngressGateway["Nginx Gateway Ingress (lynk-gateway)"]
-            Nginx["Nginx 1.25 Reverse Proxy<br/>Port: 8080:8080<br/>Worker Conns: 8192 | Keepalive: 128<br/>5s Micro-Cache & proxy_cache_lock"]
+            Nginx["Nginx 1.25 Reverse Proxy<br/>Port: 8080:8080<br/>Worker Conns: 65535 | Keepalive: 128<br/>5s Micro-Cache & proxy_cache_lock"]
         end
 
         subgraph APIService["Go REST API - Authoritative (lynk-api)"]
@@ -97,13 +97,13 @@ flowchart TB
 
 | Service | Container Name | Host Port | Internal Port | Protocol | Purpose |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Frontend** | *Host Process* | `3000` | N/A | HTTP | Next.js 16 App Router (React 19, TypeScript 5.8, Tailwind v4, TanStack Query 5) |
-| **Nginx Gateway** | `lynk-gateway` | `8080` | `8080` | HTTP | High-concurrency edge reverse proxy (8,192 worker conns, 5s micro-cache, request collapsing) |
+| **Frontend** | *Host Process* | `3000` | N/A | HTTP | Next.js 16 App Router (React 18.3, TypeScript 5.6, Tailwind CSS 3.4, TanStack Query 5) |
+| **Nginx Gateway** | `lynk-gateway` | `8080` | `8080` | HTTP | High-concurrency edge reverse proxy (65,535 worker conns, 5s micro-cache, request collapsing) |
 | **Go REST API** | `lynk-api` | N/A (Proxied) | `8080` | HTTP | Authoritative Go HTTP service (Chi router, TwoTierCache, SSE stream, `/metrics`) |
 | **Redis 7** | `lynk-redis` | `6379` | `6379` | TCP | L2 distributed cache-aside store & sliding-window rate limiter |
-| **PgBouncer** | `lynk-pgbouncer` | `6432` | `6432` | TCP | PostgreSQL transaction connection pooling multiplexing thousands of client connections onto 20 backends |
-| **FastAPI AI Backend** | `ai-api` | N/A (Internal) | `8000` | HTTP | Internal ML/embedding service (CPU ONNX INT8, `X-Internal-AI-Secret`) |
-| **AI Worker Daemon** | `ai-worker` | N/A | N/A | Background | Concurrent queue worker (`FOR UPDATE SKIP LOCKED`) |
+| **PgBouncer** | `lynk-pgbouncer` | `6432` | `6432` | TCP | PostgreSQL transaction connection pooling multiplexing thousands of client connections onto 25-40 backends |
+| **FastAPI AI Backend** | `ai-api` | N/A (Internal) | `8000` | HTTP | Internal ML/embedding service (PyTorch/sentence-transformers CPU, `X-Internal-AI-Secret`) |
+| **AI Worker Daemon** | `ai-worker` | N/A | N/A | Background | Concurrent queue worker (`FOR UPDATE SKIP LOCKED`, starts under `--profile workers` or `--profile full`) |
 | **SuperTokens Core** | `lynk-supertokens` | `3567` | `3567` | HTTP | Self-hosted IAM engine & session verifier |
 | **PostgreSQL + pgvector** | `lynk-postgres` | `5432` | `5432` | TCP | Relational & 384-dim vector storage (1GB `shared_buffers`, 3GB `effective_cache_size`, `lynk_db`, `supertokens_db`) |
 | **MinIO S3 API** | `lynk-minio` | `9000` | `9000` | HTTP/S3 | AWS S3 v4 compatible object storage for student resumes |
@@ -121,7 +121,7 @@ The backend (`backend/`) avoids bloated enterprise frameworks in favor of Go sta
                                  v
 +----------------------------------------------------------------+
 |                 Nginx Ingress Gateway (lynk-gateway)           |
-|  - 8,192 worker connections & upstream keepalive 128           |
+|  - 65,535 worker connections & upstream keepalive 128          |
 |  - 5s RFC micro-cache for public feeds (proxy_cache_lock on)   |
 |  - Request collapsing (stamps out cache stampedes)             |
 |  - Direct unbuffered passthrough for SSE stream & mutations    |
@@ -209,7 +209,7 @@ The AI subsystem in Lynk is engineered as an internal platform capability preser
 - **Telemetry Parity:** Every pipeline execution invokes `track_ai_run` recording feature name, model/prompt/pipeline versions, SHA-256 input hash, output JSON, and wall-clock latency in `ai_runs`.
 
 ### 4.2 Dense Semantic Memory & Vector Search (pgvector + CPU ONNX)
-- **Embedding Model:** `all-MiniLM-L6-v2` generating 384-dimensional dense vectors normalized to unit length, optimized with INT8 ONNX quantization for CPU inference (< 300MB RAM, 18-25ms latency).
+- **Embedding Model:** `all-MiniLM-L6-v2` generating 384-dimensional dense vectors normalized to unit length via `sentence-transformers` CPU with mock fallback and standalone ONNX quantization support.
 - **Deduplication Cache:** `embedding_cache` table keyed by `(content_hash, model_name)` storing pre-computed vectors to skip redundant inference.
 - **Index Structure:** PostgreSQL 16 `vector(384)` indexed with Hierarchical Navigable Small World (`HNSW`) cosine distance metric (`vector_cosine_ops`).
 - **Unique Invariant:** `ai_embeddings` enforces `UNIQUE(entity_type, entity_id, embedding_type, model_name, model_version)` ensuring idempotent re-indexing.
@@ -282,7 +282,7 @@ Lynk progresses across structured phases balancing rapid delivery with productio
 flowchart TD
     subgraph Phase1["Phase 1: Baseline (Completed)"]
         direction TB
-        P1_FE[Next.js 14 Host Development]
+        P1_FE[Next.js 16 Host Development]
         P1_API[Dockerised Go REST API]
         P1_ST[SuperTokens Core 9.3 in Docker]
         P1_PG[(PostgreSQL 16 Database)]
@@ -337,4 +337,4 @@ flowchart TD
 - **Phase 1.5 (Production Hardening & Ultra-Scale Optimization - Completed):** Redis 7 sliding-window rate limiting, TwoTierCache (L1 in-memory LRU + L2 Redis), Nginx edge gateway with 5s micro-caching (`proxy_cache_lock on`), PgBouncer transaction pooling, compound covering database indexes, PostgreSQL 1GB RAM buffers & NVMe I/O tuning, Transactional Outbox pattern & worker, Server-Sent Events realtime stream, CPU ONNX INT8 AI embeddings with SHA-256 deduplication cache, Prometheus `/metrics` endpoint.
 - **Phase 2.0 (Campus Work Platform - Planned):** Student ID OCR verification, milestone deliverable escrow, multi-campus tenancy, WebSockets, SOW generator, FERPA compliance shield.
 - **Phase 3 (Async Processing & Workers - Planned):** RabbitMQ message broker and distributed worker pools for heavy background asynchronous tasks.
-- **Phase 4 (Reliability, Benchmarking & Scale - Active Baseline Established):** Complete 6-stage k6 load test suite (`make load-test-ultra`) stress testing up to 2,500 concurrent Virtual Users (VUs) and ~1,458 req/s peak throughput with 0.00% error rate and a 2.07ms p95 latency, single API container. See complete metrics in [`tests/load/results/REPORT.md`](../../tests/load/results/REPORT.md) and [`performance-and-scale.md`](performance-and-scale.md). Planned expansion: Grafana production dashboards and automated CI regressions.
+- **Phase 4 (Reliability, Benchmarking & Scale - Active Baseline Established):** Complete 8-stage k6 load test suite (`make load-test`) certifying 2,042.3 req/s sustainable throughput at 20,000 concurrent Virtual Users (VUs) with 0.00% error rate and 11.4ms p95 latency. See complete metrics in [`tests/load/results/REPORT.md`](../../tests/load/results/REPORT.md) and [`performance-and-scale.md`](performance-and-scale.md). Planned expansion: Grafana production dashboards and automated CI regressions.

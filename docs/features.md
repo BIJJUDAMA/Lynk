@@ -2,7 +2,7 @@
 
 > **Authoritative Technical Feature Specification for Lynk**
 > **Platform Version:** Post-MVP Expansion
-> **Architectural Topology:** Unified Campus Member Identity, Go REST API behind an Nginx gateway, Next.js 16 Frontend (React 19, Tailwind v4), PostgreSQL 16 via PgBouncer, Redis 7, SuperTokens Core 9.3, MinIO S3
+> **Architectural Topology:** Unified Campus Member Identity, Go REST API behind an Nginx gateway, Next.js 16 Frontend (React 18.3, Tailwind 3.4), PostgreSQL 16 via PgBouncer, Redis 7, SuperTokens Core 9.3, MinIO S3
 
 ---
 
@@ -119,7 +119,7 @@ flowchart TD
 
 ---
 
-### Feature 5: Applications & Proposal Management
+### Feature 7: Applications & Proposal Management (Legacy Track)
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -131,7 +131,7 @@ flowchart TD
 
 ---
 
-### Feature 6: Deliverable Collaboration Contracts
+### Feature 8: Deliverable Collaboration Contracts (Legacy Track)
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -143,7 +143,7 @@ flowchart TD
 
 ---
 
-### Feature 7: Bilateral Peer Reviews & Reputation
+### Feature 9: Bilateral Peer Reviews & Reputation
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -154,7 +154,7 @@ flowchart TD
 
 ---
 
-### Feature 8: Activity Feed & Centralized Hub
+### Feature 10: Activity Feed & Centralized Hub
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -164,7 +164,7 @@ flowchart TD
 
 ---
 
-### Feature 9: AI-Powered Job Description Draft Generator
+### Feature 11: AI-Powered Job Description Draft Generator
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -175,7 +175,7 @@ flowchart TD
 
 ---
 
-### Feature 10: Hybrid Semantic & Keyword Search
+### Feature 12: Hybrid Semantic & Keyword Search
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -186,7 +186,7 @@ flowchart TD
 
 ---
 
-### Feature 11: Advisory AI Candidate Ranking & Explainability
+### Feature 13: Advisory AI Candidate Ranking & Explainability
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -197,7 +197,7 @@ flowchart TD
 
 ---
 
-### Feature 12: Intelligent Member Recommendations Engine
+### Feature 14: Intelligent Member Recommendations Engine
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -207,7 +207,7 @@ flowchart TD
 
 ---
 
-### Feature 13: Hybrid Moderation & Spam Detection
+### Feature 15: Hybrid Moderation & Spam Detection
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -217,7 +217,7 @@ flowchart TD
 
 ---
 
-### Feature 14: Aspect-Based Review Insights & Reputation
+### Feature 16: Aspect-Based Review Insights & Reputation
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -226,7 +226,7 @@ flowchart TD
 
 ---
 
-### Feature 15: Campus Skill Demand Analytics & Statistical Forecasting
+### Feature 17: Campus Skill Demand Analytics & Statistical Forecasting
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -235,7 +235,7 @@ flowchart TD
 
 ---
 
-### Feature 16: Asynchronous Worker Queue & Vector Embedding Pipeline
+### Feature 18: Asynchronous Worker Queue & Vector Embedding Pipeline
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
@@ -285,7 +285,7 @@ flowchart TD
 
 ## 5. Non-Functional & Reliability Highlights
 
-1. **Deterministic Database Migrations:** 20 raw forward and rollback SQL migrations (`000001` through `000020`) including `pgvector` vector extension, 12 AI subsystem tables, Project-First Workspace architecture, and compound covering indexes.
+1. **Deterministic Database Migrations:** 22 raw forward and rollback SQL migrations (`000001` through `000022`) including `pgvector` vector extension, 12 AI subsystem tables, Project-First Workspace architecture, compound covering indexes, keyset cursor pagination, and view count tracking.
 2. **Layered Go Architecture:** Clean separation of concerns (`Handler` -> `Service` -> `Repository`) with standard library routing and `pgx/v5` connection pooling.
 3. **Internal AI Microservice & Secret Defense:** FastAPI backend operates on internal Docker network (`lynk-net`) requiring `X-Internal-AI-Secret`. Zero direct public exposure.
 4. **Comprehensive Graceful Degradation:** Every AI endpoint falls back to deterministic SQL logic with HTTP 200 if the AI backend is unreachable.

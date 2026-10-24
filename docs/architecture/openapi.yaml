@@ -16,6 +16,29 @@ security:
   - bearerAuth: []
 
 paths:
+  /auth/sync:
+    post:
+      summary: Synchronize authenticated campus member
+      description: Upserts SuperTokens authenticated user into PostgreSQL users and profiles tables.
+      security:
+        - SessionAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  enum: [member, admin]
+                  default: member
+      responses:
+        '200':
+          description: User synchronized successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /auth/signup:
     post:
       summary: Register campus member
@@ -1201,6 +1224,91 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ProjectApplication'
+
+  /projects/{id}/questions:
+    get:
+      summary: List project screening questions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - SessionAuth: []
+      responses:
+        '200':
+          description: Ordered list of screening questions
+    post:
+      summary: Create project screening question
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - SessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question_text]
+              properties:
+                question_text:
+                  type: string
+                help_text:
+                  type: string
+                required:
+                  type: boolean
+                  default: true
+                position:
+                  type: integer
+                  default: 0
+      responses:
+        '201':
+          description: Screening question created
+
+  /projects/{id}/activity:
+    get:
+      summary: List project audit activity stream
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security: []
+      responses:
+        '200':
+          description: Chronological workspace activity events
+
+  /users/{id}/ai-insights:
+    get:
+      summary: Public campus member AI review insights
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security: []
+      responses:
+        '200':
+          description: Synthesized reputation traits and strengths
+
+  /analytics/skills:
+    get:
+      summary: Campus skill demand analytics
+      security: []
+      responses:
+        '200':
+          description: Aggregated skill demand snapshots and growth metrics
 
   /search/projects:
     get:

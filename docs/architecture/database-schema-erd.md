@@ -3,7 +3,7 @@
 > **Authoritative Database Specification**
 > **Database Engine:** PostgreSQL 16 Alpine (`lynk-postgres` on port `5432`)
 > **Databases:** `lynk_db` (application data) & `supertokens_db` (IAM data)
-> **Schema Migrations:** Raw SQL (`backend/migrations/000001` through `000020`)
+> **Schema Migrations:** Raw SQL (`backend/migrations/000001` through `000022`)
 > **User Identity Type:** `VARCHAR(64)` (SuperTokens Core user identity format)
 
 ---
@@ -38,17 +38,20 @@ erDiagram
     }
 
     profiles {
-        VARCHAR(64) user_id PK, FK "References users(id) ON DELETE CASCADE"
-        VARCHAR(128) full_name "Member legal name"
-        VARCHAR(128) department "Academic department"
-        VARCHAR(128) major "Declared academic major"
+        UUID id PK "Internal profile UUID"
+        VARCHAR(64) user_id UK, FK "References users(id) ON DELETE CASCADE"
+        VARCHAR(100) first_name "Member first name"
+        VARCHAR(100) last_name "Member last name"
+        VARCHAR(100) department "Academic department"
         INTEGER graduation_year "Target graduation year"
         TEXT bio "Member summary biography"
         TEXT_ARRAY skills "Verified technical and soft skills"
-        TEXT_ARRAY portfolio_links "Valid http/https portfolio links"
-        VARCHAR(255) organization_name "Optional campus club / org"
-        VARCHAR(255) organization_website "Valid http/https org website"
+        JSONB portfolio_links "Valid portfolio links"
+        VARCHAR(200) organization "Optional campus club / org"
+        VARCHAR(255) organization_website "Valid org website"
         VARCHAR(512) resume_key "MinIO S3 object key"
+        VARCHAR(255) resume_filename "Original resume filename"
+        BIGINT resume_byte_size "Resume size in bytes"
         TIMESTAMPTZ created_at "Profile creation timestamp"
         TIMESTAMPTZ updated_at "Last update timestamp"
     }
@@ -342,6 +345,7 @@ erDiagram
         project_recruitment_status recruitment_status "open, paused, closed"
         project_lifecycle_status lifecycle_status "idea, active, completed, archived"
         JSONB settings "Workspace settings"
+        BIGINT view_count "Persisted view count (Migration 000022)"
         TIMESTAMPTZ created_at "Creation timestamp"
         TIMESTAMPTZ updated_at "Update timestamp"
     }
@@ -406,17 +410,20 @@ CREATE TABLE users (
 Unified campus profile capturing academic, professional, and organization context.
 ```sql
 CREATE TABLE profiles (
-    user_id VARCHAR(64) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    full_name VARCHAR(128) NOT NULL DEFAULT '',
-    department VARCHAR(128) NOT NULL DEFAULT '',
-    major VARCHAR(128) NOT NULL DEFAULT '',
-    graduation_year INTEGER CHECK (graduation_year >= 2020 AND graduation_year <= 2040),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id VARCHAR(64) UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    first_name VARCHAR(100) NOT NULL DEFAULT '',
+    last_name VARCHAR(100) NOT NULL DEFAULT '',
     bio TEXT NOT NULL DEFAULT '',
+    department VARCHAR(100) NOT NULL DEFAULT '',
+    graduation_year INT NOT NULL DEFAULT 0,
     skills TEXT[] NOT NULL DEFAULT '{}',
-    portfolio_links TEXT[] NOT NULL DEFAULT '{}',
-    organization_name VARCHAR(255) NOT NULL DEFAULT '',
-    organization_website VARCHAR(255) NOT NULL DEFAULT '',
+    portfolio_links JSONB NOT NULL DEFAULT '[]'::jsonb,
     resume_key VARCHAR(512),
+    resume_filename VARCHAR(255),
+    resume_byte_size BIGINT DEFAULT 0,
+    organization VARCHAR(200) NOT NULL DEFAULT '',
+    organization_website VARCHAR(255) NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -727,6 +734,160 @@ CREATE TABLE outbox_events (
 );
 ```
 
+### 2.21 `projects` (Migration 000017 & 000022)
+Collaborative project workspaces created by campus members.
+```sql
+CREATE TABLE projects (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    slug VARCHAR(120) UNIQUE NOT NULL,
+    owner_member_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    title VARCHAR(200) NOT NULL,
+    description TEXT NOT NULL,
+    category VARCHAR(100) NOT NULL DEFAULT 'Engineering',
+    visibility project_visibility NOT NULL DEFAULT 'public',
+    recruitment_status project_recruitment_status NOT NULL DEFAULT 'open',
+    lifecycle_status project_lifecycle_status NOT NULL DEFAULT 'active',
+    settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+    view_count BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+### 2.22 `project_members` (Migration 000017)
+Project workspace team roster, assigning hierarchical roles.
+```sql
+CREATE TABLE project_members (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    member_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role project_member_role NOT NULL DEFAULT 'member',
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    departed_at TIMESTAMPTZ,
+    CONSTRAINT uq_project_member UNIQUE (project_id, member_id)
+);
+```
+
+### 2.23 `project_sections` (Migration 000017)
+Modular content sections for workspace customization (overview, milestones, docs).
+```sql
+CREATE TABLE project_sections (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    section_type VARCHAR(50) NOT NULL,
+    title VARCHAR(100) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    position INT NOT NULL DEFAULT 0,
+    config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    content TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_project_section_type UNIQUE (project_id, section_type)
+);
+```
+
+### 2.24 `project_resources` (Migration 000017)
+External links and asset references attached to a project workspace.
+```sql
+CREATE TABLE project_resources (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    label VARCHAR(100) NOT NULL,
+    url VARCHAR(512) NOT NULL,
+    resource_type VARCHAR(50) NOT NULL DEFAULT 'link',
+    created_by VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+### 2.25 `project_activity` (Migration 000017)
+Audit log capturing workspace mutations and team events.
+```sql
+CREATE TABLE project_activity (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    actor_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    event_type VARCHAR(100) NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+### 2.26 `application_questions` (Migration 000018)
+Custom recruitment questionnaire defined by project leads.
+```sql
+CREATE TABLE application_questions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    question_text TEXT NOT NULL,
+    help_text TEXT NOT NULL DEFAULT '',
+    required BOOLEAN NOT NULL DEFAULT TRUE,
+    position INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+### 2.27 `project_applications` (Migration 000018)
+Candidate applications for joining open project workspaces.
+```sql
+CREATE TABLE project_applications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    applicant_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status project_application_status NOT NULL DEFAULT 'submitted',
+    statement TEXT NOT NULL,
+    resume_asset_key VARCHAR(512),
+    reviewer_notes TEXT NOT NULL DEFAULT '',
+    decided_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    decided_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_project_applicant UNIQUE (project_id, applicant_id)
+);
+```
+
+### 2.28 `application_answers` (Migration 000018)
+Applicant answers to recruitment questions.
+```sql
+CREATE TABLE application_answers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    application_id UUID NOT NULL REFERENCES project_applications(id) ON DELETE CASCADE,
+    question_id UUID NOT NULL REFERENCES application_questions(id) ON DELETE CASCADE,
+    answer_text TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_application_question_answer UNIQUE (application_id, question_id)
+);
+```
+
+### 2.29 `project_invitations` (Migration 000018)
+Direct team recruitment invitations sent to prospective members.
+```sql
+CREATE TABLE project_invitations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    inviter_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    invitee_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    proposed_role project_member_role NOT NULL DEFAULT 'member',
+    status invitation_status NOT NULL DEFAULT 'pending',
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '14 days'),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_project_invitee UNIQUE (project_id, invitee_id)
+);
+```
+
+### 2.30 `project_embeddings` (Migration 000019)
+Dense 384-dimensional vector embeddings for project discovery and semantic matching.
+```sql
+CREATE TABLE project_embeddings (
+    project_id UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    embedding vector(384) NOT NULL,
+    content_hash VARCHAR(64) NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
 ---
 
 ## 3. Foreign Key Deletion Discipline
@@ -755,6 +916,42 @@ The database enforces a strict separation between cascading identities and prote
 | **App AI Score Job** | `jobs` | `application_ai_scores` | `job_id` | `ON DELETE CASCADE` | Job deletion cascades to advisory rank scores. |
 | **Review Insights** | `users` | `review_insights` | `user_id` | `ON DELETE CASCADE` | Member deletion removes aggregated aspect score summaries. |
 | **Skill Demand Snap** | `skills` | `skill_demand_snapshots` | `skill_id` | `ON DELETE CASCADE` | Taxonomy pruning cascades to historical demand snapshots. |
+| **Project Owner** | `users` | `projects` | `owner_member_id` | `ON DELETE RESTRICT` | Prevents deleting campus accounts with active projects. |
+| **Project Member Project** | `projects` | `project_members` | `project_id` | `ON DELETE CASCADE` | Deleting project cascades to team membership roster. |
+| **Project Member User** | `users` | `project_members` | `member_id` | `ON DELETE CASCADE` | Account deletion clears project membership records. |
+| **Project Section** | `projects` | `project_sections` | `project_id` | `ON DELETE CASCADE` | Deleting project clears custom content sections. |
+| **Project Resource Project** | `projects` | `project_resources` | `project_id` | `ON DELETE CASCADE` | Deleting project cascades to attached resources. |
+| **Project Resource Creator** | `users` | `project_resources` | `created_by` | `ON DELETE RESTRICT` | Preserves audit link for shared resource contributors. |
+| **Project Activity Project** | `projects` | `project_activity` | `project_id` | `ON DELETE CASCADE` | Deleting project cascades to activity stream logs. |
+| **Project Activity Actor** | `users` | `project_activity` | `actor_id` | `ON DELETE RESTRICT` | Preserves workspace audit event actors. |
+| **Application Question** | `projects` | `application_questions` | `project_id` | `ON DELETE CASCADE` | Deleting project cascades to custom screening questions. |
+| **Project App Project** | `projects` | `project_applications` | `project_id` | `ON DELETE CASCADE` | Deleting project cascades to received candidate applications. |
+| **Project App Applicant** | `users` | `project_applications` | `applicant_id` | `ON DELETE CASCADE` | Account deletion clears submitted workspace applications. |
+| **Project App Reviewer** | `users` | `project_applications` | `decided_by` | `ON DELETE SET NULL` | Reviewer account deletion preserves application audit status. |
+| **App Answer App** | `project_applications` | `application_answers` | `application_id` | `ON DELETE CASCADE` | Application deletion clears questionnaire answers. |
+| **App Answer Question** | `application_questions` | `application_answers` | `question_id` | `ON DELETE CASCADE` | Question deletion clears candidate answers. |
+| **Project Invitation Project** | `projects` | `project_invitations` | `project_id` | `ON DELETE CASCADE` | Deleting project clears pending and historical invitations. |
+| **Project Invitation Inviter** | `users` | `project_invitations` | `inviter_id` | `ON DELETE RESTRICT` | Preserves invitation audit trails. |
+| **Project Invitation Invitee** | `users` | `project_invitations` | `invitee_id` | `ON DELETE CASCADE` | Deleting invited account clears pending invitations. |
+| **Project Embeddings** | `projects` | `project_embeddings` | `project_id` | `ON DELETE CASCADE` | Project deletion clears 384-dim semantic search vector. |
+| **Project Owner** | `users` | `projects` | `owner_member_id` | `ON DELETE RESTRICT` | Prevents deleting campus accounts with active projects. |
+| **Project Member Project** | `projects` | `project_members` | `project_id` | `ON DELETE CASCADE` | Deleting project cascades to team membership roster. |
+| **Project Member User** | `users` | `project_members` | `member_id` | `ON DELETE CASCADE` | Account deletion clears project membership records. |
+| **Project Section** | `projects` | `project_sections` | `project_id` | `ON DELETE CASCADE` | Deleting project clears custom content sections. |
+| **Project Resource Project** | `projects` | `project_resources` | `project_id` | `ON DELETE CASCADE` | Deleting project cascades to attached resources. |
+| **Project Resource Creator** | `users` | `project_resources` | `created_by` | `ON DELETE RESTRICT` | Preserves audit link for shared resource contributors. |
+| **Project Activity Project** | `projects` | `project_activity` | `project_id` | `ON DELETE CASCADE` | Deleting project cascades to activity stream logs. |
+| **Project Activity Actor** | `users` | `project_activity` | `actor_id` | `ON DELETE RESTRICT` | Preserves workspace audit event actors. |
+| **Application Question** | `projects` | `application_questions` | `project_id` | `ON DELETE CASCADE` | Deleting project cascades to custom screening questions. |
+| **Project App Project** | `projects` | `project_applications` | `project_id` | `ON DELETE CASCADE` | Deleting project cascades to received candidate applications. |
+| **Project App Applicant** | `users` | `project_applications` | `applicant_id` | `ON DELETE CASCADE` | Account deletion clears submitted workspace applications. |
+| **Project App Reviewer** | `users` | `project_applications` | `decided_by` | `ON DELETE SET NULL` | Reviewer account deletion preserves application audit status. |
+| **App Answer App** | `project_applications` | `application_answers` | `application_id` | `ON DELETE CASCADE` | Application deletion clears questionnaire answers. |
+| **App Answer Question** | `application_questions` | `application_answers` | `question_id` | `ON DELETE CASCADE` | Question deletion clears candidate answers. |
+| **Project Invitation Project** | `projects` | `project_invitations` | `project_id` | `ON DELETE CASCADE` | Deleting project clears pending and historical invitations. |
+| **Project Invitation Inviter** | `users` | `project_invitations` | `inviter_id` | `ON DELETE RESTRICT` | Preserves invitation audit trails. |
+| **Project Invitation Invitee** | `users` | `project_invitations` | `invitee_id` | `ON DELETE CASCADE` | Deleting invited account clears pending invitations. |
+| **Project Embeddings** | `projects` | `project_embeddings` | `project_id` | `ON DELETE CASCADE` | Project deletion clears 384-dim semantic search vector. |
 
 ---
 
@@ -829,6 +1026,34 @@ CREATE INDEX idx_recommendations_active_user ON ai_recommendations (user_id, con
 -- Phase 1.5 Hardening: Embedding Cache & Outbox Event Indexes (Migration 000015)
 CREATE INDEX idx_embedding_cache_created ON embedding_cache (model_name, created_at DESC);
 CREATE INDEX idx_outbox_pending_events ON outbox_events (next_retry_at, created_at) WHERE status IN ('pending', 'failed');
+
+-- Project Workspace: Core & Roster Indexes (Migration 000017)
+CREATE INDEX idx_projects_visibility ON projects(visibility);
+CREATE INDEX idx_projects_recruitment ON projects(recruitment_status);
+CREATE INDEX idx_projects_lifecycle ON projects(lifecycle_status);
+CREATE INDEX idx_projects_owner ON projects(owner_member_id);
+CREATE INDEX idx_projects_category ON projects(category);
+CREATE INDEX idx_project_members_project ON project_members(project_id);
+CREATE INDEX idx_project_members_member ON project_members(member_id);
+CREATE INDEX idx_project_members_role ON project_members(project_id, role);
+CREATE INDEX idx_project_sections_order ON project_sections(project_id, position);
+CREATE INDEX idx_project_resources_project ON project_resources(project_id);
+
+-- Project Workspace: Recruitment & Application Indexes (Migration 000018)
+CREATE INDEX idx_application_questions_project ON application_questions(project_id, position);
+CREATE INDEX idx_project_applications_project ON project_applications(project_id, status);
+CREATE INDEX idx_project_applications_applicant ON project_applications(applicant_id);
+CREATE INDEX idx_application_answers_app ON application_answers(application_id);
+CREATE INDEX idx_project_invitations_invitee ON project_invitations(invitee_id, status);
+
+-- Project Workspace: Semantic HNSW Vector Index (Migration 000019)
+CREATE INDEX idx_project_embeddings_hnsw ON project_embeddings USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+
+-- Project Workspace: Covering & Feed Performance Indexes (Migrations 000020 & 000021)
+CREATE INDEX idx_projects_feed_covering ON projects (visibility, recruitment_status, category, created_at DESC) INCLUDE (id, slug, title, description, owner_member_id, lifecycle_status);
+CREATE INDEX idx_projects_active_feed ON projects (visibility, created_at DESC) WHERE visibility = 'public';
+CREATE INDEX idx_project_members_lookup ON project_members (project_id, role, status);
+CREATE INDEX idx_projects_feed_keyset ON projects (visibility, recruitment_status, category, created_at DESC, id DESC);
 ```
 
 ---
@@ -876,7 +1101,7 @@ When an employer cancels an active contract:
 
 ---
 
-## 6. Raw SQL Migration Registry (000001-000020)
+## 6. Raw SQL Migration Registry (000001-000022)
 
 | Migration File | Purpose & Changes | Breaking? | Reversible? | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -900,4 +1125,7 @@ When an employer cancels an active contract:
 | `000018_recruitment_and_applications` | Creates `application_questions`, `project_applications`, `application_answers`, and `project_invitations` with enum types (`project_application_status`, `invitation_status`). | No | Yes | Enables structured campus project applications, reviewer notes, and team invitations. |
 | `000019_project_vector_search` | Creates `project_embeddings` table storing 384-dimensional dense vectors with HNSW cosine distance index (`vector_cosine_ops`, m=16, ef_construction=64). | No | Yes | Powers sub-5ms semantic project discovery. |
 | `000020_project_feed_covering_indexes` | Adds compound covering index (`idx_projects_feed_covering`) on `projects` with `INCLUDE` clause, partial active feed index, and member lookup index. | No | Yes | Optimizes public feed filtering and search to execute via RAM-buffered index-only scans under extreme concurrency. |
-
+| `000021_project_feed_keyset_index` | Adds compound keyset index (`idx_projects_feed_keyset`) on `(visibility, recruitment_status, category, created_at DESC, id DESC)` for deterministic pagination. | No | Yes | Powers zero-offset keyset cursor pagination across massive project discovery feeds. |
+| `000022_project_view_count` | Adds `view_count BIGINT NOT NULL DEFAULT 0` column to `projects` table for write-batched view counts. | No | Yes | Backs Redis write-behind view batcher flushes to PostgreSQL without row lock contention. |
+| `000021_project_feed_keyset_index` | Adds compound keyset index (`idx_projects_feed_keyset`) on `(visibility, recruitment_status, category, created_at DESC, id DESC)` for deterministic pagination. | No | Yes | Powers zero-offset keyset cursor pagination across massive project discovery feeds. |
+| `000022_project_view_count` | Adds `view_count BIGINT NOT NULL DEFAULT 0` column to `projects` table for write-batched view counts. | No | Yes | Backs Redis write-behind view batcher flushes to PostgreSQL without row lock contention. |

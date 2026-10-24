@@ -1,9 +1,9 @@
 # Testing, Quality Assurance, & Verification Strategy - Lynk
 
 > **Authoritative Testing Handbook & Verification Standard**
-> **Backend Testing:** Go 1.25 Standard Library + Race Detector (`-race -count=1`) across 20 packages
+> **Backend Testing:** Go 1.25 Standard Library + Race Detector (`-race -count=1`) across 29 packages
 > **AI Subsystem Testing:** Python 3.11+ Pytest Suite (115 tests) + Offline IR Benchmarks (`ai/evaluation/`)
-> **Frontend Testing:** Next.js 16 + React 19 + Node 22+ Native ESM Runner (100 tests)
+> **Frontend Testing:** Next.js 16 + React 18.3 + Node 22+ Native ESM Runner (100 tests)
 > **Unified Control Plane:** Root `Makefile` (`make test`, `make lint`, `make format-check`)
 > **Continuous Integration:** GitHub Actions Multi-Job Pipeline (`.github/workflows/ci.yml`)
 
@@ -197,8 +197,8 @@ flowchart TB
             B2["Setup Go 1.25.x with Module Cache"]
             B3["golangci-lint v2.4.0 (Go 1.25 compatible)"]
             B4["Verify SQL migrations on throwaway DB (golang-migrate)"]
-            B5["Apply application migrations on lynk_db (000001 -> 000012)"]
-            B6["Test with Go Race Detector across 16 packages"]
+            B5["Apply application migrations on lynk_db (000001 -> 000022)"]
+            B6["Test with Go Race Detector across 29 packages"]
             B1 --> B2 --> B3 --> B4 --> B5 --> B6
         end
 
@@ -224,9 +224,9 @@ flowchart TB
 ### 5.1 Backend CI Verification Sequence
 1. **Container Health:** PostgreSQL 16 Alpine container spins up with `pgvector` extension and health checks (`pg_isready`).
 2. **Linting:** `golangci-lint` (v2.4.0) performs static analysis across all Go packages.
-3. **Migration Verification:** `golang-migrate` tests raw SQL migration files (`000001` through `000019`) against a throwaway database (`lynk_migrate_check`), testing forward `up`, rollback `down -all`, and re-application `up`.
+3. **Migration Verification:** `golang-migrate` tests raw SQL migration files (`000001` through `000022`) against a throwaway database (`lynk_migrate_check`), testing forward `up`, rollback `down -all`, and re-application `up`.
 4. **App Migrations:** The application migrator applies migrations to `lynk_db` via `TestRunMigrations_AppliesInitOnEmptyDatabase`.
-5. **Race Detector Suite:** `go test -race -count=1 ./...` executes across all 20 Go packages under thread-safety scrutiny.
+5. **Race Detector Suite:** `go test -race -count=1 ./...` executes across all 29 Go packages under thread-safety scrutiny.
 
 ### 5.2 Frontend CI Verification Sequence
 1. **Clean Installation:** `npm ci` restores exact locked dependencies from `package-lock.json`.
@@ -287,6 +287,8 @@ For full-stack verification of live running containers and endpoints, automated 
 Lynk provides a multi-stage, protocol-level load testing harness in `tests/load/` powered by k6 and orchestrated sequentially via `node tests/load/run_all.js` or `make load-test`.
 
 ### 7.1 Progressive Load Test Stages
+The load testing suite runs across 8 progressive stages:
+
 1. **Stage 1: Rate Limiter & DDoS Protection (`01_rate_limit.js`)**:
    - Single-IP burst sending 300 requests in 10s.
    - Proves `NewSlidingWindowMiddleware` strictly returns `429 Too Many Requests` beyond 120 req/min with sub-10ms response time.
@@ -298,10 +300,18 @@ Lynk provides a multi-stage, protocol-level load testing harness in `tests/load/
 4. **Stage 4: Max Concurrent User Breakpoint Test (`04_user_concurrency.js`)**:
    - Multi-tenant student IP simulation cycling through progressive tiers (25 -> 50 -> 100 -> 200 -> 350 VUs) with realistic student think times (1-3s).
    - Identifies the exact throughput and concurrency ceiling of the platform.
+5. **Stage 5: High-Concurrency Stress (`05_high_concurrency_stress.js`)**:
+   - 1,000 VUs exercising PgBouncer, Redis cache, and covering indexes.
+6. **Stage 6: Ultra-Concurrency Stress (`06_ultra_concurrency_stress.js`)**:
+   - 2,500 VUs exercising Nginx micro-caching, sharded L1 cache, and DB buffers.
+7. **Stage 7: Constant-Arrival Saturation Ceiling (`07_saturation_ceiling.js`)**:
+   - Pure arrival rate (no think time) identifying the queueing latency cliff.
+8. **Stage 8: Concurrent Connection Hold (`08_connection_hold.js`)**:
+   - 2,000 to 20,000 live keep-alive sockets sustained with 5s heartbeats.
 
 ### 7.2 Execution Commands
 ```bash
-# Execute all 4 stages sequentially with unified summary report
+# Execute all 8 stages sequentially with unified summary report
 make load-test
 
 # Or run individual stages
@@ -309,4 +319,5 @@ make load-test-rate-limit
 make load-test-cache
 make load-test-pool
 make load-test-concurrency
+make load-test-saturation
 ```

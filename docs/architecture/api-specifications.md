@@ -4,7 +4,8 @@
 > **Base URL:** `http://localhost:8080/api/v1`
 > **Content-Type:** `application/json` (or `multipart/form-data` for resume upload)
 > **Authentication:** SuperTokens Session Cookies (`sAccessToken`, `sRefreshToken`) or `Authorization: Bearer <sAccessToken>`
-> **Standard Error Response:** `{"error": "human-readable error description"}`
+> **Standard Response Envelope:** `{"success": true, "data": ..., "error": null}`
+> **Standard Error Envelope:** `{"success": false, "data": null, "error": {"code": "...", "message": "...", "request_id": "..."}}`
 
 ---
 
@@ -25,11 +26,28 @@ http://localhost:8080/api/v1/<domain>/<resource>
 - **Anti-CSRF:** When anti-CSRF is enabled by SuperTokens, write operations pass the `anti-csrf` token in the request header.
 - **Request ID Tracking:** Every response returns a unique `X-Request-Id` header for end-to-end distributed log tracing.
 
-### 1.3 Standard Error Responses
-All error responses adhere to a uniform JSON envelope:
+### 1.3 Standard Response & Error Envelopes
+All API endpoints return responses encapsulated in a uniform JSON envelope (`httputil.Response[T]`):
+
+**Success Envelope (`200 OK`, `201 Created`):**
 ```json
 {
-  "error": "Detailed error message describing validation failure or rule violation"
+  "success": true,
+  "data": { ... },
+  "error": null
+}
+```
+
+**Error Envelope (`4xx`, `5xx`):**
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "BAD_REQUEST",
+    "message": "Detailed error message describing validation failure or rule violation",
+    "request_id": "01JABCDEF1234567"
+  }
 }
 ```
 
@@ -120,18 +138,70 @@ Invalidates active session token in SuperTokens Core and clears HTTP-only sessio
   }
   ```
 
-### 2.4 Current Authenticated User & Claims
+### 2.4 Synchronize Campus Member Account
+`POST /auth/sync`
+Synchronizes the SuperTokens authenticated identity into the PostgreSQL `users` table and initializes an empty campus profile in `profiles` if not already present.
+
+- **Auth Required:** Yes (`sAccessToken`)
+- **Request Body (optional):**
+  ```json
+  {
+    "role": "member"
+  }
+  ```
+- **Response `200 OK`:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": "st_usr_9a4f21e0-3e21-4f40-b8cf-b0d36746f332",
+      "email": "student@stanford.edu",
+      "role": "member",
+      "created_at": "2026-09-01T12:00:00Z",
+      "updated_at": "2026-09-01T12:00:00Z"
+    },
+    "error": null
+  }
+  ```
+
+### 2.5 Current Authenticated User & Claims
 `GET /auth/me`
-Returns current session claims, user ID, email, role, and dynamic email verification status.
+Returns current authenticated session claims, user metadata, dynamic email verification status, and profile summary (`UserProfileSummary`).
 
 - **Auth Required:** Yes (`sAccessToken`)
 - **Response `200 OK`:**
   ```json
   {
-    "id": "st_usr_9a4f21e0-3e21-4f40-b8cf-b0d36746f332",
-    "email": "student@stanford.edu",
-    "role": "member",
-    "email_verified": true
+    "success": true,
+    "data": {
+      "user": {
+        "id": "st_usr_9a4f21e0-3e21-4f40-b8cf-b0d36746f332",
+        "email": "student@stanford.edu",
+        "role": "member",
+        "created_at": "2026-09-01T12:00:00Z",
+        "updated_at": "2026-09-01T12:00:00Z"
+      },
+      "email_verified": true,
+      "profile": {
+        "id": "9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e",
+        "user_id": "st_usr_9a4f21e0-3e21-4f40-b8cf-b0d36746f332",
+        "first_name": "Jane",
+        "last_name": "Stanford",
+        "bio": "Graduate researcher building agentic AI and distributed systems.",
+        "department": "Computer Science",
+        "graduation_year": 2026,
+        "skills": ["Go", "TypeScript", "PostgreSQL", "Next.js"],
+        "portfolio_links": ["https://github.com/janestanford"],
+        "resume_key": "resumes/st_usr_9a4f21e0/resume.pdf",
+        "resume_filename": "Jane_Resume.pdf",
+        "resume_byte_size": 184320,
+        "organization": "Stanford ACM Chapter",
+        "organization_website": "https://acm.stanford.edu",
+        "created_at": "2026-09-01T12:00:00Z",
+        "updated_at": "2026-09-11T16:30:00Z"
+      }
+    },
+    "error": null
   }
   ```
 
@@ -147,19 +217,26 @@ Retrieves the unified campus profile for the calling authenticated member.
 - **Response `200 OK`:**
   ```json
   {
-    "user_id": "st_usr_9a4f21e0-3e21-4f40-b8cf-b0d36746f332",
-    "full_name": "Jane Stanford",
-    "department": "Computer Science",
-    "major": "Artificial Intelligence",
-    "graduation_year": 2026,
-    "bio": "Graduate researcher building agentic AI and distributed systems.",
-    "skills": ["Go", "TypeScript", "PostgreSQL", "Next.js"],
-    "portfolio_links": ["https://github.com/janestanford", "https://janestanford.dev"],
-    "organization_name": "Stanford ACM Chapter",
-    "organization_website": "https://acm.stanford.edu",
-    "resume_key": "resumes/st_usr_9a4f21e0-3e21-4f40-b8cf-b0d36746f332/9b23fa1c.pdf",
-    "created_at": "2026-09-01T12:00:00Z",
-    "updated_at": "2026-09-11T16:30:00Z"
+    "success": true,
+    "data": {
+      "id": "9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e",
+      "user_id": "st_usr_9a4f21e0-3e21-4f40-b8cf-b0d36746f332",
+      "first_name": "Jane",
+      "last_name": "Stanford",
+      "bio": "Graduate researcher building agentic AI and distributed systems.",
+      "department": "Computer Science",
+      "graduation_year": 2026,
+      "skills": ["Go", "TypeScript", "PostgreSQL", "Next.js"],
+      "portfolio_links": ["https://github.com/janestanford"],
+      "resume_key": "resumes/st_usr_9a4f21e0/resume.pdf",
+      "resume_filename": "Jane_Resume.pdf",
+      "resume_byte_size": 184320,
+      "organization": "Stanford ACM Chapter",
+      "organization_website": "https://acm.stanford.edu",
+      "created_at": "2026-09-01T12:00:00Z",
+      "updated_at": "2026-09-11T16:30:00Z"
+    },
+    "error": null
   }
   ```
 
@@ -721,6 +798,29 @@ Returns all personal project applications submitted by the authenticated member.
 
 - **Auth Required:** Yes (Active session)
 - **Response `200 OK`:** Returns array of personal applications with project metadata.
+
+### 8.17 Project Screening Questions
+`GET /projects/{id}/questions` & `POST /projects/{id}/questions`
+Custom recruitment screening questions defined by project workspace leads.
+
+- **Auth Required:** Yes (Active session + verified `.edu` email)
+- **POST Request Body:**
+  ```json
+  {
+    "question_text": "What experience do you have with ROS2 and embedded systems?",
+    "help_text": "Mention past coursework, club projects, or personal builds.",
+    "required": true,
+    "position": 0
+  }
+  ```
+- **Response `201 Created`:** Returns created `ApplicationQuestion` JSON object.
+
+### 8.18 Project Activity Stream
+`GET /projects/{id}/activity`
+Publicly retrieves the chronological event audit stream of workspace operations, membership changes, and milestone updates.
+
+- **Auth Required:** No (Publicly accessible for public projects)
+- **Response `200 OK`:** Returns array of `ProjectActivity` JSON objects.
 
 ---
 

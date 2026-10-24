@@ -46,7 +46,7 @@ The suite gates on its verdict; inspect `$LASTEXITCODE` (PowerShell) or `$?` (ba
 ## 1. Test Architecture & Stages (legacy fixed scripts)
 
 > **New in this directory:** the parameterized suite (`tests/load/suite.js`) supersedes the
-> fixed 01-06 stages below for capacity work; see Section 2. Stages 01-06 are retained as
+> fixed 01-08 stages below for capacity work; see Section 2. Stages 01-08 are retained as
 > **legacy** fixed scripts and still run via `make load-test`.
 
 The consolidated suite is orchestrated sequentially by `tests/load/run_all.js` across 8 stages:
@@ -82,7 +82,7 @@ Stage 8 (`08_connection_hold.js`) measures concurrent connection capacity: each 
 ## 2. The Parameterized Suite (`suite.js`)
 
 `node tests/load/suite.js --mode=<mode>` is a single entrypoint that dispatches to one
-of four modes. It supersedes the fixed 01-06 stages for capacity measurement; 01-06 remain
+of four modes. It supersedes the fixed 01-08 stages for capacity measurement; 01-08 remain
 as legacy fixed scripts. Each mode is implemented by its own module (`connections.js`,
 `resources.js`, `ResourceSampler.js`, `hostmetrics.js`) and the driver reads the Nginx
 `stub_status` connection count for server-side context.

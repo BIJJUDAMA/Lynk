@@ -6,10 +6,10 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
-  <img src="https://img.shields.io/badge/TypeScript-5.8+-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/TypeScript-5.6+-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Next.js-16+-black?style=flat-square&logo=next.js&logoColor=white" alt="Next.js" />
-  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React" />
-  <img src="https://img.shields.io/badge/Tailwind-CSS_v4-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white" alt="Tailwind CSS" />
+  <img src="https://img.shields.io/badge/React-18.3-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React" />
+  <img src="https://img.shields.io/badge/Tailwind-CSS_3.4-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white" alt="Tailwind CSS" />
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
   <img src="https://img.shields.io/badge/pgvector-Enabled-336791?style=flat-square" alt="pgvector" />
@@ -46,7 +46,7 @@ Lynk is a campus collaboration and work platform connecting verified university 
 +------------------------------------------------------------------------+
 |                        HOST ENVIRONMENT (DEVELOPMENT)                  |
 |                                                                        |
-|   Next.js 16 (App Router + React 19 + TypeScript 5.8 + Tailwind v4)    |
+|   Next.js 16 (App Router + React 18.3 + TypeScript 5.6 + Tailwind 3.4) |
 |   URL: http://localhost:3000                                           |
 |   Auth: supertokens-web-js (Session, EmailPassword, EmailVerification) |
 +------------------------------------------------------------------------+
@@ -95,7 +95,7 @@ Lynk is a campus collaboration and work platform connecting verified university 
 | :--- | :--- | :--- |
 | **Control Plane** | Root `Makefile` | Multi-language onboarding, Git hook installation, and unified test/lint gates |
 | **Gateway & Reverse Proxy** | Nginx (`lynk-gateway`:8080) | Port 8080 entrypoint, `least_conn` load balancing, keep-alive pooling (64), SSE bypass |
-| **Frontend** | Next.js 16 (App Router) | React 19, TypeScript 5.8, Tailwind CSS v4, TanStack Query 5 (host-executed) |
+| **Frontend** | Next.js 16 (App Router) | React 18.3, TypeScript 5.6, Tailwind CSS 3.4, TanStack Query 5 (host-executed) |
 | **Authoritative Backend** | Go 1.25+ | Chi router v5.3, pgx/v5, SuperTokens SDK, MinIO Go SDK (Dockerised, scalable) |
 | **Caching & Rate Limiting** | Redis 7 (`lynk-redis`:6379) | 120 req/min sliding-window limiter & cache-aside store for project feeds |
 | **Connection Pooling** | PgBouncer (`lynk-pgbouncer`:6432) | Transaction mode multiplexing 2,000 client connections onto 25-40 PostgreSQL backends |
@@ -147,7 +147,7 @@ Lynk/
 |   |   +-- storage/            # MinIO S3 client wrapper
 |   |   +-- database/           # Connection pooling (pgxpool) and raw SQL migrator
 |   |   +-- middleware/         # SuperTokens session auth, CORS, logging, recovery
-|   +-- migrations/             # Incremental SQL migration files (000001 - 000019)
+|   +-- migrations/             # Incremental SQL migration files (000001 - 000022)
 +-- frontend/                   # Next.js App Router frontend (runs on host)
 |   +-- src/
 |   |   +-- app/                # App Router pages ((auth), projects, activity, profile)
@@ -322,7 +322,7 @@ The root `Makefile` provides unified targets for cross-stack verification, linti
 | `make lint` | Runs `golangci-lint`, `oxlint`, and `ruff check` | All |
 | `make format` | Auto-formats Go (`gofmt`), frontend (`prettier`), and Python (`ruff`) | All |
 | `make format-check` | Enforces formatting compliance (identical to CI) | All |
-| `make load-test` | Runs complete 5-stage sequential k6 backend load test suite | Backend & Database |
+| `make load-test` | Runs complete 8-stage sequential k6 backend load test suite | Backend & Database |
 | `make load-test-stress` | Runs Stage 5 high-concurrency stress test (1,000 VUs) | Backend & Database |
 
 ---
@@ -498,6 +498,6 @@ node tests/load/run_all.js --stage=08_connection_hold
 5. **Authoritative Non-Mutation:** Generative AI endpoints return draft payloads and never mutate authoritative database rows directly.
 6. **Graceful Degradation Everywhere:** If the AI backend or GPU is unreachable, all Go endpoints seamlessly fall back to deterministic SQL logic with HTTP 200.
 7. **Circuit Breaker Protection:** The Go AI orchestrator trips after 5 consecutive failures for 30s, fast-bypassing to heuristics without blocking requests.
-8. **Deterministic Database Migrations:** All migrations in `backend/migrations/` (`000001` through `000020`) are immutable and sequential.
+8. **Deterministic Database Migrations:** All migrations in `backend/migrations/` (`000001` through `000022`) are immutable and sequential.
 9. **Resumes in MinIO Exclusively:** Resumes are never stored on local disk or inside PostgreSQL. All resume transfers stream directly through MinIO with short-lived presigned URLs for client downloads.
 10. **Concurrency & Fairness:** Candidate ranking excludes protected demographic attributes (gender, race, age, graduation year, ethnicity) for algorithmic fairness.

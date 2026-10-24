@@ -6,10 +6,10 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
-  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
   <img src="https://img.shields.io/badge/TypeScript-5.6+-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
-  <img src="https://img.shields.io/badge/Next.js-14+-black?style=flat-square&logo=next.js&logoColor=white" alt="Next.js" />
+  <img src="https://img.shields.io/badge/Next.js-16+-black?style=flat-square&logo=next.js&logoColor=white" alt="Next.js" />
   <img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
   <img src="https://img.shields.io/badge/pgvector-Enabled-336791?style=flat-square" alt="pgvector" />
 </p>
@@ -57,17 +57,17 @@ Lynk completely replaces the fragmented dual-account paradigm with the **Unified
 | Dimension | Specification | Notes & Invariants |
 | :--- | :--- | :--- |
 | **Monorepo Topology** | Polyglot monorepo (`frontend/`, `backend/`, `ai/`, `docs/`) | Co-located frontend, authoritative backend, and internal AI subsystems unified via root `Makefile`. |
-| **Frontend Stack** | Next.js 16 (App Router), React 19, TypeScript 5.8, Tailwind CSS v4, TanStack Query 5 | **Runs on host (`npm run dev`) at `http://localhost:3000`**. NOT dockerised for instant HMR. |
+| **Frontend Stack** | Next.js 16 (App Router), React 18.3, TypeScript 5.6, Tailwind CSS 3.4, TanStack Query 5 | **Runs on host (`npm run dev`) at `http://localhost:3000`**. NOT dockerised for instant HMR. |
 | **Frontend Auth Client** | `supertokens-web-js` 0.16.0 | Handles session tokens (`sAccessToken`, `sRefreshToken`), direct login, and email verification. |
 | **Authoritative Backend** | Go 1.25, Chi Router v5.3, `pgx/v5` 5.5, AWS SDK Go v2 (S3) | **Dockerised (`lynk-api`) at `http://localhost:8080`**. Layered architecture: Handler -> Service -> Repository. TwoTierCache (L1 Mem + L2 Redis). |
-| **High-Performance Ingress** | Nginx 1.25 (`lynk-gateway` on port `8080`) | Reverse proxy with 8,192 worker connections, 5s micro-caching, and request collapsing. |
+| **High-Performance Ingress** | Nginx 1.25 (`lynk-gateway` on port `8080`) | Reverse proxy with 65,535 worker connections, 5s micro-caching, and request collapsing. |
 | **Caching & Rate Limiting** | TwoTierCache (L1 In-Memory LRU + L2 Redis 7+ on port `6379`) | Sub-microsecond local reads, distributed Redis L2 cache, and sliding-window rate limiter. |
 | **Connection Pooling** | PgBouncer (`lynk-pgbouncer` on port `6432`) | Transaction connection pooling multiplexing client connections onto 25 PostgreSQL backends. |
 | **Intelligent Autoscaling** | Compose Controller (`deploy/autoscaler/`) | Dynamic single-host scaling (2-6 replicas) monitoring container metrics, host headroom, and active connections. |
 | **AI Backend (Internal)** | Python 3.11, FastAPI, CPU ONNX INT8, sentence-transformers, scikit-learn | **Dockerised (`ai-api`) at `http://ai-api:8000`**. Protected via `X-Internal-AI-Secret`. |
-| **AI Worker Daemon** | Python 3.11 (`ai-worker`) | Background worker consuming `ai_jobs` using PostgreSQL `FOR UPDATE SKIP LOCKED`. |
+| **AI Worker Daemon** | Python 3.11 (`ai-worker`) | Background worker consuming `ai_jobs` using PostgreSQL `FOR UPDATE SKIP LOCKED` (starts under `--profile workers` or `--profile full`). |
 | **Database** | PostgreSQL 16 (`pgvector/pgvector:pg16` on port `5432`) | Two logical databases: `lynk_db` (relational schema + `vector(384)`) and `supertokens_db`. Tuned with 1GB `shared_buffers` and 3GB `effective_cache_size`. |
-| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000020`) | Forward and rollback migrations. Migrations 000016-000020 establish Project Workspaces, semantic embeddings, and compound covering indexes. |
+| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000022`) | Forward and rollback migrations. Migrations 000016-000022 establish Project Workspaces, semantic embeddings, compound covering indexes, keyset cursor pagination, and view counts. |
 | **Identity & Access (IAM)** | Self-hosted SuperTokens Core 9.3 (`lynk-supertokens` on port `3567`) | Recipes: `EmailPassword`, `Session`, `EmailVerification`. Direct HTTP integration with Go API. |
 | **Object Storage** | MinIO S3 (`lynk-minio` on port `9000` API, `9001` Web Console) | Dedicated exclusively to the `resumes` bucket. Direct pre-signed upload URLs and streaming. |
 | **Local Network** | Docker Compose bridge network (`lynk-net`) | Internal container DNS: `gateway:8080`, `api:8080`, `postgres:5432`, `pgbouncer:6432`, `redis:6379`, `supertokens:3567`, `minio:9000`, `ai-api:8000`. |
@@ -171,6 +171,7 @@ The documentation suite is structured into dedicated modular domains under [`arc
 | **Testing, Quality Assurance & Verification Strategy** | [`development/testing-strategy.md`](development/testing-strategy.md) | Testing pyramid (unit, integration, HTTP handler, frontend), test execution commands, coverage targets, CI/CD pipeline specifications, and pre-release gates. | QA Engineers, Backend Engineers, Frontend Engineers |
 | **Permanent Tooling Architecture & CI Strategy** | [`tooling.md`](tooling.md) | Universal multi-language linting, formatting, type checking, security scanning, root Makefile control plane, pre-commit activation, and parallel GitHub Actions matrix across Go, Python, and TypeScript. | All Developers, DevOps, Platform Engineers |
 | **Performance, Concurrency & Scale Benchmarks** | [`architecture/performance-and-scale.md`](architecture/performance-and-scale.md) | 8-stage k6 load test results, 2,042.3 RPS certified sustainable capacity (11.4ms p95), 3,193.4 RPS saturation ceiling, 20,000 concurrent connection hold, dynamic autoscaler controller, and single-server production sizing. | System Architects, DevOps, SREs, Backend Engineers |
+| **Scalability Architecture & 1M+ RPS Blueprint** | [`architecture/scalability.md`](architecture/scalability.md) | Single-campus scaling blueprint, sharded L1 cache, keyset cursor pagination, capacity leases, view count batching, dynamic Compose autoscaler, and verified load results. | System Architects, Backend Engineers, DevOps |
 
 ---
 
@@ -186,13 +187,13 @@ To accelerate onboarding, follow the tailored reading paths based on your primar
    - Migration `000003`: The transition of `id` and `user_id` to `VARCHAR(64)` for SuperTokens compatibility.
    - Migration `000009`: Enforcement of `ON DELETE RESTRICT` on `applications.job_id` preventing dangling application states.
    - State transition invariants: Contract status transitions (`Draft` -> `Active` -> `Completed` | `Cancelled`) and the lock ordering discipline (`jobs -> applications -> contracts`) to prevent deadlocks.
-   - Migrations `000016` - `000019`: Project-First Workspace architecture (`backend/internal/project`, `team`, `recruitment`, `workspace`), team member role enforcement (Lead, Maintainer, Member), modular section registries, and pgvector project semantic embeddings.
+   - Migrations `000016` - `000022`: Project-First Workspace architecture (`backend/internal/project`, `team`, `recruitment`, `workspace`), team member role enforcement (Lead, Maintainer, Member), modular section registries, and pgvector project semantic embeddings.
 3. **API Implementation:** Inspect [`architecture/api-specifications.md`](architecture/api-specifications.md) to verify expected route handlers, input validation constraints, and standardized JSON error structures (`{"error": "string"}`).
 4. **Storage & Resumes:** Review [`architecture/object-storage.md`](architecture/object-storage.md) for MinIO S3 integration patterns, streaming multipart uploads, and bucket readiness probes.
 5. **Local Workflow & Testing:** Use [`development/runbook-and-operations.md`](development/runbook-and-operations.md) for environment configuration and [`development/testing-strategy.md`](development/testing-strategy.md) for running `go test -v -race ./...`.
 
 ### 5.2 For Frontend Engineers
-*Stack: Next.js 16 (App Router), React 19, TypeScript 5.8, Tailwind CSS v4, SuperTokens Web JS.*
+*Stack: Next.js 16 (App Router), React 18.3, TypeScript 5.6, Tailwind CSS 3.4, SuperTokens Web JS.*
 
 1. **Orientation & Architecture:** Start with [`architecture/system-architecture.md`](architecture/system-architecture.md) to review runtime boundaries (Next.js executes directly on the host machine at `http://localhost:3000` while proxying API calls to `http://localhost:8080`). Core application surfaces center on `/projects` (discovery), `/projects/create` (project initialization), `/projects/[slug]` (modular workspace & sections), and `/activity` (consolidated project & application hub).
 2. **Authentication Flow:** Read the IAM and Session section in [`architecture/security-and-iam.md`](architecture/security-and-iam.md):
@@ -214,13 +215,13 @@ To accelerate onboarding, follow the tailored reading paths based on your primar
    - CORS isolation: Strict origin whitelisting (`http://localhost:3000`).
    - Internal AI Security: Defense-in-depth `X-Internal-AI-Secret` header validation and correlation ID tracing.
 2. **Object Storage Hardening:** Inspect [`architecture/object-storage.md`](architecture/object-storage.md) for MinIO private bucket policies, S3 signature v4 validation, and pre-signed URL expiration.
-3. **Relational Data Integrity:** Review [`architecture/database-schema-erd.md`](architecture/database-schema-erd.md) for cascade policies, check constraints, and migration immutability (000001 - 000012).
+3. **Relational Data Integrity:** Review [`architecture/database-schema-erd.md`](architecture/database-schema-erd.md) for cascade policies, check constraints, and migration immutability (000001 - 000022).
 4. **Operations & Runbook:** Review [`development/runbook-and-operations.md`](development/runbook-and-operations.md) for container health checks, secret hygiene (`SUPERTOKENS_API_KEY`, `MINIO_ROOT_PASSWORD`, `INTERNAL_AI_SECRET`), and database backup/restore procedures.
 
 ### 5.4 For AI & Machine Learning Engineers
 *Stack: Python 3.11, FastAPI, PyTorch, sentence-transformers, pgvector, scikit-learn, vLLM.*
 
-1. **AI Subsystem Core:** Read Section 7 below and [`docs/superpowers/plans/2026-09-12-first-class-ai-system.md`](superpowers/plans/2026-09-12-first-class-ai-system.md).
+1. **AI Subsystem Core:** Read Section 7 below and architecture specifications in [`architecture/system-architecture.md`](architecture/system-architecture.md).
 2. **Pipelines & Models:**
    - Embedding Provider (`ai/models/embeddings/provider.py`): Centralized `all-MiniLM-L6-v2` generating 384-dimensional dense vectors with SHA-256 content hashing.
    - Canonical Skill Taxonomy (`ai/pipelines/skills/normalizer.py`): Multi-stage normalization (exact alias -> fuzzy Levenshtein -> cosine similarity -> fallback).
@@ -260,7 +261,7 @@ Students and campus members cannot create projects, invite members, submit appli
 Resumes are stored exclusively in **MinIO** (`resumes` bucket). The PostgreSQL database stores only metadata (object key, file name, MIME type, byte size, upload timestamp). Binary blobs are strictly forbidden in PostgreSQL.
 
 ### Invariant 8: Database Migration Immutability
-Never modify an existing raw SQL migration in `backend/migrations/` that has already been executed. Always write an incremental forward migration (`NNNNNN_name.up.sql`) paired with a rollback migration (`NNNNNN_name.down.sql`). Migrations `000001` through `000019` are immutable.
+Never modify an existing raw SQL migration in `backend/migrations/` that has already been executed. Always write an incremental forward migration (`NNNNNN_name.up.sql`) paired with a rollback migration (`NNNNNN_name.down.sql`). Migrations `000001` through `000022` are immutable.
 
 ---
 
@@ -425,7 +426,7 @@ timeline
                          : Self-Hosted SuperTokens Core IAM
                          : PostgreSQL 16 Application Storage
                          : MinIO S3 Resume Storage
-                         : Next.js 14 Host Development
+                         : Next.js 16 Host Development
     Phase 2 (Protection) : Redis Session Caching
                          : Redis Sliding-Window Rate Limiting
                          : Edge CDN Caching for Static Assets

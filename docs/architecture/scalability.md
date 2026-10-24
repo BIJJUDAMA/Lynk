@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-10-20
 **Scope:** Single-campus deployment (`@university.edu`), Go REST API behind an Nginx gateway.
-**Read with:** `docs/architecture/scalability.md` (this file), `PLAN.md`, `docs/superpowers/specs/2026-10-19-1m-rps-integration-design.md`, `tests/load/results/REPORT.md`.
+**Read with:** `docs/architecture/scalability.md` (this file), `PLAN.md`, `tests/load/results/REPORT.md`.
 
 ---
 
@@ -39,8 +39,8 @@ Go API (N replicas)
 Reads dominate and are handled without touching PostgreSQL in the common case:
 
 1. **Nginx micro-cache** (`proxy_cache_lock on`, 5s TTL) collapses duplicate feed requests at the edge.
-2. **Sharded L1 cache** (`internal/cache/sharded_l1.go`): 64 xxhash-partitioned shards, each with its own `RWMutex`. Reads take a read lock and bump an atomic hit counter, so a hot key does not serialize the whole cache. Values are defensive copies.
-3. **SingleFlight** (`internal/project/service.go`): concurrent requests for the same uncached slug/feed collapse into one database query, preventing cache stampedes.
+2. **Sharded L1 cache** (`internal/cache/sharded_l1.go`): 64 xxhash-partitioned shards, each with its own `RWMutex`. Reads take a read lock and bump an atomic hit counter for frequency observability; eviction is TTL-based on read or periodic write sweeps (every 256 writes). Values are defensive copies.
+3. **SingleFlight** (`internal/project/service.go`): concurrent requests for the same uncached project slug/feed collapse into one database query, preventing cache stampedes.
 4. **Redis L2 cache**: cache-aside. A cross-replica invalidation bus (Redis Pub/Sub, loopback-suppressed via node IDs) evicts L1 on writes so replicas do not serve stale data. `ShardedL1Cache.DeletePattern` reuses `MemoryCache`'s glob/prefix semantics.
 5. **ETag / Gzip**: list and health responses carry `ETag` and `Cache-Control: public, max-age=15, stale-while-revalidate=45`, so unchanged responses return `304`.
 
@@ -66,7 +66,7 @@ Trade-off: there is no server-side logout hook yet, so a revoked token can still
 Writes are kept few and are made safe against concurrency and network retries:
 
 - **Idempotency-Key middleware**: duplicate network retries of a mutating request replay the stored response (`Idempotent-Replayed: true`) for 24h; an in-flight duplicate gets `409 Conflict`.
-- **Capacity leases** (`internal/recruitment/lease.go`): flash recruitment is front-lined by an atomic Redis Lua reservation (with a 300s TTL so a crash cannot pin a project). The database remains authoritative: `AcceptApplicationTx` re-checks capacity under `SELECT ... FOR UPDATE`. The lease is released on any failure via a `defer` guarded by a success flag, using a detached bounded context so a canceled request cannot leak a slot.
+- **Capacity leases** (`internal/recruitment/lease.go`): flash recruitment is front-lined by an atomic Redis Lua reservation acting as an ephemeral 300s burst gate. The database remains authoritative: `AcceptApplicationTx` re-checks capacity under `SELECT ... FOR UPDATE`. The lease is released on any failure via a `defer` guarded by a success flag, using a detached bounded context so a canceled request cannot leak a slot.
 - **View counts** (`internal/project/view_batcher.go`): high-frequency page views accumulate in memory and flush in periodic micro-batches (`view_count = view_count + delta`). Flushes use a bounded context and retry-merge on failure, so a stalled database cannot drop views or hang shutdown. Private projects never record views.
 - **Sticky primary reads**: a successful mutation sets a 2s cookie/header so that client's next reads go to the primary, eliminating read-after-write replication lag.
 - **Transactional outbox**: domain events are written in the same transaction as the state change and dispatched by a worker with retry backoff.

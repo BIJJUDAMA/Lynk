@@ -94,9 +94,17 @@ sequenceDiagram
 ```
 
 ### 2.1 Server-Side Domain Enforcement
-The Go backend intercepts the SuperTokens SignUp flow in `internal/auth/service.go`:
+The Go backend intercepts the SuperTokens SignUp flow in `internal/auth/supertokens.go`:
 ```go
-const EduEmailRegex = `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.edu$`
+// IsEduEmail validates that an email conforms to institutional .edu format
+func IsEduEmail(email string) bool {
+    addr, err := mail.ParseAddress(email)
+    if err != nil || addr.Address != email {
+        return false
+    }
+    // Verifies domain ends with .edu and all domain parts are non-empty
+    return strings.HasSuffix(domain, ".edu")
+}
 ```
 Any attempt to register with a non-`.edu` email address is rejected at the API gateway prior to account creation in `supertokens_db`.
 
@@ -147,10 +155,10 @@ A common distributed IAM failure occurs when a user verifies their email in anot
 Campus member roles are strictly encapsulated in `internal/auth/claims.go`:
 ```go
 type UserClaims struct {
-    UserID        string   `json:"sub"`
+    UserID        string   `json:"user_id"`
     Email         string   `json:"email"`
     Roles         []string `json:"roles"`
-    EmailVerified bool     `json:"emailVerified"`
+    EmailVerified bool     `json:"email_verified"`
 }
 
 func (c *UserClaims) HasRole(role string) bool {
@@ -187,7 +195,7 @@ The backend strictly isolates browser access via `internal/middleware/cors.go`:
 ```go
 cors.Options{
     AllowedOrigins:   []string{"http://localhost:3000"},
-    AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+    AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
     AllowedHeaders:   []string{"Authorization", "Content-Type", "anti-csrf", "rid", "fdi-version"},
     ExposedHeaders:   []string{"anti-csrf", "front-token"},
     AllowCredentials: true,
@@ -203,6 +211,13 @@ cors.Options{
 | `X-XSS-Protection` | `1; mode=block` | Enables legacy browser XSS filters |
 | `Access-Control-Allow-Credentials` | `true` | Restricts credentials to explicit allowed origin |
 | `X-Request-Id` | UUIDv4 | Tracing and audit correlation |
+
+### 4.3 Redis Sliding-Window Rate Limiter
+Perimeter DDoS protection is enforced via `internal/ratelimit/limiter.go`:
+- **Algorithm:** Sliding-window counter backed by Redis sorted sets (`ZSET`) executing an atomic Lua script (`slidingWindowScript`).
+- **Default Quota:** 120 requests per minute per IP address (`RATE_LIMIT_PER_MINUTE`), returning `429 Too Many Requests` with `Retry-After` headers upon exhaustion.
+- **Fail-Open Resilience:** If Redis is unreachable, the limiter gracefully degrades to an in-memory thread-safe `MemoryStore` fallback with TTL sweeping, preventing false-positive lockouts.
+- **Exemptions:** System health probes (`/health`, `/api/v1/health`) are explicitly bypassed.
 
 ---
 
