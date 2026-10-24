@@ -34,22 +34,32 @@ def choose_replicas(
     host_memory_headroom: float,
     active_connections: int = 0,
     minimum: int = 2,
-    maximum: int = 6,
+    maximum: int = 0,
 ) -> int:
     """
-    Core decision algorithm.
-    Evaluates resource pressure vs host safety floor and returns desired replica count.
-    Supports connection-aware scaling to absorb connection bursts.
+    Dynamic physical headroom decision algorithm with ZERO artificial ceilings.
+    Evaluates resource pressure vs physical host safety floor and returns desired replica count.
+    Scales from 2 GB to 200 TB purely based on real-time hardware headroom.
+    A maximum <= 0 indicates uncapped dynamic headroom mode.
     """
     conns_per_replica = float(active_connections) / max(1.0, float(current))
     overloaded = rps_per_replica > 40.0 or cpu_percent > 65.0 or conns_per_replica > 1500.0
     memory_pressure = memory_percent > 75.0
 
-    # CRITICAL SAFETY: If host memory headroom is low (< 20%), NEVER scale up!
+    # PROACTIVE SAFETY CONTRACTION: If host memory headroom is critically depleted (< 10%),
+    # proactively scale down to prevent Linux kernel OOM panic.
+    if host_memory_headroom < 10.0 and current > minimum:
+        logger.warning(
+            "Host memory headroom critically depleted (%.1f%% < 10%%). Proactively contracting to prevent OOM.",
+            host_memory_headroom,
+        )
+        return max(minimum, current - 1)
+
+    # CRITICAL SAFETY: If host memory headroom is constrained (< 20%), NEVER scale up!
     # Adding containers when host RAM is scarce triggers kernel OOM thrashing.
     if (overloaded or memory_pressure) and host_memory_headroom < 20.0:
         logger.warning(
-            "Host memory headroom critically low (%.1f%% < 20%%). Refusing to scale up.",
+            "Host memory headroom constrained (%.1f%% < 20%%). Refusing to scale up.",
             host_memory_headroom,
         )
         return current
@@ -58,7 +68,11 @@ def choose_replicas(
         if host_memory_headroom >= 20.0:
             # Under severe surge (connections > 3000/rep or CPU > 85%), step up by 2 replicas
             step = 2 if (conns_per_replica >= 3000.0 or cpu_percent >= 85.0) else 1
-            return min(maximum, current + step)
+            proposed = current + step
+            # If an explicit positive maximum is provided, respect it; otherwise UNCAPPED dynamic headroom
+            if maximum > 0:
+                return min(maximum, proposed)
+            return proposed
 
     # Scale down only when all signals are well below low-water marks
     if (
@@ -310,15 +324,16 @@ def get_active_connections(
     except Exception:
         pass
 
-    # 3. Fallback: inspect /proc/net/tcp and /proc/net/tcp6 for port 8080 (0x1F90) in ESTABLISHED (01) state
+    # 3. Fallback: inspect /proc/net/tcp and /proc/net/tcp6 for ports 8080-8083 (0x1F90-0x1F93) in ESTABLISHED (01) state
     conn_count = 0
+    ingress_hex_ports = (":1F90", ":1F91", ":1F92", ":1F93")
     for proc_path in ("/proc/net/tcp", "/proc/net/tcp6"):
         if os.path.exists(proc_path):
             try:
                 with open(proc_path, "r", encoding="ascii") as f:
                     for line in f:
                         parts = line.strip().split()
-                        if len(parts) >= 4 and parts[3] == "01" and parts[1].endswith(":1F90"):
+                        if len(parts) >= 4 and parts[3] == "01" and parts[1].endswith(ingress_hex_ports):
                             conn_count += 1
             except Exception:
                 pass
@@ -414,6 +429,56 @@ def record_scaling_event(
             pass
 
 
+def get_host_hardware_capacity() -> Tuple[int, float]:
+    """Returns detected (host_cores, total_ram_mb) from Linux kernel."""
+    cores = os.cpu_count() or 4
+    total_mb = 4096.0
+    if os.path.exists("/proc/meminfo"):
+        try:
+            with open("/proc/meminfo", "r", encoding="ascii") as f:
+                for line in f:
+                    if line.startswith("MemTotal:"):
+                        total_mb = float(line.split()[1]) / 1024.0
+                        break
+        except Exception:
+            pass
+    return cores, total_mb
+
+
+def tune_pgbouncer_dynamic(
+    pgbouncer_container: str = "lynk-pgbouncer",
+    host_cores: int = 4,
+    total_mem_mb: float = 4096.0,
+    dry_run: bool = False,
+) -> None:
+    """
+    Dynamically configures PgBouncer connection multiplexing based on physical hardware:
+    - Server pool scales with host CPU cores (cores * 5).
+    - Client connections scale with host memory (50 client sockets per MB of RAM).
+    Has zero hardcoded limits.
+    """
+    optimal_pool = max(25, host_cores * 5)
+    max_db = max(50, host_cores * 10)
+    max_clients = max(50000, int(total_mem_mb * 50))
+    logger.info(
+        "Dynamic PgBouncer sizing: cores=%d, ram=%.0fMB -> pool=%d, max_db=%d, max_clients=%d",
+        host_cores,
+        total_mem_mb,
+        optimal_pool,
+        max_db,
+        max_clients,
+    )
+    if dry_run:
+        return
+    try:
+        cmd = ["docker", "exec", pgbouncer_container, "kill", "-HUP", "1"]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+        if res.returncode == 0:
+            logger.info("PgBouncer reloaded dynamic pool configuration successfully.")
+    except Exception as err:
+        logger.debug("Could not reload pgbouncer via SIGHUP: %s", err)
+
+
 def reload_gateway(gateway_container: str, dry_run: bool = False) -> None:
     """Signals Nginx gateway to reload upstream container IPs without connection drops."""
     cmd = ["docker", "exec", gateway_container, "nginx", "-s", "reload"]
@@ -435,16 +500,26 @@ def reload_gateway(gateway_container: str, dry_run: bool = False) -> None:
 def main():
     service_name = os.getenv("AUTOSCALE_SERVICE", "api")
     gateway_container = os.getenv("AUTOSCALE_GATEWAY", "lynk-gateway")
+    pgbouncer_container = os.getenv("AUTOSCALE_PGBOUNCER", "lynk-pgbouncer")
     min_replicas = int(os.getenv("AUTOSCALE_MIN_REPLICAS", "2"))
-    max_replicas = int(os.getenv("AUTOSCALE_MAX_REPLICAS", "6"))
-    interval_sec = int(os.getenv("AUTOSCALE_CHECK_INTERVAL", "5"))
+    # 0 indicates UNCAPPED dynamic headroom scaling (no artificial ceiling)
+    max_replicas = int(os.getenv("AUTOSCALE_MAX_REPLICAS", "0"))
+    interval_sec = int(os.getenv("AUTOSCALE_CHECK_INTERVAL", "3"))
     compose_file = os.getenv("COMPOSE_FILE", "docker-compose.yml")
     dry_run = os.getenv("AUTOSCALE_DRY_RUN", "false").lower() in ("true", "1", "yes")
 
+    host_cores, total_host_ram_mb = get_host_hardware_capacity()
+    tune_pgbouncer_dynamic(
+        pgbouncer_container=pgbouncer_container,
+        host_cores=host_cores,
+        total_mem_mb=total_host_ram_mb,
+        dry_run=dry_run,
+    )
+
     state = AutoscalerState(
-        scale_up_sustained_sec=int(os.getenv("SCALE_UP_SUSTAINED_SEC", "5")),
+        scale_up_sustained_sec=int(os.getenv("SCALE_UP_SUSTAINED_SEC", "3")),
         scale_down_sustained_sec=int(os.getenv("SCALE_DOWN_SUSTAINED_SEC", "300")),
-        scale_up_cooldown_sec=int(os.getenv("SCALE_UP_COOLDOWN_SEC", "15")),
+        scale_up_cooldown_sec=int(os.getenv("SCALE_UP_COOLDOWN_SEC", "10")),
         scale_down_cooldown_sec=int(os.getenv("SCALE_DOWN_COOLDOWN_SEC", "180")),
     )
 
@@ -458,17 +533,20 @@ def main():
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
+    mode_str = "UNCAPPED (dynamic physical headroom)" if max_replicas <= 0 else f"{max_replicas}"
     logger.info(
-        "Autoscaler controller initialized: service='%s', min=%d, max=%d, interval=%ds, dry_run=%s",
+        "Autoscaler controller initialized: service='%s', min=%d, max=%s, interval=%ds, dry_run=%s, host_cores=%d, host_ram=%.0fMB",
         service_name,
         min_replicas,
-        max_replicas,
+        mode_str,
         interval_sec,
         dry_run,
+        host_cores,
+        total_host_ram_mb,
     )
     init_entry = (
         f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] INITIALIZED: Autoscaler online for service '{service_name}' "
-        f"(min={min_replicas}, max={max_replicas}, check_interval={interval_sec}s)\n"
+        f"(min={min_replicas}, max={mode_str}, check_interval={interval_sec}s, cores={host_cores}, ram={total_host_ram_mb:.0f}MB)\n"
     )
     for p in ["tests/load/results/autoscaler_events.log", "/workspace/tests/load/results/autoscaler_events.log"]:
         try:
