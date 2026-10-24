@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install -r requirements.txt
 
-# Final minimal stage (Kubernetes PodSecurityStandard compliant)
+# Final minimal stage (non-root security compliant)
 FROM python:3.11-slim AS runner
 
 WORKDIR /app

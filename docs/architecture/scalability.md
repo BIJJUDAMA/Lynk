@@ -96,7 +96,6 @@ The controls above sit on top of hardening already in the repo:
 - Redis sliding-window rate limiting (120 req/min per IP by default) with an in-memory fallback.
 - Prometheus metrics (`/metrics`) with latency histograms and pool gauges; structured JSON logs with request correlation IDs.
 - Graceful shutdown with bounded contexts on background flushes.
-- Kubernetes production manifests (`deploy/k8s/`) with HPA v2 (5-100 replicas), a PodDisruptionBudget, TLS ingress, and a shallow `tcpSocket` liveness probe alongside a DB-only `/readyz`.
 
 ---
 
@@ -158,5 +157,5 @@ Full numbers and methodology: `docs/architecture/performance-and-scale.md` and `
 | View batching | `backend/internal/project/view_batcher.go` |
 | Keyset pagination | `backend/internal/project/cursor.go`, `repository.go` |
 | Feed/keyset indexes | `backend/migrations/000020_*.sql`, `000021_*.sql` |
-| Autoscaling and manifests | `deploy/k8s/base/` |
+| Autoscaling controller | `deploy/autoscaler/` |
 | Load tests | `tests/load/` |

@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: lynk-production
-  labels:
-    app.kubernetes.io/name: lynk
-    app.kubernetes.io/part-of: lynk-platform

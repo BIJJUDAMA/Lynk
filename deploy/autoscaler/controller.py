@@ -2,7 +2,7 @@
 """
 Lynk Intelligent Autoscaling Controller for Docker Compose.
 Monitors CPU, Memory, Host Headroom, Active Connections, and Traffic RPS on a single host,
-dynamically adjusting Go API container replicas without Kubernetes overhead.
+dynamically adjusting Go API container replicas in Docker Compose.
 
 100% pure ASCII.
 """

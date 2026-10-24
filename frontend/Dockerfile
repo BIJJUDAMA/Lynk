@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/root/.npm \
     --mount=type=cache,target=/app/.next/cache \
     npm run build
 
-# Stage 4: Minimal production runner (Kubernetes PodSecurityStandard compliant)
+# Stage 4: Minimal production runner (non-root security compliant)
 FROM base AS runner
 WORKDIR /app
 
@@ -58,7 +58,7 @@ USER nextjs
 
 EXPOSE 3000
 
-# Native HTTP health check for Docker and Kubernetes compatibility
+# Native HTTP health check for Docker container health monitoring
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "require('http').get('http://127.0.0.1:3000/', (r) => {if (r.statusCode >= 200 && r.statusCode < 400) process.exit(0); else process.exit(1);}).on('error', () => process.exit(1));"
 
