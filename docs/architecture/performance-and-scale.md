@@ -248,6 +248,26 @@ The backend host was evaluated sequentially across 4 distinct compute tiers usin
 3. **Efficiency Sweet Spot**:
    - 4 vCPU with 8 GB RAM represents the optimal capacity tier for high-concurrency university campus traffic, sustaining 2,350+ requests/second at 0.46 ms median latency with 0.00% request errors.
 
+### 6.1 Throughput Multiplier Re-Benchmark (Phase 1, 2, and 3 Optimizations)
+
+Following the baseline matrix, the platform was enhanced with three structural throughput multipliers:
+- **Phase 1:** Nginx Edge Micro-Caching (10s TTL, stale-while-revalidate, lock collapsing, 2,048 upstream keepalives)
+- **Phase 2:** PostgreSQL Read/Write Splitting (routing listings and lookups to replica pool via PgBouncer)
+- **Phase 3:** Dedicated Full-Text Search Offloading (Meilisearch 1.7 daemon with asynchronous RabbitMQ index sync)
+
+The benchmark was re-executed against the 4 vCPU / 8 GB RAM deployment with the identical 50,003-member, 2,000-project dataset using the dedicated 8 vCPU / 32 GB RAM k6 runner:
+
+| Metric | Baseline (4 vCPU / 8 GB) | Phase 1+2+3 Optimized (4 vCPU / 8 GB) | Net Performance Gain |
+| :--- | :---: | :---: | :---: |
+| **Throughput (RPS)** | 2,353.4 req/s | **11,869.8 req/s** | **+404.4% (+5.04x Throughput)** |
+| **Total Requests (35s)** | 82,372 reqs | **415,703 reqs** | **+404.7% (+333,331 reqs)** |
+| **Median Latency (p50)** | 0.46 ms | **0.54 ms** | Statistically flat (~0.5 ms) |
+| **p90 Latency** | ~450.0 ms | **3.47 ms** | **-99.2% Latency Drop** |
+| **p95 Latency** | 732.2 ms | **6.84 ms** | **-99.1% Latency Drop** |
+| **Minimum Latency** | 0.41 ms | **0.14 ms** | **-65.9%** (Direct RAM cache hit) |
+| **HTTP Failure Rate** | 0.00% | **0.00%** (415,703 / 415,703) | Flawless (0 errors) |
+| **Delivered Bandwidth** | ~12.2 MB/s | **61.48 MB/s** (2.15 GB served) | **+403.9%** |
+
 ---
 
 ## 7. How to Run the Load Test Suite
