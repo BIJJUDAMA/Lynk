@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,6 +25,7 @@ type Repository interface {
 	UpdateInvitationStatus(ctx context.Context, id uuid.UUID, status string) error
 	CountLeads(ctx context.Context, projectID uuid.UUID) (int, error)
 	TransferLeadershipTx(ctx context.Context, projectID uuid.UUID, currentLeadID, newLeadID string) error
+	FindUserIDByEmail(ctx context.Context, email string) (string, error)
 }
 
 // pgxRepository implements Repository using a pgx connection pool.
@@ -78,7 +80,7 @@ func (r *pgxRepository) AddMember(ctx context.Context, pm *ProjectMember) error 
 // GetMember retrieves a single active member from a project with enriched profile details.
 func (r *pgxRepository) GetMember(ctx context.Context, projectID uuid.UUID, memberID string) (*ProjectMember, error) {
 	query := `
-		SELECT 
+		SELECT
 			pm.id, pm.project_id, pm.member_id, pm.role, pm.status, pm.joined_at, pm.departed_at,
 			COALESCE(u.email, ''),
 			COALESCE(p.first_name, ''),
@@ -117,7 +119,7 @@ func (r *pgxRepository) GetMember(ctx context.Context, projectID uuid.UUID, memb
 // ListMembers retrieves all active members belonging to a project.
 func (r *pgxRepository) ListMembers(ctx context.Context, projectID uuid.UUID) ([]ProjectMember, error) {
 	query := `
-		SELECT 
+		SELECT
 			pm.id, pm.project_id, pm.member_id, pm.role, pm.status, pm.joined_at, pm.departed_at,
 			COALESCE(u.email, ''),
 			COALESCE(p.first_name, ''),
@@ -127,13 +129,13 @@ func (r *pgxRepository) ListMembers(ctx context.Context, projectID uuid.UUID) ([
 		LEFT JOIN users u ON pm.member_id = u.id
 		LEFT JOIN profiles p ON pm.member_id = p.user_id
 		WHERE pm.project_id = $1 AND pm.status = 'active'
-		ORDER BY 
-			CASE pm.role 
-				WHEN 'lead' THEN 1 
-				WHEN 'maintainer' THEN 2 
-				WHEN 'member' THEN 3 
-				WHEN 'viewer' THEN 4 
-				ELSE 5 
+		ORDER BY
+			CASE pm.role
+				WHEN 'lead' THEN 1
+				WHEN 'maintainer' THEN 2
+				WHEN 'member' THEN 3
+				WHEN 'viewer' THEN 4
+				ELSE 5
 			END,
 			pm.joined_at ASC
 	`
@@ -377,4 +379,22 @@ func (r *pgxRepository) TransferLeadershipTx(ctx context.Context, projectID uuid
 		return fmt.Errorf("failed to commit leadership transfer: %w", err)
 	}
 	return nil
+}
+
+// FindUserIDByEmail looks up a user's UUID string by institutional email.
+func (r *pgxRepository) FindUserIDByEmail(ctx context.Context, email string) (string, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return "", ErrUserNotFound
+	}
+	var id string
+	query := `SELECT id::text FROM users WHERE LOWER(email) = LOWER($1);`
+	err := r.db.QueryRow(ctx, query, email).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrUserNotFound
+		}
+		return "", fmt.Errorf("failed to find user by email: %w", err)
+	}
+	return id, nil
 }

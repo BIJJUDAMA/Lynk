@@ -1069,6 +1069,13 @@ func (m *mockTeamRepo) TransferLeadershipTx(ctx context.Context, projectID uuid.
 	return nil
 }
 
+func (m *mockTeamRepo) FindUserIDByEmail(ctx context.Context, email string) (string, error) {
+	if email == "notfound@stanford.edu" {
+		return "", team.ErrUserNotFound
+	}
+	return "550e8400-e29b-41d4-a716-446655440000", nil
+}
+
 var _ team.Repository = (*mockTeamRepo)(nil)
 
 type mockRecruitmentRepo struct {

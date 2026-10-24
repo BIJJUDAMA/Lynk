@@ -42,6 +42,7 @@ var (
 	ErrInvitationNotPending = errors.New("invitation is not pending")
 	ErrSelfInvitation       = errors.New("cannot invite yourself to a project")
 	ErrInvalidLeadership    = errors.New("cannot transfer leadership to current lead")
+	ErrUserNotFound         = errors.New("user not found")
 )
 
 // ProjectMember represents an active or departed member of a project team.
@@ -81,7 +82,9 @@ type UpdateRoleInput struct {
 // InviteMemberInput contains data for sending a project invitation.
 type InviteMemberInput struct {
 	InviteeID    string `json:"invitee_id"`
+	Email        string `json:"email,omitempty"`
 	ProposedRole Role   `json:"proposed_role"`
+	Role         Role   `json:"role,omitempty"`
 }
 
 // TransferLeadershipInput contains the recipient member ID for leadership transfer.

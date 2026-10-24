@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lynk/backend/internal/ai"
 	"github.com/lynk/backend/internal/ai/client"
@@ -27,6 +28,7 @@ import (
 	"github.com/lynk/backend/internal/config"
 	"github.com/lynk/backend/internal/contract"
 	"github.com/lynk/backend/internal/database"
+	"github.com/lynk/backend/internal/httputil"
 	"github.com/lynk/backend/internal/job"
 	"github.com/lynk/backend/internal/metrics"
 	"github.com/lynk/backend/internal/middleware"
@@ -477,8 +479,6 @@ func BuildRouter(
 
 				if recruitmentH != nil {
 					ar.Get("/me", recruitmentH.ListMyApplications)
-					ar.Get("/mine", recruitmentH.ListMyApplications)
-					ar.Get("/{id}", recruitmentH.GetApplication)
 					ar.Post("/{id}/accept", recruitmentH.AcceptApplication)
 					ar.Post("/{id}/reject", recruitmentH.RejectApplication)
 					ar.Post("/{id}/shortlist", recruitmentH.ShortlistApplication)
@@ -486,13 +486,40 @@ func BuildRouter(
 				}
 
 				if appHandler != nil {
-					// Fallback routes for legacy job application handlers
-					if recruitmentH == nil {
-						ar.Get("/mine", appHandler.GetMyApplications)
-						ar.Get("/{id}", appHandler.GetApplicationByID)
-					}
+					ar.Get("/mine", appHandler.GetMyApplications)
 					ar.Get("/applied", appHandler.GetMyApplicationForJob)
 					ar.Patch("/{id}/status", appHandler.UpdateApplicationStatus)
+				} else if recruitmentH != nil {
+					ar.Get("/mine", recruitmentH.ListMyApplications)
+				}
+
+				if recruitmentH != nil && appHandler != nil {
+					ar.Get("/{id}", func(w http.ResponseWriter, r *http.Request) {
+						appID, err := uuid.Parse(chi.URLParam(r, "id"))
+						if err != nil {
+							httputil.WriteBadRequest(w, r, "INVALID_APPLICATION_ID", "Invalid application ID UUID")
+							return
+						}
+						claims, err := auth.GetUserContext(r.Context())
+						if err != nil || claims.UserID == "" {
+							httputil.WriteUnauthorized(w, r, "UNAUTHORIZED", "Authentication required")
+							return
+						}
+						app, err := recruitmentH.Service().GetApplicationByID(r.Context(), claims, appID)
+						if err == nil {
+							httputil.WriteSuccess(w, http.StatusOK, app)
+							return
+						}
+						if !errors.Is(err, recruitment.ErrApplicationNotFound) {
+							recruitmentH.HandleServiceError(w, r, err)
+							return
+						}
+						appHandler.GetApplicationByID(w, r)
+					})
+				} else if recruitmentH != nil {
+					ar.Get("/{id}", recruitmentH.GetApplication)
+				} else if appHandler != nil {
+					ar.Get("/{id}", appHandler.GetApplicationByID)
 				}
 			})
 		}

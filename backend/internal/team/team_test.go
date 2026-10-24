@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -22,6 +24,7 @@ type mockTeamRepo struct {
 	members      map[string]*team.ProjectMember
 	invitations  map[uuid.UUID]*team.ProjectInvitation
 	projectOwner map[uuid.UUID]string
+	usersByEmail map[string]string
 }
 
 func newMockTeamRepo() *mockTeamRepo {
@@ -29,6 +32,7 @@ func newMockTeamRepo() *mockTeamRepo {
 		members:      make(map[string]*team.ProjectMember),
 		invitations:  make(map[uuid.UUID]*team.ProjectInvitation),
 		projectOwner: make(map[uuid.UUID]string),
+		usersByEmail: make(map[string]string),
 	}
 }
 
@@ -187,6 +191,16 @@ func (m *mockTeamRepo) TransferLeadershipTx(ctx context.Context, projectID uuid.
 	target.Role = team.RoleLead
 	m.projectOwner[projectID] = newLeadID
 	return nil
+}
+
+func (m *mockTeamRepo) FindUserIDByEmail(ctx context.Context, email string) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	email = strings.ToLower(strings.TrimSpace(email))
+	if id, ok := m.usersByEmail[email]; ok {
+		return id, nil
+	}
+	return "", team.ErrUserNotFound
 }
 
 func TestTeamRoleValidation(t *testing.T) {
@@ -489,6 +503,31 @@ func TestTeamService_InvitationsLifecycle(t *testing.T) {
 			t.Fatalf("expected ErrInvitationExpired, got %v", err)
 		}
 	})
+
+	t.Run("Invite member by email resolves user UUID and can be accepted", func(t *testing.T) {
+		emailInviteeID := "uuid-student-by-email"
+		repo.usersByEmail["student@stanford.edu"] = emailInviteeID
+
+		inv, err := svc.InviteMember(ctx, projectID, leadID, "student@stanford.edu", team.RoleMember)
+		if err != nil {
+			t.Fatalf("failed to invite member by email: %v", err)
+		}
+		if inv.InviteeID != emailInviteeID {
+			t.Fatalf("expected resolved InviteeID %s, got %s", emailInviteeID, inv.InviteeID)
+		}
+
+		err = svc.AcceptInvitation(ctx, inv.ID, emailInviteeID)
+		if err != nil {
+			t.Fatalf("failed to accept invitation: %v", err)
+		}
+	})
+
+	t.Run("Invite member by unknown email returns ErrUserNotFound", func(t *testing.T) {
+		_, err := svc.InviteMember(ctx, projectID, leadID, "unknown@berkeley.edu", team.RoleMember)
+		if !errors.Is(err, team.ErrUserNotFound) {
+			t.Fatalf("expected ErrUserNotFound, got %v", err)
+		}
+	})
 }
 
 func TestTeamHandler_HTTPEndpoints(t *testing.T) {
@@ -568,6 +607,45 @@ func TestTeamHandler_HTTPEndpoints(t *testing.T) {
 
 		if w.Code != http.StatusCreated {
 			t.Fatalf("expected status 201, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("POST /projects/{id}/invitations - Send Invitation via Email and Role", func(t *testing.T) {
+		repo.usersByEmail["http-invitee@stanford.edu"] = "resolved-invitee-uuid"
+		body, _ := json.Marshal(map[string]string{
+			"email": "http-invitee@stanford.edu",
+			"role":  "member",
+		})
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%s/invitations", projectID), bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		claims := &auth.UserClaims{UserID: leadID, Email: "lead@university.edu", EmailVerified: true}
+		req = req.WithContext(auth.WithUserContext(req.Context(), claims))
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusCreated {
+			t.Fatalf("expected status 201, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("POST /projects/{id}/invitations - Send Invitation to Unknown Email returns 404", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]string{
+			"email": "unknown-nonexistent@stanford.edu",
+			"role":  "member",
+		})
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%s/invitations", projectID), bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		claims := &auth.UserClaims{UserID: leadID, Email: "lead@university.edu", EmailVerified: true}
+		req = req.WithContext(auth.WithUserContext(req.Context(), claims))
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d: %s", w.Code, w.Body.String())
 		}
 	})
 

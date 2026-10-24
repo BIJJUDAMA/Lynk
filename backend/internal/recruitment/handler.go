@@ -24,6 +24,16 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
+// Service returns the underlying recruitment Service instance.
+func (h *Handler) Service() *Service {
+	return h.service
+}
+
+// HandleServiceError formats and returns appropriate HTTP responses for recruitment errors.
+func (h *Handler) HandleServiceError(w http.ResponseWriter, r *http.Request, err error) {
+	h.handleServiceError(w, r, err)
+}
+
 // Routes configures a Chi router mounting all recruitment and application lifecycle routes.
 func (h *Handler) Routes(authMiddleware func(http.Handler) http.Handler) chi.Router {
 	r := chi.NewRouter()

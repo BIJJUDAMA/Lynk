@@ -173,11 +173,22 @@ func (h *Handler) InviteMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inv, err := h.service.InviteMember(r.Context(), projectID, claims.UserID, input.InviteeID, input.ProposedRole)
+	targetID := strings.TrimSpace(input.InviteeID)
+	if targetID == "" {
+		targetID = strings.TrimSpace(input.Email)
+	}
+	targetRole := input.ProposedRole
+	if targetRole == "" {
+		targetRole = input.Role
+	}
+
+	inv, err := h.service.InviteMember(r.Context(), projectID, claims.UserID, targetID, targetRole)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrUnauthorizedAction):
 			httputil.WriteForbidden(w, r, "FORBIDDEN", err.Error())
+		case errors.Is(err, ErrUserNotFound):
+			httputil.WriteNotFound(w, r, "USER_NOT_FOUND", "No registered user found with the specified email or identifier")
 		case errors.Is(err, ErrSelfInvitation), errors.Is(err, ErrInvalidRole):
 			httputil.WriteBadRequest(w, r, "BAD_REQUEST", err.Error())
 		case errors.Is(err, ErrAlreadyMember), errors.Is(err, ErrDuplicateInvitation):

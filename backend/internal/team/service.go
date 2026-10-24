@@ -159,6 +159,13 @@ func (s *Service) InviteMember(ctx context.Context, projectID uuid.UUID, callerI
 	if callerID == "" || inviteeID == "" {
 		return nil, ErrUnauthorizedAction
 	}
+	if strings.Contains(inviteeID, "@") {
+		resolvedID, err := s.repo.FindUserIDByEmail(ctx, inviteeID)
+		if err != nil {
+			return nil, err
+		}
+		inviteeID = resolvedID
+	}
 	if callerID == inviteeID {
 		return nil, ErrSelfInvitation
 	}
