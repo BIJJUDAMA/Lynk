@@ -94,7 +94,7 @@ func (c *meiliClient) Health(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode == http.StatusOK
 }
 
@@ -108,7 +108,7 @@ func (c *meiliClient) ConfigureIndex(ctx context.Context, index string, primaryK
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusBadRequest {
 		return fmt.Errorf("meilisearch configure index status: %d", resp.StatusCode)
 	}
@@ -121,7 +121,7 @@ func (c *meiliClient) Search(ctx context.Context, index string, req SearchReques
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -141,7 +141,7 @@ func (c *meiliClient) IndexDocuments(ctx context.Context, index string, docs any
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(resp.Body)
@@ -156,7 +156,7 @@ func (c *meiliClient) DeleteDocument(ctx context.Context, index string, docID st
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusNotFound {
 		body, _ := io.ReadAll(resp.Body)
