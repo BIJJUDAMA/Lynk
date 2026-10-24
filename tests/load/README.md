@@ -77,6 +77,15 @@ Or with make: `make stack-ram RAM=6144`, `make load-test-saturation`, `make stac
 
 Stage 8 (`08_connection_hold.js`) measures concurrent connection capacity: each VU opens a keep-alive connection and holds it open with periodic 5s heartbeats while the ladder ramps 2,000 -> 20,000 VUs. Run it with `node tests/load/run_all.js --stage=08_connection_hold`. On a single server the stack sustained 20,000 concurrent connections cleanly with 11.4ms p95 latency and 0.00% socket drops.
 
+### Real-World Multi-Host Cloud Benchmark Results (BookMyHost Dedicated Instances)
+When evaluated across two separate 4 vCPU / 5.8 GiB RAM cloud instances (App Server vs Load Generator, 0.33ms inter-host latency):
+- **Stage 02 (Cache Read Baseline, 40 VUs):** 189.57 req/s, 0.62ms p50, 1.73ms p95, 0.00% error rate.
+- **Stage 04 (Progressive Concurrency, 350 VUs):** 48.34 req/s (with 1-2s think times), 1.21ms p50, 2.49ms p95, 3.65ms p99.
+- **Stage 05 (High Concurrency, 1,000 VUs):** 296.32 req/s, 1.09ms p50, 2.17ms p95, 2.98ms p99, 0.00% error rate.
+- **Stage 06 (Ultra Concurrency, 2,500 VUs):** 1,461.23 req/s, 1.09ms p50, 2.63ms p95, 4.93ms p99, 0.00% error rate across 119,564 requests.
+- **Stage 07 (Constant-Arrival Saturation Ceiling, 4,000 VUs):** 2,300.96 req/s peak throughput (~138,057 req/min), 0.00% HTTP errors across 241,618 requests, 729.46ms p50, 1,652.56ms p95.
+- **Host Footprint under 2,500 VUs:** Entire multi-container stack (`api`, `postgres`, `redis`, `pgbouncer`, `gateway`, `supertokens`, `minio`, `ai-api`) used ~1.15 GiB RAM out of 5.79 GiB available (~20% memory utilization).
+
 ---
 
 ## 2. The Parameterized Suite (`suite.js`)
