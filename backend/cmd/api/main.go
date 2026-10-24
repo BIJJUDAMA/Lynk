@@ -23,6 +23,7 @@ import (
 	"github.com/lynk/backend/internal/ai/client"
 	"github.com/lynk/backend/internal/ai/orchestrator"
 	"github.com/lynk/backend/internal/application"
+	"github.com/lynk/backend/internal/audit"
 	"github.com/lynk/backend/internal/auth"
 	"github.com/lynk/backend/internal/cache"
 	"github.com/lynk/backend/internal/config"
@@ -34,6 +35,7 @@ import (
 	"github.com/lynk/backend/internal/middleware"
 	"github.com/lynk/backend/internal/outbox"
 	"github.com/lynk/backend/internal/project"
+	"github.com/lynk/backend/internal/queue"
 	"github.com/lynk/backend/internal/ratelimit"
 	"github.com/lynk/backend/internal/recruitment"
 	"github.com/lynk/backend/internal/review"
@@ -42,6 +44,7 @@ import (
 	"github.com/lynk/backend/internal/team"
 	"github.com/lynk/backend/internal/user"
 	"github.com/lynk/backend/internal/workspace"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 	"github.com/supertokens/supertokens-golang/supertokens"
 	_ "go.uber.org/automaxprocs"
@@ -145,6 +148,7 @@ func BuildRouter(
 	var teamH *team.Handler
 	var recruitmentH *recruitment.Handler
 	var workspaceH *workspace.Handler
+	var auditH *audit.Handler
 	var appCache cache.Cacher
 
 	for _, extra := range extras {
@@ -159,6 +163,8 @@ func BuildRouter(
 			recruitmentH = v
 		case *workspace.Handler:
 			workspaceH = v
+		case *audit.Handler:
+			auditH = v
 		case cache.Cacher:
 			appCache = v
 		case ProjectRouterOptions:
@@ -578,6 +584,15 @@ func BuildRouter(
 				er.Get("/events/stream", sse.StreamHandler(sseBroker))
 			})
 		}
+
+		// Administrative Audit Trail (requires admin role)
+		if auditH != nil {
+			r.Group(func(ar chi.Router) {
+				ar.Use(authMiddleware)
+				ar.Use(middleware.RequireRole("admin"))
+				ar.Get("/audit/logs", auditH.QueryLogs)
+			})
+		}
 	})
 
 	return r
@@ -838,6 +853,45 @@ func main() {
 		return nil
 	})
 
+	// Initialize RabbitMQ Client & Topology
+	var rabbitClient *queue.Client
+	var rabbitPub queue.Publisher
+	if rabbitURL := os.Getenv("RABBITMQ_URL"); rabbitURL != "" {
+		rabbitClient = queue.NewClient(queue.Config{URL: rabbitURL}, slog.Default())
+		if err := rabbitClient.Connect(ctx); err == nil {
+			if err := rabbitClient.DeclareTopology(); err != nil {
+				slog.Error("failed to declare rabbitmq topology", "error", err)
+			}
+			rabbitPub = queue.NewConfirmedPublisher(rabbitClient)
+			defer func() {
+				_ = rabbitClient.Close()
+			}()
+		} else {
+			slog.Warn("rabbitmq connect deferred (broker not reachable yet)", "error", err)
+		}
+	}
+
+	// Register RabbitMQ dispatcher on outbox worker if publisher is available
+	if rabbitPub != nil {
+		outboxWorker.RegisterHandler("*", outbox.RabbitMQDispatcher(rabbitPub))
+	}
+
+	// Initialize Stateless Audit Service & Handler
+	auditRepo := audit.NewRepository(pool)
+	auditService := audit.NewService(auditRepo, slog.Default())
+	auditHandler := audit.NewHandler(auditService)
+
+	if rabbitClient != nil && rabbitClient.IsConnected() {
+		auditConsumer := queue.NewConsumer(rabbitClient, queue.QueueAudit, "api-audit-worker", 20, queue.DefaultRetryPolicy(), slog.Default())
+		if err := auditConsumer.Start(ctx, 2, func(cctx context.Context, d amqp.Delivery) error {
+			return audit.ProcessDelivery(cctx, auditService, d, slog.Default())
+		}); err == nil {
+			defer auditConsumer.Stop()
+		} else {
+			slog.Error("failed to start audit consumer", "error", err)
+		}
+	}
+
 	go outboxWorker.Start(ctx)
 
 	// 5b. Wire Project-First Domain Repositories, Services, and Handlers
@@ -884,6 +938,7 @@ func main() {
 			WorkspaceHandler:   workspaceHandler,
 		},
 		appCache,
+		auditHandler,
 	)
 
 	// 7. Start HTTP Server with Graceful Shutdown
