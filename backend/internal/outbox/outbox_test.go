@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -307,5 +308,68 @@ func TestOutboxWorker_HandlerMaxRetriesDead_Integration(t *testing.T) {
 	}
 	if retryCount != 3 {
 		t.Errorf("expected retry_count 3, got %d", retryCount)
+	}
+}
+
+type mockTxRecorder struct {
+	events []Event
+}
+
+func (m *mockTxRecorder) RecordEvent(ctx context.Context, e Event) error {
+	m.events = append(m.events, e)
+	return nil
+}
+
+func (m *mockTxRecorder) RecordEventTx(ctx context.Context, tx pgx.Tx, e Event) error {
+	m.events = append(m.events, e)
+	return nil
+}
+
+type mockPublisher struct {
+	publishedRoutes []string
+}
+
+func (p *mockPublisher) PublishPersistent(ctx context.Context, exchange, routingKey string, body []byte, headers map[string]interface{}) error {
+	p.publishedRoutes = append(p.publishedRoutes, routingKey)
+	return nil
+}
+
+func TestOutbox_PublishTx(t *testing.T) {
+	rec := &mockTxRecorder{}
+	writer := NewWriter(rec)
+
+	err := writer.PublishTx(context.Background(), nil, Event{
+		EventType:     "member_invited",
+		AggregateType: "team",
+		AggregateID:   "team-1",
+		Payload:       map[string]any{"email": "invited@campus.edu"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected PublishTx error: %v", err)
+	}
+	if len(rec.events) != 1 {
+		t.Fatalf("expected 1 event recorded, got %d", len(rec.events))
+	}
+	if rec.events[0].EventType != "member_invited" {
+		t.Errorf("expected member_invited event, got %s", rec.events[0].EventType)
+	}
+}
+
+func TestOutbox_RabbitMQDispatcher(t *testing.T) {
+	pub := &mockPublisher{}
+	dispatcher := RabbitMQDispatcher(pub)
+
+	evt := Event{
+		AggregateType: "audit",
+		EventType:     "contract_signed",
+		Payload:       map[string]any{"contract_id": "c1"},
+	}
+
+	err := dispatcher(context.Background(), evt)
+	if err != nil {
+		t.Fatalf("unexpected dispatcher error: %v", err)
+	}
+	if len(pub.publishedRoutes) != 1 || pub.publishedRoutes[0] != "audit.contract_signed" {
+		t.Errorf("expected published route 'audit.contract_signed', got %v", pub.publishedRoutes)
 	}
 }
