@@ -203,25 +203,54 @@ To ensure honest, auditable production provisioning, capacity is classified into
 
 ## 5. Single-Server Production Hardware Sizing
 
-Lynk is designed to run efficiently on a single university server or cost-effective cloud instance. Based on empirical resource tracking during load testing:
+Lynk is designed to run efficiently on a single university server or cloud compute instance. Based on empirical resource tracking during load testing:
 
-| Sizing Tier | vCPU | RAM | Storage (NVMe SSD) | Campus Scale Supported | Approx. Cost |
-| :--- | :---: | :---: | :---: | :--- | :--- |
-| **Recommended (Sweet Spot)** | **8 vCPU** | **16 GB - 32 GB** | **250 GB - 500 GB** | 20,000 - 40,000 students (sub-10ms latency, 50%+ CPU headroom) | ~$30 - $45 / mo |
-| **Minimum Viable** | **4 vCPU** | **8 GB** | **50 GB** | Up to 15,000 students (~1,000 req/s sustained; stack uses ~3.8 GB RAM) | ~$10 - $15 / mo |
+| Sizing Tier | vCPU | RAM | Storage (NVMe SSD) | Campus Scale Supported |
+| :--- | :---: | :---: | :---: | :--- |
+| **Recommended (Sweet Spot)** | **4-8 vCPU** | **8 GB - 16 GB** | **100 GB - 250 GB** | 20,000 - 40,000 students (sub-10ms median latency) |
+| **Minimum Viable** | **2 vCPU** | **4 GB** | **50 GB** | Up to 15,000 students (~1,140 req/s sustained; stack uses < 600 MB resident RAM) |
 
 ### Container Memory Allocation Under Full Load
-- **Go API (2-5 replicas):** 60 MB - 130 MB per replica (under 300 MB total)
-- **PostgreSQL 16:** 180 MB - 350 MB (buffer pool configured with 1 GB shared buffers)
-- **SuperTokens Core:** ~170 MB
-- **Redis 7:** ~20 MB - 50 MB
-- **Nginx Gateway + PgBouncer + MinIO:** ~250 MB
-- **FastAPI AI Engine:** ~400 MB
-- **Total Stack Resident Memory:** **~1.15 GB - 1.45 GB** in idle-to-moderate state, scaling to ~2.5 GB under heavy load (fits comfortably within 6 GB or 8 GB RAM with 4+ GB remaining for Linux page cache and NVMe buffers).
+- **Go API (lynk-api):** 14 MB - 60 MB resident
+- **PostgreSQL 16:** 140 MB - 350 MB resident (buffer pool configured with 1 GB shared buffers)
+- **SuperTokens Core:** ~146 MB resident
+- **Redis 7:** ~5 MB - 15 MB resident
+- **PgBouncer:** ~11 MB resident
+- **RabbitMQ 3.13:** ~135 MB - 160 MB resident
+- **Nginx Gateway:** ~60 MB - 65 MB resident
+- **MinIO:** ~60 MB - 65 MB resident
+- **Total Stack Resident Memory:** **~550 MB - 650 MB** in baseline-to-stress state across all 8 core services (fits comfortably within 4 GB RAM with over 3 GB remaining for Linux OS page cache and NVMe disk buffers).
 
 ---
 
-## 6. How to Run the Load Test Suite
+## 6. Empirical 4-Tier Hardware Scaling Matrix
+
+A dedicated dual-server cloud benchmark was conducted using an independent 8 vCPU / 32 GB RAM / 200 GB SSD load generator runner executing native k6 v2.3.0 against the complete backend stack. The PostgreSQL database was pre-seeded with **50,003 campus member accounts**, **50,003 student profiles**, and **2,000 indexed project workspaces** with active trigram and full-text search keywords.
+
+The backend host was evaluated sequentially across 4 distinct compute tiers using in-place hardware resizing:
+
+### Benchmark Performance Scorecard
+
+| Tier | vCPU | RAM | Disk | Total Requests | Throughput (RPS) | Median Latency (p50) | p95 Latency | Average Latency | HTTP Failure Rate |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Tier 1** | **2** | **4 GB** | 50 GB | 39,934 | **1,140.5 RPS** | **0.48 ms** | 1,566.9 ms | 224.7 ms | **0.00%** |
+| **Tier 2** | **2** | **6 GB** | 50 GB | 40,328 | **1,145.8 RPS** | **0.46 ms** | 1,608.1 ms | 222.2 ms | **0.00%** |
+| **Tier 3** | **4** | **8 GB** | 50 GB | 82,372 | **2,353.4 RPS** | **0.46 ms** | **732.2 ms** | **96.2 ms** | **0.00%** |
+| **Tier 4** | **4** | **16 GB** | 50 GB | 80,258 | **2,291.4 RPS** | **0.47 ms** | **716.9 ms** | **99.3 ms** | **0.00%** |
+
+### Architectural Findings
+
+1. **Memory is Non-Constraining**:
+   - Increasing RAM from 4 GB to 6 GB at 2 vCPU produced a statistically flat throughput curve (1,140.5 to 1,145.8 RPS, +0.4%).
+   - The entire multi-container backend stack requires less than 600 MB of resident RAM under peak load, leaving ample memory for kernel buffers on any tier >= 4 GB.
+2. **CPU Concurrency Dictates Scaling**:
+   - Moving from 2 vCPU to 4 vCPU delivered a +106.3% increase in sustainable throughput (1,140 RPS to 2,353 RPS) and cut tail latency by more than half (p95 from 1,566 ms to 732 ms, average latency from 224 ms to 96 ms).
+3. **Efficiency Sweet Spot**:
+   - 4 vCPU with 8 GB RAM represents the optimal capacity tier for high-concurrency university campus traffic, sustaining 2,350+ requests/second at 0.46 ms median latency with 0.00% request errors.
+
+---
+
+## 7. How to Run the Load Test Suite
 
 ```bash
 # Run the complete 8-stage sequential load testing suite

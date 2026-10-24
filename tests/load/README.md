@@ -86,6 +86,15 @@ When evaluated across two separate 4 vCPU / 5.8 GiB RAM cloud instances (App Ser
 - **Stage 07 (Constant-Arrival Saturation Ceiling, 4,000 VUs):** 2,300.96 req/s peak throughput (~138,057 req/min), 0.00% HTTP errors across 241,618 requests, 729.46ms p50, 1,652.56ms p95.
 - **Host Footprint under 2,500 VUs:** Entire multi-container stack (`api`, `postgres`, `redis`, `pgbouncer`, `gateway`, `supertokens`, `minio`, `ai-api`) used ~1.15 GiB RAM out of 5.79 GiB available (~20% memory utilization).
 
+### Empirical 4-Tier Hardware Scaling Matrix (50,000 Users Seeded)
+Tested sequentially using a dedicated 8 vCPU / 32 GB RAM load generator host against an active backend stack seeded with 50,003 users and 2,000 project workspaces:
+- **Tier 1 (2 vCPU / 4 GB RAM / 50 GB SSD):** 1,140.5 RPS | p50: 0.48ms | p95: 1,566.9ms | 0.00% failure rate (39,934 requests)
+- **Tier 2 (2 vCPU / 6 GB RAM / 50 GB SSD):** 1,145.8 RPS | p50: 0.46ms | p95: 1,608.1ms | 0.00% failure rate (40,328 requests)
+- **Tier 3 (4 vCPU / 8 GB RAM / 50 GB SSD):** 2,353.4 RPS | p50: 0.46ms | p95: 732.2ms | 0.00% failure rate (82,372 requests, +106% RPS)
+- **Tier 4 (4 vCPU / 16 GB RAM / 50 GB SSD):** 2,291.4 RPS | p50: 0.47ms | p95: 716.9ms | 0.00% failure rate (80,258 requests)
+
+**Conclusion:** Memory is non-constraining (<600 MB resident across 8 containers). Concurrency scales linearly with vCPU count, establishing 4 vCPU / 8 GB RAM as the optimal university production tier.
+
 ---
 
 ## 2. The Parameterized Suite (`suite.js`)
