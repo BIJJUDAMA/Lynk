@@ -21,13 +21,24 @@ type Response[T any] struct {
 }
 
 func WriteSuccess[T any](w http.ResponseWriter, status int, data T) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(Response[T]{
+	buf := GetBuffer()
+	defer PutBuffer(buf)
+
+	resp := Response[T]{
 		Success: true,
 		Data:    data,
 		Error:   nil,
-	})
+	}
+
+	if err := json.NewEncoder(buf).Encode(resp); err != nil {
+		slog.Error("failed to encode success response", "error", err)
+		http.Error(w, `{"success":false,"error":{"code":"INTERNAL_ERROR","message":"Internal Server Error"}}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(buf.Bytes())
 }
 
 func WriteError(w http.ResponseWriter, r *http.Request, status int, code, message string, internalErr error) {
@@ -43,9 +54,10 @@ func WriteError(w http.ResponseWriter, r *http.Request, status int, code, messag
 		slog.Error("request failed", "status", status, "code", code, "message", message, "error", internalErr, "request_id", reqID, "path", path)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(Response[interface{}]{
+	buf := GetBuffer()
+	defer PutBuffer(buf)
+
+	resp := Response[interface{}]{
 		Success: false,
 		Data:    nil,
 		Error: &APIError{
@@ -53,7 +65,17 @@ func WriteError(w http.ResponseWriter, r *http.Request, status int, code, messag
 			Message:   message,
 			RequestID: reqID,
 		},
-	})
+	}
+
+	if err := json.NewEncoder(buf).Encode(resp); err != nil {
+		slog.Error("failed to encode error response", "error", err)
+		http.Error(w, `{"success":false,"error":{"code":"INTERNAL_ERROR","message":"Internal Server Error"}}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(buf.Bytes())
 }
 
 // WriteBadRequest writes a 400 Bad Request response with the given code and message.
