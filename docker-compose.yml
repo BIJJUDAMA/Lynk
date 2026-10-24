@@ -114,6 +114,26 @@ services:
       retries: 5
       start_period: 20s
 
+  meilisearch:
+    image: getmeili/meilisearch:v1.7
+    container_name: lynk-meilisearch
+    restart: unless-stopped
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: "${MEILISEARCH_KEY:-lynk-meili-master-key-2026}"
+      MEILI_ENV: "production"
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meili_data:/meili_data
+    networks:
+      - lynk-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7700/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   pgbouncer:
     image: edoburu/pgbouncer:latest
     container_name: lynk-pgbouncer
@@ -159,6 +179,8 @@ services:
       INTERNAL_AI_SECRET: "${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}"
       REDIS_URL: "redis://redis:6379"
       RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+      MEILISEARCH_URL: "http://meilisearch:7700"
+      MEILISEARCH_KEY: "${MEILISEARCH_KEY:-lynk-meili-master-key-2026}"
       RATE_LIMIT_PER_MINUTE: "${RATE_LIMIT_PER_MINUTE:-120}"
       TRUST_FORWARDED_FOR: "${TRUST_FORWARDED_FOR:-true}"
       GOMEMLIMIT: "750MiB"
@@ -177,6 +199,8 @@ services:
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      meilisearch:
         condition: service_healthy
     networks:
       - lynk-net
@@ -339,3 +363,4 @@ volumes:
   minio_data:
   redis_data:
   rabbitmq_data:
+  meili_data:

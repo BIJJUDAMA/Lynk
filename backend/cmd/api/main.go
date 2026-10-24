@@ -39,6 +39,7 @@ import (
 	"github.com/lynk/backend/internal/ratelimit"
 	"github.com/lynk/backend/internal/recruitment"
 	"github.com/lynk/backend/internal/review"
+	"github.com/lynk/backend/internal/search"
 	"github.com/lynk/backend/internal/sse"
 	"github.com/lynk/backend/internal/storage"
 	"github.com/lynk/backend/internal/team"
@@ -787,6 +788,19 @@ func main() {
 		}
 	}()
 
+	// Initialize Database Router with optional read-replica support
+	var replicaPool *pgxpool.Pool
+	if replicaURL := os.Getenv("REPLICA_DATABASE_URL"); replicaURL != "" {
+		if rPool, rErr := database.NewPool(ctx, replicaURL); rErr == nil {
+			replicaPool = rPool
+			log.Printf("Connected to read-replica PostgreSQL successfully")
+			defer replicaPool.Close()
+		} else {
+			log.Printf("Failed to connect to replica database (%s): %v (falling back to primary)", redactDatabaseURL(replicaURL), rErr)
+		}
+	}
+	dbRouter := database.NewRouter(pool, replicaPool)
+
 	// The outbox writer is injected into services that emit domain events.
 	// The worker polls outbox_events and dispatches to registered handlers.
 	outboxWriter := outbox.NewWriter(outbox.NewDBRecorder(pool))
@@ -797,7 +811,7 @@ func main() {
 		WithCache(appCache)
 	userHandler := user.NewHandler(userService, userRepo, s3Client)
 
-	jobRepo := job.NewRepository(pool)
+	jobRepo := job.NewRepositoryWithRouter(dbRouter)
 	jobService := job.NewService(jobRepo).WithCache(appCache)
 	jobHandler := job.NewHandler(jobService, jobRepo)
 
@@ -895,12 +909,61 @@ func main() {
 	go outboxWorker.Start(ctx)
 
 	// 5b. Wire Project-First Domain Repositories, Services, and Handlers
-	projectRepo := project.NewRepository(pool)
+	projectRepo := project.NewRepositoryWithRouter(dbRouter)
 	viewBatcher := project.NewViewBatcher(2*time.Second, projectRepo.IncrementViewCounts)
 	viewBatcher.Start(context.Background())
 	defer viewBatcher.Stop()
 	projectService := project.NewService(projectRepo).WithCache(appCache).WithViewBatcher(viewBatcher)
 	projectHandler := project.NewHandler(projectService, projectRepo)
+
+	// 5c. Initialize Search Service & Full-Text Engine Offloading (Meilisearch)
+	var searchSvc search.Service
+	if meiliURL := os.Getenv("MEILISEARCH_URL"); meiliURL != "" {
+		meiliClient := search.NewClient(search.Config{
+			BaseURL: meiliURL,
+			APIKey:  os.Getenv("MEILISEARCH_KEY"),
+		})
+		fallbackSearch := func(ctx context.Context, query string, limit, offset int, category string) ([]search.ProjectDocument, int, error) {
+			projects, total, err := projectRepo.ListProjects(ctx, project.ListFilter{
+				SearchQuery: query,
+				Limit:       limit,
+				Offset:      offset,
+				Category:    category,
+				Visibility:  project.VisibilityPublic,
+			})
+			if err != nil {
+				return nil, 0, err
+			}
+			docs := make([]search.ProjectDocument, len(projects))
+			for i, p := range projects {
+				docs[i] = search.ProjectDocument{
+					ID:                p.ID.String(),
+					Slug:              p.Slug,
+					Title:             p.Title,
+					Description:       p.Description,
+					Category:          p.Category,
+					Visibility:        string(p.Visibility),
+					RecruitmentStatus: string(p.RecruitmentStatus),
+					OwnerMemberID:     p.OwnerMemberID,
+					CreatedAt:         p.CreatedAt.Unix(),
+				}
+			}
+			return docs, total, nil
+		}
+		searchSvc = search.NewService(meiliClient, fallbackSearch, slog.Default())
+		aiHandler.WithSearchService(searchSvc)
+
+		if rabbitClient != nil && rabbitClient.IsConnected() {
+			searchConsumer := queue.NewConsumer(rabbitClient, queue.QueueSearchIndex, "api-search-indexer", 20, queue.DefaultRetryPolicy(), slog.Default())
+			if err := searchConsumer.Start(ctx, 2, func(cctx context.Context, d amqp.Delivery) error {
+				return search.ProcessDelivery(cctx, searchSvc, d, slog.Default())
+			}); err == nil {
+				defer searchConsumer.Stop()
+			} else {
+				slog.Error("failed to start search indexing consumer", "error", err)
+			}
+		}
+	}
 
 	teamRepo := team.NewRepository(pool)
 	teamService := team.NewService(teamRepo)

@@ -26,6 +26,8 @@ const (
 	RoutingDeadLetterAudit    = "events.audit.dead"
 	RoutingDeadLetterAI       = "tasks.ai.dead"
 	RoutingDeadLetterNotif    = "tasks.notifications.dead"
+	RoutingDeadLetterSearch   = "tasks.search.dead"
+	QueueSearchIndex          = "tasks.search.index"
 )
 
 // DeclareTopology sets up durable exchanges, queues, and dead-letter pipelines.
@@ -75,7 +77,7 @@ func (c *Client) DeclareTopology() error {
 	}
 
 	// Bind DLQ to DLX for all dead-letter routing keys
-	for _, key := range []string{RoutingDeadLetterAudit, RoutingDeadLetterAI, RoutingDeadLetterNotif} {
+	for _, key := range []string{RoutingDeadLetterAudit, RoutingDeadLetterAI, RoutingDeadLetterNotif, RoutingDeadLetterSearch} {
 		if err := ch.QueueBind(QueueDeadLetter, key, ExchangeDLX, false, nil); err != nil {
 			return fmt.Errorf("failed to bind DLQ for key %s: %w", key, err)
 		}
@@ -101,6 +103,11 @@ func (c *Client) DeclareTopology() error {
 			name:       QueueNotifications,
 			routingKey: "notification.*",
 			dlKey:      RoutingDeadLetterNotif,
+		},
+		{
+			name:       QueueSearchIndex,
+			routingKey: "project.*",
+			dlKey:      RoutingDeadLetterSearch,
 		},
 	}
 

@@ -21,6 +21,7 @@ import (
 	"github.com/lynk/backend/internal/job"
 	"github.com/lynk/backend/internal/middleware"
 	"github.com/lynk/backend/internal/review"
+	"github.com/lynk/backend/internal/search"
 	"github.com/lynk/backend/internal/user"
 )
 
@@ -54,6 +55,7 @@ type AIHandler struct {
 	appRepo      ApplicationRepository
 	reviewRepo   ReviewRepository
 	service      *Service
+	searchSvc    search.Service
 }
 
 // ReviewRepository abstracts review fetching for AI aspect extraction.
@@ -103,6 +105,12 @@ func (h *AIHandler) WithApplicationRepo(appRepo ApplicationRepository) *AIHandle
 // WithReviewRepo sets the review repository on the handler.
 func (h *AIHandler) WithReviewRepo(reviewRepo ReviewRepository) *AIHandler {
 	h.reviewRepo = reviewRepo
+	return h
+}
+
+// WithSearchService attaches the search service to AIHandler for offloading full-text search.
+func (h *AIHandler) WithSearchService(searchSvc search.Service) *AIHandler {
+	h.searchSvc = searchSvc
 	return h
 }
 
@@ -391,9 +399,9 @@ func (h *AIHandler) fallbackPeopleSearch(ctx context.Context, query string, limi
 		sql := `
 			SELECT id, user_id, first_name, last_name, bio, department, graduation_year, skills, updated_at
 			FROM profiles
-			WHERE first_name ILIKE $1 
-			   OR last_name ILIKE $1 
-			   OR bio ILIKE $1 
+			WHERE first_name ILIKE $1
+			   OR last_name ILIKE $1
+			   OR bio ILIKE $1
 			   OR department ILIKE $1
 			   OR array_to_string(skills, ' ') ILIKE $1
 			LIMIT $2;
@@ -447,13 +455,36 @@ func (h *AIHandler) SearchProjects(w http.ResponseWriter, r *http.Request) {
 	// 1. Attempt AI semantic search via pgvector
 	if h.service != nil {
 		matches, err := h.service.SearchProjectsSemantic(r.Context(), q, limit, visibility)
-		if err == nil {
+		if err == nil && len(matches) > 0 {
 			httputil.WriteSuccess(w, http.StatusOK, matches)
 			return
 		}
 	}
 
-	// 2. Graceful Fallback: Keyword search in PostgreSQL projects table
+	// 2. Offloaded Full-Text Search via Meilisearch
+	if h.searchSvc != nil {
+		docs, _, err := h.searchSvc.SearchProjects(r.Context(), q, limit, 0, "")
+		if err == nil && len(docs) > 0 {
+			matches := make([]ProjectMatch, 0, len(docs))
+			for _, d := range docs {
+				parsedID, _ := uuid.Parse(d.ID)
+				matches = append(matches, ProjectMatch{
+					ProjectID:   parsedID,
+					Slug:        d.Slug,
+					Title:       d.Title,
+					Description: d.Description,
+					Category:    d.Category,
+					Visibility:  d.Visibility,
+					Similarity:  1.0,
+					Distance:    0.0,
+				})
+			}
+			httputil.WriteSuccess(w, http.StatusOK, matches)
+			return
+		}
+	}
+
+	// 3. Graceful Fallback: Keyword search in PostgreSQL projects table
 	fallbackMatches := h.fallbackProjectSearch(r.Context(), q, limit, visibility)
 	httputil.WriteSuccess(w, http.StatusOK, fallbackMatches)
 }

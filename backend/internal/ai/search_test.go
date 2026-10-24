@@ -19,6 +19,7 @@ import (
 	"github.com/lynk/backend/internal/auth"
 	"github.com/lynk/backend/internal/httputil"
 	"github.com/lynk/backend/internal/job"
+	"github.com/lynk/backend/internal/search"
 	"github.com/lynk/backend/internal/user"
 )
 
@@ -531,5 +532,73 @@ func TestSearchPeople_FallbackWhenAIDisabled(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected status 200 OK on fallback, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+type mockSearchSvc struct {
+	docs []search.ProjectDocument
+}
+
+func (m *mockSearchSvc) SearchProjects(ctx context.Context, query string, limit, offset int, category string) ([]search.ProjectDocument, int, error) {
+	return m.docs, len(m.docs), nil
+}
+
+func (m *mockSearchSvc) IndexProject(ctx context.Context, doc search.ProjectDocument) error {
+	return nil
+}
+
+func (m *mockSearchSvc) DeleteProject(ctx context.Context, id string) error {
+	return nil
+}
+
+func (m *mockSearchSvc) IsHealthy(ctx context.Context) bool {
+	return true
+}
+
+func TestSearchProjects_MeilisearchFastPath(t *testing.T) {
+	projID := uuid.New()
+	mockSvc := &mockSearchSvc{
+		docs: []search.ProjectDocument{
+			{
+				ID:          projID.String(),
+				Slug:        "ai-robotics-lab",
+				Title:       "Autonomous Drone Project",
+				Description: "Designing autonomous campus delivery drones.",
+				Category:    "Engineering",
+				Visibility:  "public",
+				Skills:      []string{"ROS", "C++", "Python"},
+			},
+		},
+	}
+
+	orch := orchestrator.NewOrchestrator(nil, orchestrator.FeatureFlags{AIEnabled: false}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := ai.NewHandler(orch, nil, nil, nil).WithSearchService(mockSvc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/search/projects?q=drone", nil)
+	w := httptest.NewRecorder()
+
+	handler.SearchProjects(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Success bool              `json:"success"`
+		Data    []ai.ProjectMatch `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 project match, got %d", len(resp.Data))
+	}
+
+	if resp.Data[0].ProjectID != projID {
+		t.Fatalf("expected project ID %s, got %s", projID, resp.Data[0].ProjectID)
+	}
+	if resp.Data[0].Slug != "ai-robotics-lab" {
+		t.Fatalf("expected slug ai-robotics-lab, got %s", resp.Data[0].Slug)
 	}
 }
