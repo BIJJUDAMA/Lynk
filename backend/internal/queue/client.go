@@ -188,6 +188,7 @@ func (c *Client) reconnectWatcher() {
 			c.mu.Unlock()
 
 			backoff := c.cfg.ReconnectDelay
+		reconnectLoop:
 			for {
 				select {
 				case <-c.closeChan:
@@ -206,9 +207,8 @@ func (c *Client) reconnectWatcher() {
 					c.mu.Unlock()
 
 					c.logger.Info("reconnected to rabbitmq broker successfully")
-					break
+					break reconnectLoop
 				}
-				break
 			}
 		}
 	}

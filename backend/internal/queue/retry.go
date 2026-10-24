@@ -31,7 +31,10 @@ func (p RetryPolicy) ComputeDelay(attempt int) time.Duration {
 		return 0
 	}
 
-	shift := uint(min(attempt, 16))
+	shift := 16
+	if attempt < 16 {
+		shift = attempt
+	}
 	multiplier := 1 << shift
 	calculated := p.BaseDelay * time.Duration(multiplier)
 	ceiling := min(calculated, p.MaxDelay)
