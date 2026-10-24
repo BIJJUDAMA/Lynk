@@ -1009,6 +1009,10 @@ func (m *mockProjectRepo) UpdateProject(ctx context.Context, p *project.Project)
 	return nil
 }
 
+func (m *mockProjectRepo) DeleteProject(ctx context.Context, id uuid.UUID) error {
+	return nil
+}
+
 func (m *mockProjectRepo) IncrementViewCounts(ctx context.Context, deltas map[uuid.UUID]int64) error {
 	return nil
 }

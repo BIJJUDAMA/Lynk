@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ type Repository interface {
 	ListProjects(ctx context.Context, filter ListFilter) ([]Project, int, error)
 	ListPublic(ctx context.Context, filter ListFilter) ([]Project, error)
 	UpdateProject(ctx context.Context, p *Project) error
+	DeleteProject(ctx context.Context, id uuid.UUID) error
 	IncrementViewCounts(ctx context.Context, deltas map[uuid.UUID]int64) error
 }
 
@@ -38,7 +40,7 @@ func NewRepository(db *pgxpool.Pool) Repository {
 
 var _ Repository = (*pgxRepository)(nil)
 
-// CreateProject persists a new project entity.
+// CreateProject persists a new project entity and assigns owner as lead member.
 func (r *pgxRepository) CreateProject(ctx context.Context, p *Project) error {
 	if p.ID == uuid.Nil {
 		p.ID = uuid.New()
@@ -51,6 +53,12 @@ func (r *pgxRepository) CreateProject(ctx context.Context, p *Project) error {
 		return fmt.Errorf("failed to marshal project settings: %w", err)
 	}
 
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	query := `
 		INSERT INTO projects (
 			id, slug, owner_member_id, title, description, category,
@@ -59,7 +67,7 @@ func (r *pgxRepository) CreateProject(ctx context.Context, p *Project) error {
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
 		RETURNING created_at, updated_at
 	`
-	err = r.db.QueryRow(ctx, query,
+	err = tx.QueryRow(ctx, query,
 		p.ID,
 		p.Slug,
 		p.OwnerMemberID,
@@ -82,7 +90,18 @@ func (r *pgxRepository) CreateProject(ctx context.Context, p *Project) error {
 		return fmt.Errorf("failed to insert project: %w", err)
 	}
 
-	return nil
+	// Insert owner into project_members with role 'lead'
+	const memberQuery = `
+		INSERT INTO project_members (
+			id, project_id, member_id, role, status, joined_at
+		) VALUES (gen_random_uuid(), $1, $2, 'lead', 'active', $3)
+		ON CONFLICT (project_id, member_id) DO NOTHING
+	`
+	if _, err := tx.Exec(ctx, memberQuery, p.ID, p.OwnerMemberID, p.CreatedAt); err != nil {
+		return fmt.Errorf("failed to insert project lead member: %w", err)
+	}
+
+	return tx.Commit(ctx)
 }
 
 // GetProjectByID retrieves a single project by its primary key UUID.
@@ -315,7 +334,20 @@ func (r *pgxRepository) UpdateProject(ctx context.Context, p *Project) error {
 	return nil
 }
 
-// IncrementViewCounts atomically adds the batched view deltas to each project.
+// DeleteProject removes a project entity by primary key.
+func (r *pgxRepository) DeleteProject(ctx context.Context, id uuid.UUID) error {
+	const query = `DELETE FROM projects WHERE id = $1`
+	cmd, err := r.db.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete project %s: %w", id, err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrProjectNotFound
+	}
+	return nil
+}
+
+// IncrementViewCounts atomically adds the batched view deltas to each project with deterministic lock ordering.
 func (r *pgxRepository) IncrementViewCounts(ctx context.Context, deltas map[uuid.UUID]int64) error {
 	if len(deltas) == 0 {
 		return nil
@@ -327,8 +359,18 @@ func (r *pgxRepository) IncrementViewCounts(ctx context.Context, deltas map[uuid
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Enforce deterministic lock ordering to prevent PostgreSQL 40P01 deadlocks across concurrent flushes
+	ids := make([]uuid.UUID, 0, len(deltas))
+	for id := range deltas {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		return ids[i].String() < ids[j].String()
+	})
+
 	const query = `UPDATE projects SET view_count = view_count + $2 WHERE id = $1`
-	for id, delta := range deltas {
+	for _, id := range ids {
+		delta := deltas[id]
 		if _, err := tx.Exec(ctx, query, id, delta); err != nil {
 			return fmt.Errorf("failed to increment view count for project %s: %w", id, err)
 		}

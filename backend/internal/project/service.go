@@ -486,6 +486,9 @@ func (s *Service) DeleteProject(ctx context.Context, id uuid.UUID, actorID strin
 	if p.OwnerMemberID != actorID {
 		return ErrUnauthorized
 	}
+	if err := s.repo.DeleteProject(ctx, id); err != nil {
+		return err
+	}
 	if s.cache != nil {
 		_ = s.cache.DeletePattern(ctx, "projects:*")
 	}

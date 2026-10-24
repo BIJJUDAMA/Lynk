@@ -169,6 +169,17 @@ func (m *mockProjectRepo) UpdateProject(ctx context.Context, p *project.Project)
 	return nil
 }
 
+func (m *mockProjectRepo) DeleteProject(ctx context.Context, id uuid.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, ok := m.projects[id]; !ok {
+		return project.ErrProjectNotFound
+	}
+	delete(m.projects, id)
+	return nil
+}
+
 func (m *mockProjectRepo) IncrementViewCounts(ctx context.Context, deltas map[uuid.UUID]int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -795,5 +806,40 @@ func TestPgxRepository_Integration(t *testing.T) {
 	err = repo.CreateProject(ctx, dup)
 	if !errors.Is(err, project.ErrDuplicateSlug) {
 		t.Errorf("expected ErrDuplicateSlug on constraint violation, got %v", err)
+	}
+}
+
+func TestService_DeleteProject_DeletesFromRepository(t *testing.T) {
+	ctx := context.Background()
+	repo := newMockProjectRepo()
+	svc := project.NewService(repo)
+
+	ownerID := "st_usr_test_owner"
+	p, err := svc.CreateProject(ctx, ownerID, project.CreateProjectInput{
+		Title:       "Project to Delete",
+		Description: "Detailed description for delete test project validation.",
+		Category:    "Engineering",
+		Visibility:  project.VisibilityPublic,
+	})
+	if err != nil {
+		t.Fatalf("CreateProject failed: %v", err)
+	}
+
+	// Non-owner cannot delete
+	err = svc.DeleteProject(ctx, p.ID, "st_usr_other")
+	if !errors.Is(err, project.ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized for non-owner, got %v", err)
+	}
+
+	// Owner can delete
+	err = svc.DeleteProject(ctx, p.ID, ownerID)
+	if err != nil {
+		t.Fatalf("DeleteProject failed: %v", err)
+	}
+
+	// Verify project was actually removed from repository
+	_, err = repo.GetProjectByID(ctx, p.ID)
+	if !errors.Is(err, project.ErrProjectNotFound) {
+		t.Errorf("expected ErrProjectNotFound after delete, got %v", err)
 	}
 }
