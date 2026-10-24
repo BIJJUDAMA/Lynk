@@ -31,6 +31,16 @@ func jobOwnerResumeAccessQuery() string {
 			  AND a.applicant_id = $2
 			  AND a.status IN ('pending', 'accepted')
 			  AND j.status IN ('open', 'in_progress')
+
+			UNION ALL
+
+			SELECT 1
+			FROM projects p
+			INNER JOIN project_applications pa ON pa.project_id = p.id
+			LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.member_id = $1 AND pm.status = 'active'
+			WHERE (p.owner_member_id = $1 OR pm.role IN ('lead', 'maintainer'))
+			  AND pa.applicant_id = $2
+			  AND pa.status IN ('submitted', 'shortlisted', 'accepted')
 		);
 	`
 }

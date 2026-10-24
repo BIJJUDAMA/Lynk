@@ -227,6 +227,9 @@ func cleanIP(ipStr string) string {
 // the first client IP in X-Forwarded-For is extracted if present.
 func ExtractClientIP(r *http.Request) string {
 	if os.Getenv("TRUST_FORWARDED_FOR") == "true" || os.Getenv("TRUST_PROXY") == "true" {
+		if xrip := cleanIP(r.Header.Get("X-Real-IP")); xrip != "" {
+			return xrip
+		}
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.Split(xff, ",")
 			if len(parts) > 0 {

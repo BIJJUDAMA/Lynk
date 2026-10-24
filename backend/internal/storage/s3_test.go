@@ -309,10 +309,10 @@ func TestS3Client_GetPresignedUploadURL_Validation(t *testing.T) {
 		t.Errorf("expected error for non-document content type")
 	}
 
-	// Test excessive content-length (> 10MB)
-	_, err = client.GetPresignedUploadURL(context.Background(), "test-key", "application/pdf", 15<<20, 15*time.Minute)
+	// Test excessive content-length (> 5MB)
+	_, err = client.GetPresignedUploadURL(context.Background(), "test-key", "application/pdf", 6<<20, 15*time.Minute)
 	if err == nil {
-		t.Errorf("expected error for file size exceeding 10MB limit")
+		t.Errorf("expected error for file size exceeding 5MB limit")
 	}
 
 	// Test non-positive content-length (0)

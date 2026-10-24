@@ -130,8 +130,8 @@ func (s *S3Client) GetPresignedUploadURL(ctx context.Context, key string, conten
 	if contentType != "application/pdf" && contentType != "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
 		return "", fmt.Errorf("unsupported content type: %q (must be PDF or DOCX)", contentType)
 	}
-	if contentLength <= 0 || contentLength > 10<<20 {
-		return "", fmt.Errorf("invalid content length: %d (must be between 1 byte and 10MB)", contentLength)
+	if contentLength <= 0 || contentLength > 5<<20 {
+		return "", fmt.Errorf("invalid content length: %d (must be between 1 byte and 5MB)", contentLength)
 	}
 	if s.presignClient == nil {
 		return "", errors.New("presign client is not configured")
