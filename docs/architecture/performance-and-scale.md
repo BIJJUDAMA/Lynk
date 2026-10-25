@@ -94,10 +94,12 @@ Load Runner / Client Traffic (:8080 - :8119 across 40 Ingress Ports)
 
 ## 4. Single-Server Production Hardware Sizing
 
-Lynk is designed to run efficiently on a single university server or cloud compute instance:
+Lynk is designed to run efficiently on a single university server or cloud compute instance across a variety of hardware envelopes:
 
 | Sizing Tier | vCPU | RAM | Storage (NVMe SSD) | Max Concurrency | Peak RPS | Little's Law Campus Capacity |
 | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Micro Tier (Ultra-Low)** | **1 vCPU** | **2 GB** | **25 GB** | 25,000 VUs | 6,035 RPS | 26,724 to 61,343 active students |
+| **Constrained 2-Core** | **2 vCPU** | **2 GB** | **25 GB** | 25,000 VUs | 16,957 RPS | 81,899 to 172,067 active students |
 | **Tier 1 (Entry)** | **2 vCPU** | **4 GB** | **50 GB** | 40,000 VUs | 15,781 RPS | 87,318 to 166,225 active students |
 | **Tier 2 (Balanced 2-Core)** | **2 vCPU** | **6 GB** | **50 GB** | 50,000 VUs | 15,304 RPS | 91,859 to 168,383 active students |
 | **Tier 3 (Production Sweet Spot)** | **4 vCPU** | **8 GB** | **100 GB** | 125,000 VUs | 18,503 RPS | 95,554 to 188,073 active students |
@@ -114,20 +116,22 @@ Lynk is designed to run efficiently on a single university server or cloud compu
 - **MinIO:** ~60 MB - 132 MB resident
 - **Meilisearch 1.7:** ~28 MB resident
 - **Autoscaler Controller:** ~25 MB - 92 MB resident
-- **Total Multi-Container Stack Memory:** **~1.15 GB - 1.51 GB** in baseline-to-stress state across all 10 core services, leaving ample memory for Linux OS page cache and NVMe buffers even on a 4 GB RAM node.
+- **Total Multi-Container Stack Memory:** **~1.15 GB - 1.51 GB** in baseline-to-stress state across all 10 core services, leaving sufficient memory for Linux OS page cache and NVMe buffers even on a 2 GB RAM node (with 2 GB swap enabled).
 
 ---
 
-## 5. Empirical 4-Tier Hardware Saturation Matrix & Breakpoint Analysis
+## 5. Empirical Multi-Tier Hardware Saturation Matrix & Breakpoint Analysis
 
 An exhaustive empirical cloud benchmark was conducted using an independent 8 vCPU / 32 GB RAM load generator runner executing native k6 v2.3.0 against the complete backend stack. The PostgreSQL database was pre-seeded with **50,003 campus member accounts**, **50,003 student profiles**, and **2,000 indexed project workspaces** with active trigram and full-text search keywords.
 
 Multi-port ingress was utilized across 40 listening ports (`:8080` through `:8119`) to eliminate client-side ephemeral socket restrictions.
 
-### Comprehensive 4-Tier Saturation Scorecard
+### Comprehensive Saturation Scorecard Across 6 Hardware Tiers
 
 | Compute Tier | Hardware Specs | Peak Throughput Knee | Median Latency (p50) | 99th Percentile (p99) | Max Stable Concurrency | Error Rate | Physical Saturation Factor |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Micro Tier** | 1 vCPU / 2 GB RAM | **6,034.8 RPS** (@ 1k VUs) / **4,310.3 RPS** (@ 25k VUs) | 165.0 ms / 1,200.0 ms | 1,850.0 ms | **25,000 VUs** | **0.00%** | Single-core CPU context-switching queue backlog at 30k VUs |
+| **Constrained 2-Core** | 2 vCPU / 2 GB RAM | **16,957.5 RPS** (@ 2.5k VUs) / **15,380.2 RPS** (@ 5k VUs) | 147.0 ms / 325.0 ms | 1,650.0 ms | **25,000 VUs** | **0.00%** | Kernel TCP socket buffer exhaustion at 30k VUs (2 GB RAM boundary) |
 | **Tier 1** | 2 vCPU / 4 GB RAM | **15,781.4 RPS** (@ 10k VUs) | 532.5 ms | 1,011.5 ms | **40,000 VUs** | **0.00%** | TCP SYN queue backlog at 50,000 VUs |
 | **Tier 2** | 2 vCPU / 6 GB RAM | **15,304.8 RPS** (@ 20k VUs) | 1,002.4 ms | 2,366.2 ms | **50,000 VUs** | **0.00%** | Queuing saturation at 50,000 VUs (12,858 RPS) |
 | **Tier 3** | 4 vCPU / 8 GB RAM | **18,503.9 RPS** (@ 10k VUs) | 164.2 ms | 3,640.4 ms | **125,000 VUs** | **0.00%** | Queuing latency elevation beyond 125,000 VUs |
@@ -141,6 +145,22 @@ Little's Law defines in-flight system items as $L = \lambda \times W$. For campu
 $$N = \lambda \times (R + T)$$
 
 Applying standard university web portal dwell times ($T = 5\text{s}$ for active workflows and $T = 10\text{s}$ for general browsing):
+
+### Micro Tier (1 vCPU / 2 GB RAM)
+- **Peak Throughput ($\lambda$):** $6,034.8\text{ req/s}$ (burst at 1k VUs) / $4,310.3\text{ req/s}$ (sustained knee at 25k VUs)
+- **Median Latency ($R$):** $0.165\text{ s}$ ($165.0\text{ ms}$) at burst; $1.200\text{ s}$ ($1,200.0\text{ ms}$) at high concurrency
+- **In-Flight System Concurrency ($L = \lambda \times R$):** **996 requests** (burst) to **5,172 requests** (25k knee)
+- **Max Users @ 5s Think Time:** $6,034.8 \times (0.165 + 5) =$ **31,169 Concurrent Students** (burst); $4,310.3 \times (1.2 + 5) =$ **26,724 Concurrent Students** (high load)
+- **Max Users @ 10s Think Time:** $6,034.8 \times (0.165 + 10) =$ **61,343 Concurrent Students** (burst); $4,310.3 \times (1.2 + 10) =$ **48,275 Concurrent Students** (high load)
+- **Concurrency Boundary:** **25,000 VUs** sustained with 0.00% error rate (181,623 requests at 1k VUs, 150,078 requests at 25k VUs). Physical breakpoint observed at 30,000 VUs due to single-core context switching CPU bottlenecks.
+
+### Constrained 2-Core Tier (2 vCPU / 2 GB RAM)
+- **Peak Throughput ($\lambda$):** $16,957.5\text{ req/s}$ (peak at 2.5k VUs) / $15,380.2\text{ req/s}$ (at 5k VUs) / $12,890.6\text{ req/s}$ (at 25k VUs)
+- **Median Latency ($R$):** $0.147\text{ s}$ ($147.0\text{ ms}$) at 2.5k VUs; $0.325\text{ s}$ ($325.0\text{ ms}$) at 5k VUs; $1.243\text{ s}$ at 25k VUs
+- **In-Flight System Concurrency ($L = \lambda \times R$):** **2,493 requests** (at 2.5k VUs) to **16,023 requests** (at 25k VUs)
+- **Max Users @ 5s Think Time:** $16,957.5 \times (0.147 + 5) =$ **87,279 Concurrent Students** (at 2.5k VUs); $15,380.2 \times (0.325 + 5) =$ **81,899 Concurrent Students** (at 5k VUs)
+- **Max Users @ 10s Think Time:** $16,957.5 \times (0.147 + 10) =$ **172,067 Concurrent Students** (at 2.5k VUs); $15,380.2 \times (0.325 + 10) =$ **158,799 Concurrent Students** (at 5k VUs)
+- **Concurrency Boundary:** **25,000 VUs** sustained with 0.00% error rate (451,188 requests handled in 30s). Physical breakpoint observed at 30,000 VUs due to kernel TCP socket memory constraints under 2 GB RAM.
 
 ### Tier 1 (2 vCPU / 4 GB RAM)
 - **Peak Throughput ($\lambda$):** $15,781.4\text{ req/s}$
@@ -183,8 +203,11 @@ Applying standard university web portal dwell times ($T = 5\text{s}$ for active 
 2. **CPU Context-Switching vs. Memory Footprint:**
    - Across all tiers, memory was non-constraining; the entire 10-container stack consumes under 1.6 GB RAM under peak load.
    - Moving from 2 vCPU to 4 vCPU lifted throughput by over +17% while cutting median latency by more than 69% (from 532.5 ms down to 164.2 ms).
-3. **Database & Connection Multiplexing:**
-   - PgBouncer transaction pooling multiplexes 100,000+ incoming HTTP clients down into a controlled pool of PostgreSQL connections, preventing connection exhaustion and keeping PostgreSQL CPU usage below 5%.
+3. **RAM Impact on Socket Buffers (2 GB vs 4 GB vs 6 GB at 2 vCPU):**
+   - At 2 vCPU / 2 GB RAM, the stack sustained 16,957 RPS and handled 25,000 concurrent VUs cleanly. However, at 30,000 VUs, available socket buffer memory caused connection timeouts.
+   - Expanding to 4 GB RAM lifted maximum stable concurrency to 40,000 VUs (+60%), and 6 GB RAM lifted it to 50,000 VUs (+100%), proving that RAM directly dictates concurrent connection ceiling rather than raw throughput.
+4. **Single-Core (1 vCPU) Dynamics:**
+   - On 1 vCPU / 2 GB RAM, the stack comfortably processed 6,034 RPS at low concurrency and scaled up to 25,000 VUs (4,310 RPS) with 0.00% errors. At 30,000 VUs, CPU context-switching overhead became the primary ceiling.
 
 ---
 
