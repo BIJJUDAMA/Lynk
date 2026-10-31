@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL_NAME: str = "all-MiniLM-L6-v2"
     EMBEDDING_DIMENSION: int = 384
     LOG_LEVEL: str = "INFO"
+    QDRANT_HOST: str = "qdrant"
+    QDRANT_PORT: int = 6333
+    REDIS_URL: str = "redis://redis:6379"
+    KUZU_DB_PATH: str = "/data/kuzu_campus_graph"
 
     model_config = SettingsConfigDict(
         env_file=".env",
