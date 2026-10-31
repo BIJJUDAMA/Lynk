@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils.ts";
 import React, { useEffect, useRef, useState } from "react";
 
 export type WebsiteShaderPresetId = "aurora-veil" | "kinetic-dots";
@@ -56,12 +56,12 @@ export function getShaderPreviewStyle(
 
 export function useReducedMotion(): boolean {
   const [matches, setMatches] = useState(() => {
-    if (typeof window === "undefined") return false;
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   });
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
     const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
     const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
     mql.addEventListener("change", handler);
@@ -73,38 +73,44 @@ export function useReducedMotion(): boolean {
 
 function useThemeTone(explicitTone?: "light" | "dark" | "auto"): "light" | "dark" {
   const [detectedTone, setDetectedTone] = useState<"light" | "dark">(() => {
-    if (typeof window === "undefined") return "light";
+    if (typeof window === "undefined" || typeof document === "undefined") return "light";
     const isDark =
       document.documentElement.classList.contains("dark") ||
       document.body.classList.contains("dark") ||
-      window.matchMedia("(prefers-color-scheme: dark)").matches;
+      (typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches);
     return isDark ? "dark" : "light";
   });
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || typeof document === "undefined") return;
     if (explicitTone === "light" || explicitTone === "dark") return;
 
     const update = () => {
       const isDark =
         document.documentElement.classList.contains("dark") ||
         document.body.classList.contains("dark") ||
-        window.matchMedia("(prefers-color-scheme: dark)").matches;
+        (typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches);
       setDetectedTone(isDark ? "dark" : "light");
     };
 
-    const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
+    let observer: MutationObserver | null = null;
+    if (typeof MutationObserver !== "undefined") {
+      observer = new MutationObserver(update);
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+    }
 
-    const mql = window.matchMedia("(prefers-color-scheme: dark)");
-    mql.addEventListener("change", update);
+    const hasMql = typeof window.matchMedia === "function";
+    const mql = hasMql ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    mql?.addEventListener("change", update);
 
     return () => {
-      observer.disconnect();
-      mql.removeEventListener("change", update);
+      observer?.disconnect();
+      mql?.removeEventListener("change", update);
     };
   }, [explicitTone]);
 
@@ -256,11 +262,31 @@ export function WebsiteShaderCanvas({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [webglFailed, setWebglFailed] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
   const prefersReducedMotion = useReducedMotion();
   const effectiveTone = useThemeTone(tone);
 
   useEffect(() => {
-    if (webglFailed || prefersReducedMotion) return;
+    if (typeof window === "undefined" || !("IntersectionObserver" in window)) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsVisible(entry ? entry.isIntersecting : true);
+      },
+      { threshold: 0.05 }
+    );
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (webglFailed || prefersReducedMotion || !isVisible) return;
 
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -342,6 +368,7 @@ export function WebsiteShaderCanvas({
     }
 
     function render(now: number) {
+      if (!isVisible) return;
       if (!gl || !program || !canvas) return;
 
       currentMouseX += (targetMouseX - currentMouseX) * 0.08;
@@ -389,7 +416,7 @@ export function WebsiteShaderCanvas({
         gl.deleteProgram(program);
       }
     };
-  }, [preset, speed, effectiveTone, webglFailed, prefersReducedMotion, interactive]);
+  }, [preset, speed, effectiveTone, webglFailed, prefersReducedMotion, interactive, isVisible]);
 
   const fallbackStyle = getShaderPreviewStyle(preset, effectiveTone);
 
