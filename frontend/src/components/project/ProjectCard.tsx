@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Users, ArrowRight, Sparkles } from "lucide-react";
 import type { Project } from "@/types/project";
 import { cn } from "@/lib/utils";
@@ -15,6 +18,7 @@ export interface ProjectCardProps {
 }
 
 export function ProjectCard({ project, className }: ProjectCardProps) {
+  const router = useRouter();
   const recruitmentStyles = getRecruitmentStatusBadgeClasses(project.recruitment_status);
   const lifecycleStyles = getLifecycleBadgeClasses(project.lifecycle_status);
 
@@ -27,9 +31,15 @@ export function ProjectCard({ project, className }: ProjectCardProps) {
 
   const projectHref = `/projects/${project.slug || project.id}`;
 
+  const handlePrefetch = () => {
+    router.prefetch(projectHref);
+  };
+
   return (
     <article
       data-animate-item
+      onMouseEnter={handlePrefetch}
+      onPointerEnter={handlePrefetch}
       className={cn(
         "group rounded-xl border border-border bg-card p-6 transition-all duration-200 hover:border-foreground/30 hover:-translate-y-0.5 shadow-none flex flex-col justify-between",
         className

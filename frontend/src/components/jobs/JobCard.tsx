@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Building2, ArrowRight } from "lucide-react";
 import { Job } from "@/types/api";
 import { cn } from "@/lib/utils";
@@ -13,6 +16,7 @@ export interface JobCardProps {
 }
 
 export function JobCard({ job, className }: JobCardProps) {
+  const router = useRouter();
   const statusStyles = getStatusBadgeClasses(job.status);
   const posterName =
     job.creator?.first_name || job.creator?.last_name
@@ -25,10 +29,17 @@ export function JobCard({ job, className }: JobCardProps) {
   const skills = job.required_skills ?? [];
   const visibleSkills = skills.slice(0, 4);
   const overflowSkillsCount = skills.length - visibleSkills.length;
+  const jobHref = `/jobs/${job.id}`;
+
+  const handlePrefetch = () => {
+    router.prefetch(jobHref);
+  };
 
   return (
     <article
       data-animate-item
+      onMouseEnter={handlePrefetch}
+      onPointerEnter={handlePrefetch}
       className={cn(
         "rounded-xl border border-border bg-card p-6 transition-all duration-200 hover:border-foreground/30 hover:-translate-y-0.5 shadow-none flex flex-col justify-between",
         className
@@ -57,7 +68,7 @@ export function JobCard({ job, className }: JobCardProps) {
 
         {/* Job Title & Creator */}
         <div className="mt-3">
-          <Link href={`/jobs/${job.id}`}>
+          <Link href={jobHref}>
             <h3 className="font-serif text-xl font-normal leading-snug text-foreground hover:text-foreground/80 transition-colors line-clamp-2 [text-wrap:balance]">
               {job.title}
             </h3>
@@ -110,7 +121,7 @@ export function JobCard({ job, className }: JobCardProps) {
         </div>
 
         <Link
-          href={`/jobs/${job.id}`}
+          href={jobHref}
           className="inline-flex items-center gap-1 text-xs font-mono font-medium text-foreground hover:text-foreground/70 transition-colors"
         >
           <span>View Gig</span>
