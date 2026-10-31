@@ -135,6 +135,23 @@ services:
       timeout: 5s
       retries: 5
 
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    container_name: lynk-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - lynk-net
+
   pgbouncer:
     image: edoburu/pgbouncer:latest
     container_name: lynk-pgbouncer
@@ -365,6 +382,7 @@ networks:
     driver: bridge
 
 volumes:
+  qdrant_data:
   postgres_data:
   minio_data:
   redis_data:
