@@ -30,7 +30,9 @@ func WriteSuccess[T any](w http.ResponseWriter, status int, data T) {
 		Error:   nil,
 	}
 
-	if err := json.NewEncoder(buf).Encode(resp); err != nil {
+	enc := json.NewEncoder(buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(resp); err != nil {
 		slog.Error("failed to encode success response", "error", err)
 		http.Error(w, `{"success":false,"error":{"code":"INTERNAL_ERROR","message":"Internal Server Error"}}`, http.StatusInternalServerError)
 		return

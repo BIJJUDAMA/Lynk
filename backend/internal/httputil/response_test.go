@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -45,6 +46,56 @@ func TestWriteSuccess(t *testing.T) {
 	}
 	if resp.Data.ID != "user-123" || resp.Data.Name != "Alice" {
 		t.Errorf("unexpected data: %+v", resp.Data)
+	}
+}
+
+func TestWriteSuccess_BufferPoolReuse(t *testing.T) {
+	rec := httptest.NewRecorder()
+	type Item struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+
+	items := []Item{
+		{ID: "1", Name: "Alpha"},
+		{ID: "2", Name: "Beta"},
+	}
+
+	WriteSuccess(rec, http.StatusOK, items)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	expected := `{"success":true,"data":[{"id":"1","name":"Alpha"},{"id":"2","name":"Beta"}],"error":null}`
+	_ = expected
+	var raw map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("invalid json response: %v", err)
+	}
+
+	if raw["success"] != true {
+		t.Errorf("expected success true, got %v", raw["success"])
+	}
+}
+
+func TestWriteSuccess_NoEscapeHTML(t *testing.T) {
+	rec := httptest.NewRecorder()
+	type Content struct {
+		Snippet string `json:"snippet"`
+	}
+
+	data := Content{Snippet: "<span>Lynk & Campus</span>"}
+	WriteSuccess(rec, http.StatusOK, data)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	// With SetEscapeHTML(false), <, >, & are not escaped to \u003c, \u003e, \u0026
+	if !strings.Contains(body, "<span>Lynk & Campus</span>") {
+		t.Errorf("expected unescaped HTML characters in body, got: %s", body)
 	}
 }
 
@@ -346,5 +397,24 @@ func TestWriteInternalServerError(t *testing.T) {
 	}
 	if resp.Error.RequestID != "req-500-test" {
 		t.Errorf("expected request_id req-500-test, got %s", resp.Error.RequestID)
+	}
+}
+
+func BenchmarkWriteSuccess(b *testing.B) {
+	rec := httptest.NewRecorder()
+	type Item struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	items := []Item{
+		{ID: "1", Name: "Alpha"},
+		{ID: "2", Name: "Beta"},
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		rec.Body.Reset()
+		WriteSuccess(rec, http.StatusOK, items)
 	}
 }
