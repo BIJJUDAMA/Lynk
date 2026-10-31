@@ -145,10 +145,11 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
-      interval: 10s
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333' || exit 1"]
+      start_period: 10s
+      interval: 5s
       timeout: 5s
-      retries: 3
+      retries: 5
     networks:
       - lynk-net
 
