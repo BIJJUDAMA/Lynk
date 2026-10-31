@@ -108,15 +108,15 @@ def mean_reciprocal_rank(
     rr_values: list[float] = []
     for item in rankings:
         if (
-            isinstance(item, (tuple, list))
+            isinstance(item, tuple | list)
             and len(item) == 2
-            and isinstance(item[1], (set, list, tuple, frozenset))
+            and isinstance(item[1], set | list | tuple | frozenset)
         ):
             actual, relevant = item
             rr_values.append(reciprocal_rank(actual, relevant))
-        elif isinstance(item, (int, float)):
+        elif isinstance(item, int | float):
             rr_values.append(float(item))
-        elif isinstance(item, (list, tuple)):
+        elif isinstance(item, list | tuple):
             found = False
             for idx, val in enumerate(item, start=1):
                 if val:

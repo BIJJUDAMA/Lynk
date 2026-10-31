@@ -36,6 +36,7 @@ async def match_collaborators(payload: MatchRequest):
 
 
 @router.post("/skills/gap", response_model=SkillGapResult)
+@router.post("/collaborators/skill-gap", response_model=SkillGapResult)
 async def evaluate_skill_gap(payload: GapRequest):
     return gap_analyzer.analyze_gap(
         student_skills=payload.student_skills,

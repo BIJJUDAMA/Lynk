@@ -44,7 +44,7 @@ def compute_run_input_hash(input_data: Any) -> str:
     Handles strings, structured dictionaries (with sorted keys), lists,
     Pydantic models, or arbitrary serializable objects.
     """
-    if isinstance(input_data, (dict, list)):
+    if isinstance(input_data, dict | list):
         serialized = json.dumps(input_data, sort_keys=True, default=str)
     elif isinstance(input_data, str):
         serialized = input_data

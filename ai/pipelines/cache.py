@@ -64,7 +64,7 @@ async def get_cached_embedding(
                     return None
             return None
 
-    if isinstance(raw, (list, tuple)):
+    if isinstance(raw, list | tuple):
         try:
             return [float(x) for x in raw]
         except (ValueError, TypeError):

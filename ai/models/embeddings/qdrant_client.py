@@ -16,8 +16,8 @@ try:
     QDRANT_AVAILABLE = True
 except ImportError:
     QDRANT_AVAILABLE = False
-    QdrantClient = None
-    qmodels = None
+    QdrantClient = None  # type: ignore[assignment,misc,no-redef]
+    qmodels = None  # type: ignore[assignment,misc,no-redef]
 
 
 def to_qdrant_id(point_id: str) -> str:

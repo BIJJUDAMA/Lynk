@@ -14,11 +14,10 @@ select = [
 ignore = [
     "E501",  # Line too long (handled by ruff format)
     "B905",  # zip() without explicit strict=
-    "UP038", # isinstance() with union types
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "pipelines", "models", "workers", "llm", "evaluation"]
+known-first-party = ["ai", "app", "pipelines", "models", "workers", "llm", "evaluation"]
 
 [tool.ruff.format]
 quote-style = "double"

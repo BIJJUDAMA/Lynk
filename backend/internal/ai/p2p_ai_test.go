@@ -2,8 +2,6 @@ package ai
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
@@ -24,13 +22,20 @@ func (m *mockCollaborationClient) GetSkillGap(ctx context.Context, projectID, st
 }
 
 func TestP2P_CollaborationEndpoints(t *testing.T) {
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/api/v1/projects/proj-123/collaborators/match", nil)
-
-	if req.URL.Path != "/api/v1/projects/proj-123/collaborators/match" {
-		t.Fatalf("unexpected path: %s", req.URL.Path)
+	m := &mockCollaborationClient{}
+	collabs, err := m.GetComplementaryCollaborators(context.Background(), "proj-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if rec.Code != http.StatusOK {
-		// Mock endpoint shape validation
+	if len(collabs) != 1 {
+		t.Fatalf("expected 1 collaborator, got %d", len(collabs))
+	}
+
+	gap, err := m.GetSkillGap(context.Background(), "proj-123", "s2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gap["readiness_percentage"] != 33.3 {
+		t.Fatalf("expected readiness 33.3, got %v", gap["readiness_percentage"])
 	}
 }

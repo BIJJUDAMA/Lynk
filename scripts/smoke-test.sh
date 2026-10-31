@@ -1253,13 +1253,13 @@ GAP_PAYLOAD=$(cat <<EOF
 EOF
 )
 
-GAP_RESP=$(curl -s -X POST "${AI_BASE_URL}/internal/v1/collaborators/skill-gap" \
+GAP_RESP=$(curl -s -X POST "${AI_BASE_URL}/internal/v1/skills/gap" \
     -H "Content-Type: application/json" \
     -H "X-Internal-Secret: ${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}" \
     -d "$GAP_PAYLOAD" 2>/dev/null || echo "")
 
-if [ -z "$GAP_RESP" ] || echo "$GAP_RESP" | grep -q '"detail": "Not Found"'; then
-    GAP_RESP=$(curl -s -X POST "${AI_BASE_URL}/internal/v1/skills/gap" \
+if [ -z "$GAP_RESP" ] || echo "$GAP_RESP" | grep -qi "Not Found"; then
+    GAP_RESP=$(curl -s -X POST "${AI_BASE_URL}/internal/v1/collaborators/skill-gap" \
         -H "Content-Type: application/json" \
         -H "X-Internal-Secret: ${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}" \
         -d "$GAP_PAYLOAD" 2>/dev/null || echo "")

@@ -185,7 +185,7 @@ class CollaborationLLMClient:
         teammates: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         """Suggest equitable responsibility allocation based on teammate skills."""
-        allocations = []
+        allocations: list[dict[str, Any]] = []
         for task in milestone_tasks:
             task_lower = task.lower()
             best_teammate = None

@@ -144,7 +144,8 @@ class KuzuGraphEngine:
             )
             skills = []
             while res.has_next():
-                skills.append(res.get_next()[0])
+                next_row: Any = res.get_next()
+                skills.append(next_row[0])
             return skills
         else:
             return [
@@ -183,7 +184,7 @@ class KuzuGraphEngine:
             )
             peers = []
             while res.has_next():
-                row = res.get_next()
+                row: Any = res.get_next()
                 peers.append(
                     {
                         "student_id": row[0],
