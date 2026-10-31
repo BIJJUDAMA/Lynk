@@ -121,9 +121,16 @@ jobs:
       - name: Apply application migrations
         working-directory: backend
         run: go test -v -run ^TestRunMigrations_AppliesInitOnEmptyDatabase$ ./internal/database
-      - name: Test with race detector
+      - name: Test with race detector & coverage profile
         working-directory: backend
-        run: go test -race -count=1 ./...
+        run: |
+          go test -race -count=1 -coverprofile=coverage.txt -covermode=atomic ./...
+          go tool cover -func=coverage.txt | tail -n 1
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.txt
 
   frontend:
     name: Frontend Test Suite
@@ -151,6 +158,30 @@ jobs:
   ai:
     name: AI Subsystem
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+        options: >-
+          --health-cmd "curl -s -f http://localhost:6333/readyz || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://localhost:6379
+      QDRANT_HOST: localhost
+      QDRANT_PORT: "6333"
+      KUZU_DB_PATH: /tmp/kuzu_campus_graph_ci
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python 3.11
@@ -163,7 +194,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r ai/requirements.txt
-      - name: Run Pytest Suite
-        run: python -m pytest ai/tests/ -v
+      - name: Run Pytest Suite with Coverage
+        run: python -m pytest ai/tests/ -v --cov=ai/app --cov-report=term-missing
       - name: Run Offline IR Evaluation Harness
         run: python -m ai.evaluation.harness
