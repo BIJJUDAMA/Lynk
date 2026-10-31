@@ -22,7 +22,7 @@ async def process_uploaded_resume_task(
     parser = ResumeParser()
     extracted = parser.extract_profile_from_text(resume_text)
 
-    # Synchronize skills with Kùzu graph if configured
+    # Synchronize skills with Kuzu graph if configured
     try:
         engine = ctx.get("kuzu_engine") or KuzuGraphEngine(db_path="/data/kuzu_campus_graph")
         engine.add_student(student_id, extracted.major)
@@ -64,7 +64,7 @@ async def update_kuzu_graph_edge_task(
     project_id: str,
     action: str = "applied",
 ) -> dict[str, Any]:
-    """Record student-project interaction edge in Kùzu."""
+    """Record student-project interaction edge in Kuzu."""
     return {
         "status": "edge_created",
         "student_id": student_id,

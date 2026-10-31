@@ -1,4 +1,4 @@
-"""Kùzu Embedded Columnar Graph Database Engine for Lynk Campus Relationships.
+"""Kuzu Embedded Columnar Graph Database Engine for Lynk Campus Relationships.
 
 100% pure 7-bit ASCII
 Persists graph nodes and edges on disk with zero Python dictionary RAM bloat.
@@ -21,7 +21,7 @@ except ImportError:
 
 
 class KuzuGraphEngine:
-    """Embedded C++ graph database engine backed by Kùzu columnar storage on disk."""
+    """Embedded C++ graph database engine backed by Kuzu columnar storage on disk."""
 
     def __init__(self, db_path: str = "/data/kuzu_campus_graph") -> None:
         self.db_path = db_path

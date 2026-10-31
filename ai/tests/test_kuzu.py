@@ -1,4 +1,4 @@
-"""Unit tests for Kùzu embedded columnar graph engine."""
+"""Unit tests for Kuzu embedded columnar graph engine."""
 
 import os
 import tempfile
