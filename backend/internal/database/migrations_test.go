@@ -280,3 +280,50 @@ func TestMigration000020_FilesExistAndSyntaxValid(t *testing.T) {
 		}
 	}
 }
+
+func TestMigration000024_FilesExistAndSyntaxValid(t *testing.T) {
+	upPath := filepath.Clean(filepath.Join("..", "..", "migrations", "000024_partition_maintenance.up.sql"))
+	downPath := filepath.Clean(filepath.Join("..", "..", "migrations", "000024_partition_maintenance.down.sql"))
+
+	// #nosec G304 -- test file path is fixed and internal
+	upBytes, err := os.ReadFile(upPath) //nolint:gosec
+	if err != nil {
+		t.Fatalf("failed to read 000024 up migration: %v", err)
+	}
+	upContent := string(upBytes)
+	if len(strings.TrimSpace(upContent)) == 0 {
+		t.Fatalf("000024 up migration file is empty")
+	}
+
+	// #nosec G304 -- test file path is fixed and internal
+	downBytes, err := os.ReadFile(downPath) //nolint:gosec
+	if err != nil {
+		t.Fatalf("failed to read 000024 down migration: %v", err)
+	}
+	downContent := string(downBytes)
+	if len(strings.TrimSpace(downContent)) == 0 {
+		t.Fatalf("000024 down migration file is empty")
+	}
+
+	expectedUpSubstrings := []string{
+		"CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at_brin",
+		"ON audit_logs USING brin (created_at);",
+		"CREATE INDEX IF NOT EXISTS idx_outbox_events_created_at_brin",
+		"ON outbox_events USING brin (created_at);",
+	}
+	for _, substr := range expectedUpSubstrings {
+		if !strings.Contains(upContent, substr) {
+			t.Errorf("000024 up migration missing expected substring: %s", substr)
+		}
+	}
+
+	expectedDownSubstrings := []string{
+		"DROP INDEX IF EXISTS idx_audit_logs_created_at_brin;",
+		"DROP INDEX IF EXISTS idx_outbox_events_created_at_brin;",
+	}
+	for _, substr := range expectedDownSubstrings {
+		if !strings.Contains(downContent, substr) {
+			t.Errorf("000024 down migration missing expected substring: %s", substr)
+		}
+	}
+}
