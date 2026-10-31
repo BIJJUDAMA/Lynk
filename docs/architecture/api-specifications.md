@@ -1069,3 +1069,83 @@ Exposes real-time Prometheus telemetry metrics for latency histograms, request c
   # TYPE http_request_duration_seconds histogram
   http_request_duration_seconds_bucket{le="0.05",method="GET",path="/api/v1/jobs"} 128
   ```
+
+
+---
+
+## 12. P2P Collaboration & AI Microservice Endpoints (`/internal/v1`)
+
+The internal FastAPI AI microservice (`:8000`) exposes high-performance peer collaboration endpoints protected by `X-Internal-Secret`.
+
+### 12.1 Teammate Complementarity Matching
+`POST /internal/v1/collaborators/match`
+Evaluates candidates using complement scoring, rewarding missing skill coverage while penalizing redundant skills.
+
+- **Auth Required:** `X-Internal-Secret: <token>`
+- **Request Body:**
+  ```json
+  {
+    "target_user_id": "usr-123",
+    "missing_skills": ["Rust", "Distributed Systems"],
+    "existing_team_skills": ["React", "TypeScript"],
+    "candidates": [
+      {
+        "user_id": "usr-456",
+        "name": "Alice Dev",
+        "skills": ["Rust", "Kubernetes"],
+        "rating": 4.9
+      }
+    ],
+    "limit": 5
+  }
+  ```
+- **Response `200 OK`:**
+  ```json
+  {
+    "matches": [
+      {
+        "candidate_id": "usr-456",
+        "name": "Alice Dev",
+        "complement_score": 0.95,
+        "matched_skills": ["Rust"],
+        "redundant_skills": []
+      }
+    ]
+  }
+  ```
+
+### 12.2 Skill Gap & Learning Pathway Analysis
+`POST /internal/v1/collaborators/skill-gap`
+Analyzes student skills against project requirements, outputting readiness percentage and curated learning pathways.
+
+- **Auth Required:** `X-Internal-Secret: <token>`
+- **Request Body:**
+  ```json
+  {
+    "user_id": "usr-123",
+    "user_skills": ["Python"],
+    "required_skills": ["Python", "Docker", "PostgreSQL"]
+  }
+  ```
+- **Response `200 OK`:**
+  ```json
+  {
+    "readiness_score": 0.33,
+    "ready_skills": ["Python"],
+    "missing_skills": ["Docker", "PostgreSQL"],
+    "learning_pathways": [
+      {
+        "skill": "Docker",
+        "guidance": "Containerization fundamentals and multi-stage builds."
+      }
+    ]
+  }
+  ```
+
+### 12.3 3-Phase Milestone Roadmaps
+`POST /internal/v1/collaboration-llm/milestones`
+Synthesizes structured 3-phase project milestones (Foundations, Core Build, Launch) mapped to deliverables.
+
+### 12.4 Deep Production Readiness Probe
+`GET /ready`
+Validates connectivity to PostgreSQL, Redis, Qdrant, Kùzu graph DB, and model memory residency. Returns HTTP 200 when ready, HTTP 503 during startup or component failure.

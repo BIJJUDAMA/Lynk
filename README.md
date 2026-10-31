@@ -51,39 +51,52 @@ Lynk is a campus collaboration and work platform connecting verified university 
 |   Auth: supertokens-web-js (Session, EmailPassword, EmailVerification) |
 +------------------------------------------------------------------------+
                     |                                |
-                    | 1. Authentication & Sessions   | 2. REST API Requests
+                    | 1. Authentication & Sessions   | 2. Edge Requests (:8080)
                     |    http://localhost:8080/api/v1|    http://localhost:8080
                     v                                v
 +------------------------------------------------------------------------+
 |                     DOCKER COMPOSE NETWORK (lynk-net)                  |
 |                                                                        |
-|   +-------------------------------+ +------------------------------+   |
-|   |  SuperTokens Core             | |  Go REST API (Authoritative) |   |
-|   |  (Container: lynk-supertokens)| |  (Container: lynk-api)       |   |
-|   |  Port: 3567                   | |  Port: 8080                  |   |
-|   +-------------------------------+ +------------------------------+   |
-|                   |                       |             |      |       |
-|                   |                       | X-Secret    | SQL  | S3    |
-|                   |                       v             v      v       |
-|                   |         +-------------------------+ |  +---------+ |
-|                   |         | FastAPI AI Backend      | |  | MinIO   | |
-|                   |         | (Container: ai-api)     | |  | (resumes| |
-|                   |         | Port: 8000 (Internal)   | |  | :9000)  | |
-|                   |         +-------------------------+ |  +---------+ |
-|                   |                       |             |              |
-|                   |                       v             |              |
-|                   |         +-------------------------+ |              |
-|                   |         | AI Background Worker    | |              |
-|                   |         | (Container: ai-worker)  | |              |
-|                   |         | SKIP LOCKED Queue Daemon| |              |
-|                   |         +-------------------------+ |              |
-|                   |                       |             |              |
-|                   | SQL                   v SQL         |              |
-|                   v                       v             v              |
 |   +----------------------------------------------------------------+   |
-|   |  PostgreSQL 16 + pgvector (Container: lynk-postgres:5432)      |   |
-|   |  Databases: lynk_db (Tables + vector(384)), supertokens_db     |   |
+|   |  Nginx Edge Gateway (Container: lynk-gateway, Port: 8080)       |   |
+|   |  Least-conn proxy, 5s micro-cache, keepalive connection pooling|   |
 |   +----------------------------------------------------------------+   |
+|                                    |                                   |
+|                                    v                                   |
+|   +----------------------------------------------------------------+   |
+|   |  Go REST API Server (Container: lynk-api)                      |   |
+|   |  Authoritative business rules, session claims, circuit breaker |   |
+|   +----+-------------------+-------------------+-------------------+   |
+|        |                   |                   |                   |   |
+|        | SQL (:6432)       | Cache (:6379)     | Internal HTTP     |   |
+|        v                   v                   v (:8000)           |   |
+|   +-------------+    +-------------+   +-------------------+       |   |
+|   | PgBouncer   |    | Redis 7     |   | Gunicorn ASGI     |       |   |
+|   | Transaction |    | Rate limit, |   | (lynk-ai-api:8000)|       |   |
+|   | Multiplex   |    | cache, bus  |   | 4 Uvicorn workers |       |   |
+|   +------+------+    +------+------+   +---------+---------+       |   |
+|          |                  |                    |                 |   |
+|          |                  +-------------+      |                 |   |
+|          |                                | ARQ  | Shared Disk     |   |
+|          v SQL                            v Task v (/data)         |   |
+|   +-------------------+               +--------------------+       |   |
+|   | PostgreSQL 16     |               | AI Worker Daemon   |       |   |
+|   | Relational tables |               | (lynk-ai-worker)   |       |   |
+|   | pgvector 384d     |               | Batch tasks & graph|       |   |
+|   +-------------------+               +----------+---------+       |   |
+|          ^                                       |                 |   |
+|          | IAM Auth                              | openCypher      |   |
+|   +------+------------+                          v                 |   |
+|   | SuperTokens Core  |               +--------------------+       |   |
+|   | Container (:3567) |               | Kùzu Columnar Graph|       |   |
+|   +-------------------+               | Persistent on disk |       |   |
+|                                       +--------------------+       |   |
+|                                                  |                 |   |
+|                                                  v HNSW            |   |
+|   +-------------------+               +--------------------+       |   |
+|   | MinIO S3 Engine   |<--------------| Qdrant Vector DB   |       |   |
+|   | Resumes bucket    | S3 Metadata   | Dense embeddings   |       |   |
+|   +-------------------+               +--------------------+       |   |
 +------------------------------------------------------------------------+
 ```
 
@@ -94,18 +107,19 @@ Lynk is a campus collaboration and work platform connecting verified university 
 | Layer | Component | Description |
 | :--- | :--- | :--- |
 | **Control Plane** | Root `Makefile` | Multi-language onboarding, Git hook installation, and unified test/lint gates |
-| **Gateway & Reverse Proxy** | Nginx (`lynk-gateway`:8080) | Port 8080 entrypoint, `least_conn` load balancing, keep-alive pooling (64), SSE bypass |
+| **Gateway & Reverse Proxy** | Nginx (`lynk-gateway`:8080) | Port 8080 entrypoint, `least_conn` load balancing, keep-alive pooling (128), SSE bypass |
 | **Frontend** | Next.js 16 (App Router) | React 18.3, TypeScript 5.6, Tailwind CSS 3.4, TanStack Query 5 (host-executed) |
-| **Authoritative Backend** | Go 1.25+ | Chi router v5.3, pgx/v5, SuperTokens SDK, MinIO Go SDK (Dockerised, scalable) |
+| **Authoritative Backend** | Go 1.25+ | Chi router v5.3, pgx/v5, SuperTokens SDK, MinIO Go SDK, thread-safe Circuit Breaker |
 | **Caching & Rate Limiting** | Redis 7 (`lynk-redis`:6379) | 120 req/min sliding-window limiter & cache-aside store for project feeds |
-| **Connection Pooling** | PgBouncer (`lynk-pgbouncer`:6432) | Transaction mode multiplexing 2,000 client connections onto 25-40 PostgreSQL backends |
-| **Intelligent Autoscaling** | Compose Controller (`lynk-autoscaler`) | Single-host dynamic scaling (2-6 API replicas) with connection-aware fast-path triggers |
-| **AI Backend** | Python 3.11 + FastAPI | PyTorch, sentence-transformers, scikit-learn, vLLM client (Dockerised) |
-| **Background Worker** | Python 3.11 (`ai-worker`) | Concurrency-safe queue worker (PostgreSQL SKIP LOCKED + exponential backoff) |
+| **Connection Pooling** | PgBouncer (`lynk-pgbouncer`:6432) | Transaction mode multiplexing 5,000 client connections onto 25-40 PostgreSQL backends |
+| **AI Microservice Runtime** | Python 3.11 (`lynk-ai-api`:8000) | Gunicorn multi-process ASGI server (4 Uvicorn workers) with worker recycling (`max-requests: 5000`) |
+| **AI Background Worker** | Python 3.11 (`lynk-ai-worker`) | Dedicated ARQ task worker executing asynchronous graph projections and batch embeddings |
+| **Graph Intelligence Engine** | Kùzu Graph DB | Embedded columnar C++ graph engine with openCypher querying, persisted on `/data/kuzu_campus_graph` |
+| **Vector Search** | Qdrant Engine (`lynk-qdrant`:6333) | Dedicated 384-dimensional dense vector store with HNSW indexing and memory fallback |
 | **Database** | PostgreSQL 16 + pgvector | Relational schema + 384-dim vector storage with HNSW cosine distance indexing |
 | **IAM & Auth** | SuperTokens Core 9.3 | Self-hosted session management, EmailPassword, EmailVerification recipes |
-| **Object Storage** | MinIO | S3-compatible object storage dedicated exclusively to student resumes |
-| **Orchestration** | Docker Compose | Multi-container environment (Gateway, API, AI API, AI Worker, DB, IAM, MinIO) |
+| **Object Storage** | MinIO | S3-compatible object storage dedicated exclusively to student resumes (`resumes` bucket) |
+| **Orchestration** | Docker Compose | Multi-container environment (Gateway, API, AI API, AI Worker, Qdrant, DB, IAM, MinIO, Redis) |
 
 ---
 
@@ -391,15 +405,20 @@ make format
 #### Backend Verification (Go)
 ```bash
 cd backend
-go test -v -race ./...
+go test -v -race -coverprofile=coverage.txt ./...
 go vet ./...
+# Run concurrency & race condition integration suite
+go test -v -run TestConcurrency ./internal/...
+# Run chaos fault-injection client tests
+go test -v -run TestChaos ./internal/ai/client/...
 ```
 
 #### Frontend Verification (Next.js & TypeScript)
 ```bash
 cd frontend
-npm test
-npm run typecheck
+npm test                # 101 unit & component tests
+npm run typecheck       # TypeScript strict type checking
+npx playwright test     # 11 End-to-End browser user journeys
 npm run lint:ox
 npm run format:check
 npm run build
@@ -407,17 +426,17 @@ npm run build
 
 #### Python AI Subsystem Verification
 ```bash
-python -m pytest ai/tests/ -v
-python -m ai.evaluation.harness
+python -m pytest ai/tests/ -v --cov=ai/app   # 166 pytest cases
+python -m ai.evaluation.harness             # Offline IR NDCG benchmarks
 ```
 
-#### End-to-End Multi-Container Smoke Tests
+#### End-to-End Multi-Container Smoke & Chaos Tests
 ```bash
-# Linux / macOS:
+# 16-Phase End-to-End Stack Smoke Test (includes P2P endpoints & MinIO binary invariant):
 bash scripts/smoke-test.sh
 
-# Windows (PowerShell):
-pwsh scripts/smoke-test.ps1
+# Chaos & Fault-Injection Resilience Suite:
+bash scripts/chaos-test.sh
 ```
 
 ---

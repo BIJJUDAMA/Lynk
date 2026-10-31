@@ -55,11 +55,19 @@ flowchart TB
         end
 
         subgraph AIService["FastAPI AI Backend (ai-api)"]
-            FastAPI["FastAPI 0.115<br/>Internal Port: 8000<br/>CPU ONNX INT8 + SHA-256 Cache"]
+            FastAPI["Gunicorn ASGI Master<br/>4 Uvicorn Workers (:8000)<br/>Worker Recycling (5000 reqs)<br/>Lifespan Pre-Warming<br/>Deep /ready Probe"]
         end
 
         subgraph WorkerService["Asynchronous AI Worker (ai-worker)"]
-            AIWorker["Worker Daemon<br/>SKIP LOCKED Polling & Resume Parser"]
+            AIWorker["ARQ Task Daemon<br/>Batch Embeddings & Graph Sync"]
+        end
+
+        subgraph GraphService["Columnar Graph Engine"]
+            Kuzu["Kùzu Graph Engine (C++)<br/>openCypher Query Language<br/>Persisted: /data/kuzu_campus_graph"]
+        end
+
+        subgraph VectorService["Vector Database (lynk-qdrant)"]
+            Qdrant["Qdrant Vector DB<br/>Port: 6333:6333<br/>384-dim HNSW Cosine Indexing"]
         end
 
         subgraph IAMService["SuperTokens Core (lynk-supertokens)"]
@@ -89,7 +97,12 @@ flowchart TB
     PGB -->|Transaction Connections| PG
     ST -->|Auth State Persistence| PG
     GoAPI -->|Direct Presigned S3 URLs| MinIO
-    Orchestrator -->|X-Internal-AI-Secret + Correlation ID| FastAPI
+    Orchestrator -->|CircuitBreaker + 2s SLA + Fallback| FastAPI
+    FastAPI -->|ARQ Queue Tasks| Redis
+    Redis -->|Consume Tasks| AIWorker
+    FastAPI -->|Local Graph Queries| Kuzu
+    AIWorker -->|Batch Graph Updates| Kuzu
+    FastAPI -->|Dense 384d Vectors| Qdrant
     FastAPI -->|pgvector Cosine Queries| PG
     AIWorker -->|SKIP LOCKED Queue Processing| PG
 ```
@@ -103,8 +116,9 @@ flowchart TB
 | **Go REST API** | `lynk-api` | N/A (Proxied) | `8080` | HTTP | Authoritative Go HTTP service (Chi router, TwoTierCache, SSE stream, `/metrics`) |
 | **Redis 7** | `lynk-redis` | `6379` | `6379` | TCP | L2 distributed cache-aside store & sliding-window rate limiter |
 | **PgBouncer** | `lynk-pgbouncer` | `6432` | `6432` | TCP | PostgreSQL transaction connection pooling multiplexing thousands of client connections onto 25-40 backends |
-| **FastAPI AI Backend** | `ai-api` | N/A (Internal) | `8000` | HTTP | Internal ML/embedding service (PyTorch/sentence-transformers CPU, `X-Internal-AI-Secret`) |
-| **AI Worker Daemon** | `ai-worker` | N/A | N/A | Background | Concurrent queue worker (`FOR UPDATE SKIP LOCKED`, starts under `--profile workers` or `--profile full`) |
+| **Gunicorn AI API** | `lynk-ai-api` | N/A (Internal) | `8000` | HTTP | Gunicorn 4-worker ASGI runtime with ONNX embeddings, Kùzu graph queries, and Qdrant client |
+| **AI Background Worker** | `lynk-ai-worker` | N/A | N/A | Background | ARQ task consumer executing async graph synchronization and batch embeddings |
+| **Qdrant Vector DB** | `lynk-qdrant` | `6333` | `6333` | HTTP | Dedicated 384-dimensional dense vector store with HNSW indexing and memory fallback |
 | **SuperTokens Core** | `lynk-supertokens` | `3567` | `3567` | HTTP | Self-hosted IAM engine & session verifier |
 | **PostgreSQL + pgvector** | `lynk-postgres` | `5432` | `5432` | TCP | Relational & 384-dim vector storage (1GB `shared_buffers`, 3GB `effective_cache_size`, `lynk_db`, `supertokens_db`) |
 | **MinIO S3 API** | `lynk-minio` | `9000` | `9000` | HTTP/S3 | AWS S3 v4 compatible object storage for student resumes |

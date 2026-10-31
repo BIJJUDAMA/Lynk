@@ -3,7 +3,7 @@
 > **Authoritative Testing Handbook & Verification Standard**
 > **Backend Testing:** Go 1.25 Standard Library + Race Detector (`-race -count=1`) across 29 packages
 > **AI Subsystem Testing:** Python 3.11+ Pytest Suite (115 tests) + Offline IR Benchmarks (`ai/evaluation/`)
-> **Frontend Testing:** Next.js 16 + React 18.3 + Node 22+ Native ESM Runner (100 tests)
+> **Frontend Testing:** Next.js 16 + React 18.3 + Node 22+ Native ESM Runner (101 unit tests) + Playwright (11 E2E journeys)
 > **Unified Control Plane:** Root `Makefile` (`make test`, `make lint`, `make format-check`)
 > **Continuous Integration:** GitHub Actions Multi-Job Pipeline (`.github/workflows/ci.yml`)
 
@@ -197,9 +197,10 @@ flowchart TB
             B2["Setup Go 1.25.x with Module Cache"]
             B3["golangci-lint v2.4.0 (Go 1.25 compatible)"]
             B4["Verify SQL migrations on throwaway DB (golang-migrate)"]
-            B5["Apply application migrations on lynk_db (000001 -> 000022)"]
-            B6["Test with Go Race Detector across 29 packages"]
-            B1 --> B2 --> B3 --> B4 --> B5 --> B6
+            B5["Apply application migrations on lynk_db (000001 -> 000024)"]
+            B6["Atomic Coverage Profiling & Race Detector across 34 packages"]
+            B7["Upload coverage artifact (backend-coverage)"]
+            B1 --> B2 --> B3 --> B4 --> B5 --> B6 --> B7
         end
 
         subgraph FrontendJob["Job 2: Frontend CI (Ubuntu Latest)"]
@@ -208,15 +209,17 @@ flowchart TB
             F3["npm test (native type-stripping runner)"]
             F4["npm run typecheck (tsc --noEmit)"]
             F5["npm run build (Next.js 16 production compilation)"]
-            F1 --> F2 --> F3 --> F4 --> F5
+            F6["Playwright E2E Tests (11 user journeys)"]
+            F1 --> F2 --> F3 --> F4 --> F5 --> F6
         end
 
         subgraph AIJob["Job 3: AI Subsystem CI (Ubuntu Latest)"]
+            A0["Redis 7 & Qdrant Vector DB Service Containers"]
             A1["Setup Python 3.11 with pip cache"]
             A2["Install dependencies (FastAPI, PyTorch, pgvector, pydantic)"]
-            A3["Execute 115-test Pytest Suite (pytest ai/tests/ -v)"]
+            A3["Execute 166-test Pytest Suite with Coverage (pytest ai/tests/)"]
             A4["Run Offline IR Evaluation Harness (python -m ai.evaluation.harness)"]
-            A1 --> A2 --> A3 --> A4
+            A0 --> A1 --> A2 --> A3 --> A4
         end
     end
 ```
@@ -239,7 +242,7 @@ flowchart TB
 Validates that multi-stage Go and Python container images build cleanly via Buildx on any changes to `backend/**`, `ai/**`, or `docker-compose.yml`.
 
 ### 5.4 End-to-End Smoke Test Workflow (.github/workflows/smoke-test.yml)
-Spins up the complete Docker Compose multi-container stack (`lynk-postgres`, `lynk-supertokens`, `lynk-minio`, `lynk-api`, `ai-api`, and `ai-worker`), waits for all service healthchecks to pass, and executes `./scripts/smoke-test.sh` exercising the complete 14-phase marketplace lifecycle against live network sockets.
+Spins up the complete Docker Compose multi-container stack (`lynk-postgres`, `lynk-supertokens`, `lynk-minio`, `lynk-api`, `ai-api`, and `ai-worker`), waits for all service healthchecks to pass, and executes `./scripts/smoke-test.sh` exercising the complete 16-phase marketplace lifecycle against live network sockets.
 
 ---
 
@@ -255,7 +258,7 @@ For full-stack verification of live running containers and endpoints, automated 
 ./scripts/smoke-test.sh
 ```
 
-### 6.1 Automated 14-Phase Smoke Test Coverage
+### 6.1 Automated 16-Phase Smoke Test Coverage
 1. **Phase 1: Deep Health Probes:** Evaluates Go backend health (`GET /health`), database connectivity, and MinIO S3 bucket availability.
 2. **Phase 2: SuperTokens IAM Ping:** Validates SuperTokens Core connectivity (`GET /hello`).
 3. **Phase 3: Member Registration & Verification:** Provisions student accounts with institutional `.edu` email validation and token activation.
@@ -270,16 +273,22 @@ For full-stack verification of live running containers and endpoints, automated 
 12. **Phase 12: Activity Feed Stream Verification:** Verifies unified audit events across contract and job actions.
 13. **Phase 13: Security Boundaries & Edge Cases:** Tests unverified email blocks (403), 1MB JSON clamping (413), and protocol injection filters.
 14. **Phase 14: First-Class AI Subsystem End-to-End Verification:**
-    - **14.1 AI Health Probe:** Verifies internal FastAPI health (`:8000/health`) and Go orchestrator connectivity.
-    - **14.2 Generative Job Drafts:** Invokes `POST /api/v1/jobs/generate` to produce structured job drafts from brief raw ideas.
-    - **14.3 Database Non-Mutation:** Proves generative drafts are strictly in-memory suggestions and do NOT insert uncommitted rows into `jobs`.
-    - **14.4 Applicant Advisory Ranking & RBAC:** Verifies `GET /api/v1/jobs/{id}/applicants/ranking` returns 200 with non-empty scoring for the job creator, and strictly rejects non-owners with 403 Forbidden.
-    - **14.5 Hybrid Semantic Search:** Validates `GET /api/v1/search/jobs?q=...` returning semantic similarity and keyword scores, with deterministic SQL fallback when AI is disabled.
-    - **14.6 Member Recommendations:** Tests `GET /api/v1/profile/recommendations` returning personalized skill acquisition suggestions.
-    - **14.7 Review Insights:** Tests `GET /api/v1/users/{id}/ai-insights` returning aggregated aspect scores for completed work.
-    - **14.8 Skill Demand Analytics:** Verifies `GET /api/v1/analytics/skills` returning campus velocity and growth snapshots.
-    - **14.9 Graceful Degradation:** Simulates AI service outage and proves Go backend returns HTTP 200 with deterministic SQL fallback data.
-
+    - **14.1 AI Deep Readiness Probe:** Probes internal /ready (:8000/ready), asserting PostgreSQL, Redis, Qdrant, Kùzu graph DB, and model residency in RAM.
+    - **14.2 Generative Project Drafts:** Invokes POST /api/v1/jobs/generate to produce structured project drafts from brief raw ideas.
+    - **14.3 Database Non-Mutation Invariant:** Proves generative drafts are strictly in-memory suggestions and do NOT insert uncommitted rows into database tables.
+    - **14.4 Applicant Advisory Ranking & RBAC:** Verifies GET /api/v1/jobs/{id}/applicants/ranking returns 200 for project owner, and strictly rejects non-owners with 403 Forbidden.
+    - **14.5 Hybrid Semantic Search:** Validates GET /api/v1/search/jobs?q=... returning semantic similarity and keyword scores, with deterministic SQL fallback.
+    - **14.6 MinIO Binary Storage Invariant:** Directly queries PostgreSQL to assert that user_resumes stores only the clean S3 key and MIME metadata with zero binary BLOBs in the database.
+15. **Phase 15: Project-First Collaborative Workspace Lifecycle:**
+    - **15.1 Workspace Creation:** Creates project workspace with tags, category, and deliverables (POST /api/v1/projects).
+    - **15.2 Slug Retrieval:** Verifies public workspace retrieval via human-readable URL slug (GET /api/v1/projects/:slug).
+    - **15.3 External Resources:** Attaches GitHub and Figma links (POST /api/v1/projects/:id/resources).
+    - **15.4 Teammate Applications:** Submits and reviews student peer applications.
+    - **15.5 Atomic Membership:** Accepts applicant atomically into project team roster.
+16. **Phase 16: P2P Collaboration & AI Microservice Endpoints:**
+    - **16.1 Teammate Complementarity Matching:** Evaluates POST /internal/v1/collaborators/match for skill overlap and complementary candidate ranking.
+    - **16.2 Skill Gap & Learning Pathways:** Evaluates POST /internal/v1/collaborators/skill-gap returning readiness scores and step-by-step learning guidance.
+    - **16.3 Milestone Roadmap Planning:** Evaluates POST /internal/v1/collaboration-llm/milestones generating structured 3-phase delivery plans.
 ---
 
 ## 7. Backend Reliability & Capacity Benchmark (k6 Load Testing Suite)
