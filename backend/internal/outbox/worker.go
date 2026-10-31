@@ -37,9 +37,16 @@ func (wp *WorkerPool) RegisterHandler(eventType string, fn HandlerFunc) {
 }
 
 // Start begins polling the outbox_events table until ctx is cancelled.
+// It also listens for real-time notifications on lynk_outbox_channel to process immediately.
 func (wp *WorkerPool) Start(ctx context.Context) {
 	ticker := time.NewTicker(wp.pollInterval)
 	defer ticker.Stop()
+
+	// Initial sweep
+	wp.processBatch(ctx)
+
+	notifyChan := make(chan struct{}, 1)
+	go wp.listenNotifications(ctx, notifyChan)
 
 	for {
 		select {
@@ -47,6 +54,36 @@ func (wp *WorkerPool) Start(ctx context.Context) {
 			return
 		case <-ticker.C:
 			wp.processBatch(ctx)
+		case <-notifyChan:
+			wp.processBatch(ctx)
+		}
+	}
+}
+
+func (wp *WorkerPool) listenNotifications(ctx context.Context, notifyChan chan<- struct{}) {
+	if wp.pool == nil {
+		return
+	}
+	conn, err := wp.pool.Acquire(ctx)
+	if err != nil {
+		return
+	}
+	defer conn.Release()
+
+	_, _ = conn.Exec(ctx, "LISTEN lynk_outbox_channel")
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			_, err := conn.Conn().WaitForNotification(ctx)
+			if err != nil {
+				return
+			}
+			select {
+			case notifyChan <- struct{}{}:
+			default:
+			}
 		}
 	}
 }
@@ -62,6 +99,9 @@ type rawRow struct {
 }
 
 func (wp *WorkerPool) claimBatch(ctx context.Context) ([]rawRow, error) {
+	if wp.pool == nil {
+		return nil, nil
+	}
 	conn, err := wp.pool.Acquire(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("acquire connection: %w", err)

@@ -373,3 +373,32 @@ func TestOutbox_RabbitMQDispatcher(t *testing.T) {
 		t.Errorf("expected published route 'audit.contract_signed', got %v", pub.publishedRoutes)
 	}
 }
+
+func TestWorkerPool_ReactiveDispatchLifecycle(t *testing.T) {
+	wp := NewWorkerPool(nil)
+	if wp == nil {
+		t.Fatal("expected non-nil worker pool")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	notifyChan := make(chan struct{}, 1)
+
+	// Verify listenNotifications exits cleanly when pool is nil
+	wp.listenNotifications(ctx, notifyChan)
+
+	// Verify Start exits when context is cancelled
+	done := make(chan struct{})
+	go func() {
+		wp.Start(ctx)
+		close(done)
+	}()
+
+	cancel()
+
+	select {
+	case <-done:
+		// Clean exit
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker pool did not shut down within timeout")
+	}
+}
