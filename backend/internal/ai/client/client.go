@@ -53,6 +53,7 @@ type Config struct {
 	MaxRetries     int
 	RetryWaitMin   time.Duration
 	RetryWaitMax   time.Duration
+	CircuitBreaker *CircuitBreaker
 }
 
 // Client represents the authoritative HTTP client communicating with the AI service.
@@ -63,6 +64,7 @@ type Client struct {
 	maxRetries     int
 	retryWaitMin   time.Duration
 	retryWaitMax   time.Duration
+	circuitBreaker *CircuitBreaker
 }
 
 // NewClient initializes a new AI HTTP client.
@@ -90,6 +92,8 @@ func NewClient(cfg Config) *Client {
 		retryWaitMax = 500 * time.Millisecond
 	}
 
+	cb := cfg.CircuitBreaker
+
 	return &Client{
 		baseURL:        baseURL,
 		internalSecret: cfg.InternalSecret,
@@ -97,7 +101,13 @@ func NewClient(cfg Config) *Client {
 		maxRetries:     maxRetries,
 		retryWaitMin:   retryWaitMin,
 		retryWaitMax:   retryWaitMax,
+		circuitBreaker: cb,
 	}
+}
+
+// CircuitBreaker returns the circuit breaker instance protecting outbound requests.
+func (c *Client) CircuitBreaker() *CircuitBreaker {
+	return c.circuitBreaker
 }
 
 func (c *Client) backoffDelay(attempt int) time.Duration {
@@ -111,8 +121,17 @@ func (c *Client) backoffDelay(attempt int) time.Duration {
 	return delay + jitter
 }
 
-// doRequest performs an HTTP request with correlation tracking, internal secret auth, and bounded retries.
+// doRequest performs an HTTP request guarded by the circuit breaker with correlation tracking, internal secret auth, and bounded retries.
 func (c *Client) doRequest(ctx context.Context, method, path string, reqBody any, respBody any) error {
+	if c.circuitBreaker != nil {
+		return c.circuitBreaker.Execute(func() error {
+			return c.executeRequest(ctx, method, path, reqBody, respBody)
+		})
+	}
+	return c.executeRequest(ctx, method, path, reqBody, respBody)
+}
+
+func (c *Client) executeRequest(ctx context.Context, method, path string, reqBody any, respBody any) error {
 	fullURL := c.baseURL + path
 
 	var bodyBytes []byte
