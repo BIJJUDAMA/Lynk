@@ -270,10 +270,14 @@ services:
       PORT: "8000"
       INTERNAL_AI_SECRET: "${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}"
       DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
-      VLLM_URL: "http://vllm:8000/v1"
       REDIS_URL: "redis://redis:6379"
+      QDRANT_HOST: "qdrant"
+      QDRANT_PORT: "6333"
+      KUZU_DB_PATH: "/data/kuzu_campus_graph"
     ports:
       - "8000:8000"
+    volumes:
+      - kuzu_data:/data
     networks:
       - lynk-net
     depends_on:
@@ -281,8 +285,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -294,20 +300,21 @@ services:
       dockerfile: Dockerfile
     container_name: lynk-ai-worker
     restart: unless-stopped
-    profiles:
-      - workers
-      - full
-    command: python -m ai.workers.worker
+    command: ["python", "-m", "arq", "ai.workers.arq_worker.WorkerSettings"]
     environment:
-      INTERNAL_AI_SECRET: "${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}"
       DATABASE_URL: "postgres://lynk_user:lynk_password@postgres:5432/lynk_db?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
+      QDRANT_HOST: "qdrant"
+      QDRANT_PORT: "6333"
+      KUZU_DB_PATH: "/data/kuzu_campus_graph"
+    volumes:
+      - kuzu_data:/data
     networks:
       - lynk-net
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
 
   frontend:
@@ -382,6 +389,7 @@ networks:
     driver: bridge
 
 volumes:
+  kuzu_data:
   qdrant_data:
   postgres_data:
   minio_data:
