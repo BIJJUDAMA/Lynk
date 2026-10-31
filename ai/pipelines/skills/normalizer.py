@@ -220,6 +220,12 @@ CANONICAL_TAXONOMY: list[CanonicalSkill] = [
         category="Data & AI",
         aliases=[],
     ),
+    CanonicalSkill(
+        skill_id="figma",
+        canonical_name="Figma",
+        category="Design",
+        aliases=["figma design"],
+    ),
 ]
 
 

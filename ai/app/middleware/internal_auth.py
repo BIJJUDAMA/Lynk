@@ -7,13 +7,15 @@ from starlette.responses import JSONResponse, Response
 
 
 class InternalAuthMiddleware(BaseHTTPMiddleware):
-    """Verifies X-Internal-AI-Secret on /internal/... endpoints."""
+    """Verifies X-Internal-Secret or X-Internal-AI-Secret on /internal/... endpoints."""
 
     async def dispatch(self, request: Request, call_next) -> Response:
         path = request.url.path
         if path.startswith("/internal"):
             settings = get_settings()
-            secret = request.headers.get("X-Internal-AI-Secret")
+            secret = request.headers.get("X-Internal-Secret") or request.headers.get(
+                "X-Internal-AI-Secret"
+            )
             if not secret or not secrets.compare_digest(
                 secret, settings.INTERNAL_AI_SECRET
             ):

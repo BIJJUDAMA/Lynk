@@ -1,14 +1,18 @@
+# 100% pure 7-bit ASCII
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import asyncpg
 from ai.app.api.analytics import router as analytics_router
+from ai.app.api.collaboration_llm import router as collaboration_llm_router
+from ai.app.api.collaborators import router as collaborators_router
 from ai.app.api.embeddings import router as embeddings_router
 from ai.app.api.jobs import router as jobs_router
 from ai.app.api.moderation import router as moderation_router
 from ai.app.api.ranking import router as ranking_router
 from ai.app.api.recommendations import router as recommendations_router
+from ai.app.api.resumes import router as resumes_router
 from ai.app.api.reviews import router as reviews_router
 from ai.app.api.search import router as search_router
 from ai.app.api.skills import router as skills_router
@@ -97,3 +101,6 @@ app.include_router(reviews_router)
 app.include_router(analytics_router)
 app.include_router(jobs_router)
 app.include_router(embeddings_router)
+app.include_router(collaborators_router)
+app.include_router(collaboration_llm_router)
+app.include_router(resumes_router)
