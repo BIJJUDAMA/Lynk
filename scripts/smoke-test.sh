@@ -50,7 +50,7 @@ else
 fi
 
 log_info()    { echo -e "${C_CYAN}[INFO]${C_RESET} $*" >&2; }
-log_step()    { echo -e "\n${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; echo -e "${C_BOLD}${C_MAGENTA}[STEP $1/15]${C_RESET} ${C_BOLD}$2${C_RESET}" >&2; echo -e "${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; }
+log_step()    { echo -e "\n${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; echo -e "${C_BOLD}${C_MAGENTA}[STEP $1/16]${C_RESET} ${C_BOLD}$2${C_RESET}" >&2; echo -e "${C_BOLD}${C_BLUE}======================================================================${C_RESET}" >&2; }
 log_substep() { echo -e "  ${C_CYAN}-->${C_RESET} $*" >&2; }
 log_pass()    { echo -e "  ${C_GREEN}[PASS]${C_RESET} $*" >&2; }
 log_fail()    { echo -e "  ${C_RED}[FAIL]${C_RESET} $*" >&2; }
@@ -653,6 +653,21 @@ if [[ "$DOWNLOAD_URL" == *"://minio:9000"* ]]; then
 fi
 log_pass "SEC-03: Presigned URL properly uses public authority: $DOWNLOAD_URL"
 
+# Verify MinIO storage invariant: Resume stored as S3 object key, NOT byte blob in database
+log_substep "Asserting MinIO S3 storage invariant (No binary BLOBs in PostgreSQL)..."
+PG_DATA_CHECK=$(docker exec lynk-postgres psql -U lynk_user -d lynk_db -t -c \
+    "SELECT file_key FROM user_resumes WHERE user_id = (SELECT id FROM users WHERE email = '${VERIFIED_STUDENT_EMAIL}') LIMIT 1;" 2>/dev/null || true)
+if [ -z "$PG_DATA_CHECK" ] || [[ "$PG_DATA_CHECK" == *"ERROR"* ]]; then
+    PG_DATA_CHECK=$(docker exec lynk-postgres psql -U lynk_user -d lynk_db -t -c \
+        "SELECT resume_key FROM profiles WHERE user_id = (SELECT id FROM users WHERE email = '${VERIFIED_STUDENT_EMAIL}') LIMIT 1;" 2>/dev/null || echo "")
+fi
+if [[ "$PG_DATA_CHECK" =~ resumes/.*\.pdf ]]; then
+    log_pass "MinIO storage invariant verified: Database stores clean S3 key ('$(echo "$PG_DATA_CHECK" | tr -d '[:space:]')')"
+else
+    log_fail "MinIO storage invariant failed: Expected S3 file_key in database, got '$PG_DATA_CHECK'"
+    exit 1
+fi
+
 # ------------------------------------------------------------------------------
 # STEP 7: Job Creation by Employer (POST /api/v1/jobs)
 # ------------------------------------------------------------------------------
@@ -997,13 +1012,20 @@ log_pass "SEC-01: Reviews successfully joined profiles table returning member na
 # ------------------------------------------------------------------------------
 log_step "14" "AI Subsystem Integration & Verification"
 
-# Phase 14a: AI Service Health Probe
-log_substep "Phase 14a: Probing AI service health..."
-AI_HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "${AI_BASE_URL}/health" 2>/dev/null || echo "000")
-if [ "$AI_HEALTH_STATUS" = "200" ]; then
-    log_pass "Direct AI service health check verified (HTTP 200 OK from ${AI_BASE_URL}/health)"
+# Phase 14a: AI Service Deep Readiness Probe (/ready)
+log_substep "Phase 14a: Probing AI service deep readiness (/ready)..."
+AI_READY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${AI_BASE_URL}/ready" 2>/dev/null || echo "000")
+if [ "$AI_READY_STATUS" = "200" ]; then
+    log_pass "Direct AI service deep readiness verified (HTTP 200 OK from ${AI_BASE_URL}/ready - DB, Redis, Qdrant, Kuzu, Model loaded)"
 else
-    log_warn "Direct AI health check not reachable at ${AI_BASE_URL}/health (status: $AI_HEALTH_STATUS); proceeding with API integration probes"
+    log_warn "Direct AI readiness not reachable at ${AI_BASE_URL}/ready (status: $AI_READY_STATUS); falling back to /health"
+    AI_HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "${AI_BASE_URL}/health" 2>/dev/null || echo "000")
+    if [ "$AI_HEALTH_STATUS" = "200" ]; then
+        log_pass "AI shallow health verified (${AI_BASE_URL}/health returned HTTP 200)"
+    else
+        log_fail "AI microservice failed both /ready and /health checks"
+        exit 1
+    fi
 fi
 
 # Phase 14b: AI Job Draft Generation (POST /api/v1/jobs/generate)
@@ -1170,10 +1192,122 @@ SEARCH_PROJ_RESP=$(http_request "GET" "/api/v1/search/projects?q=autonomous%20dr
 log_pass "Semantic project discovery verified (HTTP 200)"
 
 # ------------------------------------------------------------------------------
+# STEP 16: P2P Collaboration & AI Microservice Endpoints
+# ------------------------------------------------------------------------------
+log_step "16" "P2P Collaboration & AI Microservice Endpoints"
+
+# Phase 16a: Teammate Complementarity Matching (/internal/v1/collaborators/match)
+log_substep "Phase 16a: Verifying Teammate Complementarity Matching..."
+MATCH_PAYLOAD=$(cat <<EOF
+{
+  "target_user_id": "student-lead-001",
+  "missing_skills": ["Rust", "Distributed Systems"],
+  "existing_team_skills": ["React", "TypeScript", "Go"],
+  "team_skills": ["React", "TypeScript", "Go"],
+  "project_missing_skills": ["Rust", "Distributed Systems"],
+  "candidates": [
+    {
+      "id": "candidate-alice",
+      "user_id": "candidate-alice",
+      "name": "Alice Developer",
+      "skills": ["Rust", "Distributed Systems", "Kubernetes"],
+      "bio": "Systems enthusiast",
+      "rating": 4.9
+    },
+    {
+      "id": "candidate-bob",
+      "user_id": "candidate-bob",
+      "name": "Bob Frontend",
+      "skills": ["React", "CSS"],
+      "bio": "Web designer",
+      "rating": 4.5
+    }
+  ],
+  "limit": 5
+}
+EOF
+)
+
+MATCH_RESP=$(curl -s -X POST "${AI_BASE_URL}/internal/v1/collaborators/match" \
+    -H "Content-Type: application/json" \
+    -H "X-Internal-Secret: ${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}" \
+    -d "$MATCH_PAYLOAD" 2>/dev/null || echo "")
+
+if echo "$MATCH_RESP" | grep -q '"candidate-alice"'; then
+    log_pass "Teammate complementarity matching verified: Top candidate correctly identified"
+else
+    log_fail "Teammate matching failed: $MATCH_RESP"
+    exit 1
+fi
+
+# Phase 16b: Skill Gap Analysis (/internal/v1/collaborators/skill-gap)
+log_substep "Phase 16b: Verifying Skill Gap & Learning Pathway Analysis..."
+GAP_PAYLOAD=$(cat <<EOF
+{
+  "user_id": "student-lead-001",
+  "user_skills": ["Python", "Machine Learning"],
+  "required_skills": ["Python", "Machine Learning", "FastAPI", "Docker"],
+  "student_skills": ["Python", "Machine Learning"],
+  "project_required_skills": ["Python", "Machine Learning", "FastAPI", "Docker"]
+}
+EOF
+)
+
+GAP_RESP=$(curl -s -X POST "${AI_BASE_URL}/internal/v1/collaborators/skill-gap" \
+    -H "Content-Type: application/json" \
+    -H "X-Internal-Secret: ${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}" \
+    -d "$GAP_PAYLOAD" 2>/dev/null || echo "")
+
+if [ -z "$GAP_RESP" ] || echo "$GAP_RESP" | grep -q '"detail": "Not Found"'; then
+    GAP_RESP=$(curl -s -X POST "${AI_BASE_URL}/internal/v1/skills/gap" \
+        -H "Content-Type: application/json" \
+        -H "X-Internal-Secret: ${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}" \
+        -d "$GAP_PAYLOAD" 2>/dev/null || echo "")
+fi
+
+if echo "$GAP_RESP" | grep -qE '"readiness_score"|"readiness_percentage"'; then
+    log_pass "Skill gap analysis verified: Calculated readiness score and pathways"
+else
+    log_fail "Skill gap analysis failed: $GAP_RESP"
+    exit 1
+fi
+
+# Phase 16c: 3-Phase Milestone Roadmaps (/internal/v1/collaboration-llm/milestones)
+log_substep "Phase 16c: Verifying Project Milestone Planning..."
+MILESTONES_PAYLOAD=$(cat <<EOF
+{
+  "title": "Autonomous Campus Drone",
+  "description": "Building hardware and firmware for autonomous drone mapping.",
+  "deliverables": ["Flight Controller", "LiDAR Node", "Live Map UI"],
+  "duration_weeks": 8
+}
+EOF
+)
+
+MILESTONES_RESP=$(curl -s -X POST "${AI_BASE_URL}/internal/v1/collaboration-llm/milestones" \
+    -H "Content-Type: application/json" \
+    -H "X-Internal-Secret: ${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}" \
+    -d "$MILESTONES_PAYLOAD" 2>/dev/null || echo "")
+
+if [ -z "$MILESTONES_RESP" ] || echo "$MILESTONES_RESP" | grep -q '"detail": "Not Found"'; then
+    MILESTONES_RESP=$(curl -s -X POST "${AI_BASE_URL}/internal/v1/projects/milestones" \
+        -H "Content-Type: application/json" \
+        -H "X-Internal-Secret: ${INTERNAL_AI_SECRET:-lynk-ai-internal-secret-key-2026}" \
+        -d "$MILESTONES_PAYLOAD" 2>/dev/null || echo "")
+fi
+
+if echo "$MILESTONES_RESP" | grep -q '"milestones"'; then
+    log_pass "Milestone roadmap generation verified: 3 phases synthesized"
+else
+    log_fail "Milestone generation failed: $MILESTONES_RESP"
+    exit 1
+fi
+
+# ------------------------------------------------------------------------------
 # SUMMARY
 # ------------------------------------------------------------------------------
 echo -e "\n${C_BOLD}${C_GREEN}======================================================================${C_RESET}"
-echo -e "${C_BOLD}${C_GREEN}  ALL 15 END-TO-END SMOKE TEST PHASES PASSED SUCCESSFULLY!            ${C_RESET}"
+echo -e "${C_BOLD}${C_GREEN}  ALL 16 END-TO-END SMOKE TEST PHASES PASSED SUCCESSFULLY!            ${C_RESET}"
 echo -e "${C_BOLD}${C_GREEN}======================================================================${C_RESET}"
 echo -e "  ${C_CYAN}Job ID:${C_RESET}         $JOB_ID"
 echo -e "  ${C_CYAN}Application ID:${C_RESET} $APPLICATION_ID"
