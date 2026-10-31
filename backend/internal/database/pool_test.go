@@ -150,3 +150,52 @@ func TestIsStickyPrimary_EdgeCases(t *testing.T) {
 		t.Error("expected IsStickyPrimary(false) == false")
 	}
 }
+
+func TestDualPool_FallbackToPrimary(t *testing.T) {
+	dp := NewDualPool(nil, nil)
+	if dp.GetReadPool() != nil {
+		t.Errorf("expected nil read pool fallback")
+	}
+	if dp.GetWritePool() != nil {
+		t.Errorf("expected nil write pool fallback")
+	}
+
+	primary := &pgxpool.Pool{}
+	dpFallback := NewDualPool(primary, nil)
+	if got := dpFallback.GetWritePool(); got != primary {
+		t.Errorf("GetWritePool() = %p; want primary %p", got, primary)
+	}
+	if got := dpFallback.GetReadPool(); got != primary {
+		t.Errorf("GetReadPool() = %p; want fallback to primary %p", got, primary)
+	}
+}
+
+func TestDualPool_Segregation(t *testing.T) {
+	primary := &pgxpool.Pool{}
+	replica := &pgxpool.Pool{}
+
+	dp := NewDualPool(primary, replica)
+	if dp == nil {
+		t.Fatal("expected non-nil DualPool instance")
+	}
+
+	if got := dp.GetWritePool(); got != primary {
+		t.Errorf("GetWritePool() = %p; want primary %p", got, primary)
+	}
+	if got := dp.GetReadPool(); got != replica {
+		t.Errorf("GetReadPool() = %p; want replica %p", got, replica)
+	}
+	if dp.GetWritePool() == dp.GetReadPool() {
+		t.Error("expected GetWritePool() and GetReadPool() to return distinct pool pointers")
+	}
+}
+
+func TestDualPool_NilReceiver(t *testing.T) {
+	var dp *DualPool
+	if got := dp.GetWritePool(); got != nil {
+		t.Errorf("nil receiver GetWritePool() = %p; want nil", got)
+	}
+	if got := dp.GetReadPool(); got != nil {
+		t.Errorf("nil receiver GetReadPool() = %p; want nil", got)
+	}
+}

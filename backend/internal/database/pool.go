@@ -79,3 +79,33 @@ func IsStickyPrimary(ctx context.Context) bool {
 	val, _ := ctx.Value(stickyPrimaryKey{}).(bool)
 	return val
 }
+
+// DualPool provides dual connection pool routing for read and write separation.
+type DualPool = poolRouter
+
+// NewDualPool constructs a DualPool for read and write separation.
+// If replica is nil, GetReadPool falls back to returning primary.
+func NewDualPool(primary, replica *pgxpool.Pool) *DualPool {
+	return &poolRouter{
+		primary: primary,
+		replica: replica,
+	}
+}
+
+// GetWritePool returns the connection pool dedicated to write and mutation operations.
+func (dp *DualPool) GetWritePool() *pgxpool.Pool {
+	if dp == nil {
+		return nil
+	}
+	return dp.Primary()
+}
+
+// GetReadPool returns the connection pool for read operations.
+// If replica is nil, it falls back to returning the primary pool.
+func (dp *DualPool) GetReadPool() *pgxpool.Pool {
+	if dp == nil {
+		return nil
+	}
+	return dp.Replica()
+}
+
