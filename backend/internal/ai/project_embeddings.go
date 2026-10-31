@@ -160,7 +160,7 @@ func (r *pgxProjectEmbeddingRepository) SearchSimilarProjects(ctx context.Contex
 
 	vecStr := FormatVector(queryVector)
 	query := `
-		SELECT 
+		SELECT
 			pe.project_id,
 			COALESCE(p.slug, ''),
 			COALESCE(p.title, ''),

@@ -15,6 +15,8 @@ import asyncio
 import logging
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from ai.app.middleware.run_tracker import track_ai_run
 from ai.models.embeddings.provider import (
     BaseEmbeddingProvider,
@@ -22,7 +24,6 @@ from ai.models.embeddings.provider import (
     get_embedding_provider,
 )
 from ai.pipelines.skills.normalizer import SkillNormalizer, get_skill_normalizer
-from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger("lynk-ai.ranking")
 

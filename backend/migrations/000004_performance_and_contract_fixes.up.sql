@@ -1,8 +1,8 @@
 -- 1. Replace unconditional UNIQUE(job_id) with partial unique index on non-cancelled contracts
 ALTER TABLE contracts DROP CONSTRAINT IF EXISTS contracts_job_id_key;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_contracts_active_job 
-ON contracts(job_id) 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_contracts_active_job
+ON contracts(job_id)
 WHERE status NOT IN ('cancelled');
 
 -- 2. Add composite index for default marketplace feed

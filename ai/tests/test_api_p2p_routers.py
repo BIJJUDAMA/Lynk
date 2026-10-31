@@ -1,5 +1,6 @@
 # 100% pure 7-bit ASCII
 from fastapi.testclient import TestClient
+
 from ai.app.main import app
 
 client = TestClient(app)
@@ -16,7 +17,9 @@ def test_collaborator_match_endpoint():
             {"id": "s2", "name": "Alice", "department": "CS", "skills": ["React"]},
         ],
     }
-    resp = client.post("/internal/v1/collaborators/match", json=payload, headers=AUTH_HEADERS)
+    resp = client.post(
+        "/internal/v1/collaborators/match", json=payload, headers=AUTH_HEADERS
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["matches"]) > 0
@@ -31,7 +34,9 @@ def test_collaborator_match_with_alt_header():
             {"id": "s1", "name": "Bob", "department": "CS", "skills": ["Go"]},
         ],
     }
-    resp = client.post("/internal/v1/collaborators/match", json=payload, headers=ALT_AUTH_HEADERS)
+    resp = client.post(
+        "/internal/v1/collaborators/match", json=payload, headers=ALT_AUTH_HEADERS
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["matches"]) == 1
@@ -54,7 +59,9 @@ def test_project_assist_endpoint():
         "idea": "An open source autonomous rover for campus delivery",
         "category": "Hardware",
     }
-    resp = client.post("/internal/v1/projects/assist", json=payload, headers=AUTH_HEADERS)
+    resp = client.post(
+        "/internal/v1/projects/assist", json=payload, headers=AUTH_HEADERS
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["needed_roles"]) >= 2
@@ -65,7 +72,9 @@ def test_project_milestones_endpoint():
         "title": "Autonomous Rover",
         "deliverables": ["ROS integration", "Obstacle avoidance", "Campus demo"],
     }
-    resp = client.post("/internal/v1/projects/milestones", json=payload, headers=AUTH_HEADERS)
+    resp = client.post(
+        "/internal/v1/projects/milestones", json=payload, headers=AUTH_HEADERS
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["project_title"] == "Autonomous Rover"
@@ -80,7 +89,9 @@ def test_project_roles_endpoint():
             {"id": "s2", "name": "Alice", "skills": ["Go", "PostgreSQL"]},
         ],
     }
-    resp = client.post("/internal/v1/projects/roles", json=payload, headers=AUTH_HEADERS)
+    resp = client.post(
+        "/internal/v1/projects/roles", json=payload, headers=AUTH_HEADERS
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["allocations"]) == 2
@@ -88,7 +99,9 @@ def test_project_roles_endpoint():
 
 def test_search_natural_endpoint():
     payload = {"query": "looking for a peer who knows figma to design our app"}
-    resp = client.post("/internal/v1/search/natural", json=payload, headers=AUTH_HEADERS)
+    resp = client.post(
+        "/internal/v1/search/natural", json=payload, headers=AUTH_HEADERS
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert "Figma" in data["extracted_skills"]

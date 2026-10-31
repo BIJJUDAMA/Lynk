@@ -1,13 +1,14 @@
 """Internal API routes for Skill Demand Analytics and Forecasting."""
 
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
+
 from ai.pipelines.forecasting.demand import (
     SkillDemandForecast,
     SkillDemandForecaster,
     SkillDemandSnapshot,
     SkillHistoricalData,
 )
-from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/internal/v1/analytics", tags=["analytics"])
 

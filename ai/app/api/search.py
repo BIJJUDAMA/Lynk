@@ -1,11 +1,12 @@
 """Internal API routes for AI semantic and hybrid search."""
 
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
+
 from ai.pipelines.search.hybrid import (
     SearchResultItem,
     get_search_pipeline,
 )
-from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/internal/v1/search", tags=["search"])
 

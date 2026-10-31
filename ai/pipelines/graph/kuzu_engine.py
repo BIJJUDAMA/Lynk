@@ -65,31 +65,42 @@ class KuzuGraphEngine:
         """Upsert a student node."""
         if self.conn:
             # Check existence or insert
-            res = self.conn.execute("MATCH (s:Student {id: $id}) RETURN s.id", {"id": student_id})
+            res = self.conn.execute(
+                "MATCH (s:Student {id: $id}) RETURN s.id", {"id": student_id}
+            )
             if not res.has_next():
                 self.conn.execute(
                     "CREATE (s:Student {id: $id, department: $dept})",
                     {"id": student_id, "dept": department},
                 )
         else:
-            self._in_memory_fallback["students"][student_id] = {"department": department}
+            self._in_memory_fallback["students"][student_id] = {
+                "department": department
+            }
 
     def add_skill(self, skill_id: str, name: str, category: str = "General") -> None:
         """Upsert a canonical skill node."""
         if self.conn:
-            res = self.conn.execute("MATCH (s:Skill {id: $id}) RETURN s.id", {"id": skill_id})
+            res = self.conn.execute(
+                "MATCH (s:Skill {id: $id}) RETURN s.id", {"id": skill_id}
+            )
             if not res.has_next():
                 self.conn.execute(
                     "CREATE (s:Skill {id: $id, name: $name, category: $cat})",
                     {"id": skill_id, "name": name, "cat": category},
                 )
         else:
-            self._in_memory_fallback["skills"][skill_id] = {"name": name, "category": category}
+            self._in_memory_fallback["skills"][skill_id] = {
+                "name": name,
+                "category": category,
+            }
 
     def add_project(self, project_id: str, title: str) -> None:
         """Upsert a project node."""
         if self.conn:
-            res = self.conn.execute("MATCH (p:Project {id: $id}) RETURN p.id", {"id": project_id})
+            res = self.conn.execute(
+                "MATCH (p:Project {id: $id}) RETURN p.id", {"id": project_id}
+            )
             if not res.has_next():
                 self.conn.execute(
                     "CREATE (p:Project {id: $id, title: $title})",
@@ -136,7 +147,11 @@ class KuzuGraphEngine:
                 skills.append(res.get_next()[0])
             return skills
         else:
-            return [sk for (sid, sk) in self._in_memory_fallback["student_skills"] if sid == student_id]
+            return [
+                sk
+                for (sid, sk) in self._in_memory_fallback["student_skills"]
+                if sid == student_id
+            ]
 
     def find_complementary_peers(
         self,
@@ -179,15 +194,27 @@ class KuzuGraphEngine:
             return peers
         else:
             # Fallback evaluation
-            req_skills = {sk for (pid, sk) in self._in_memory_fallback["project_skills"] if pid == project_id}
-            team_skills = {sk for (sid, sk) in self._in_memory_fallback["student_skills"] if sid in current_member_ids}
+            req_skills = {
+                sk
+                for (pid, sk) in self._in_memory_fallback["project_skills"]
+                if pid == project_id
+            }
+            team_skills = {
+                sk
+                for (sid, sk) in self._in_memory_fallback["student_skills"]
+                if sid in current_member_ids
+            }
             missing_skills = req_skills - team_skills
 
             scored = []
             for sid, info in self._in_memory_fallback["students"].items():
                 if sid in current_member_ids:
                     continue
-                s_skills = {sk for (s, sk) in self._in_memory_fallback["student_skills"] if s == sid}
+                s_skills = {
+                    sk
+                    for (s, sk) in self._in_memory_fallback["student_skills"]
+                    if s == sid
+                }
                 overlap = len(s_skills & missing_skills)
                 if overlap > 0:
                     scored.append(

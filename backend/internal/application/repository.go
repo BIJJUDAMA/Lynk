@@ -86,7 +86,7 @@ func (r *Repository) GetApplicationByJobAndApplicant(ctx context.Context, jobID 
 // GetApplicationByID retrieves an application with full joined job, applicant, and contract details.
 func (r *Repository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*ApplicationWithDetails, error) {
 	query := `
-		SELECT 
+		SELECT
 			a.id, a.job_id, a.applicant_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
 			j.id, j.created_by, j.title, j.description, j.department, j.status,
 			u.id, COALESCE(u.email, ''),
@@ -159,7 +159,7 @@ func (r *Repository) GetApplicationByID(ctx context.Context, id uuid.UUID) (*App
 // ListApplicationsByJob lists applications submitted for a specific job, ordered newest first.
 func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID, limit, offset int) ([]*ApplicationWithDetails, error) {
 	query := `
-		SELECT 
+		SELECT
 			a.id, a.job_id, a.applicant_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
 			j.id, j.created_by, j.title, j.description, j.department, j.status,
 			u.id, COALESCE(u.email, ''),
@@ -246,7 +246,7 @@ func (r *Repository) ListApplicationsByJob(ctx context.Context, jobID uuid.UUID,
 // ListApplicationsByApplicant lists applications submitted by a campus member, ordered newest first.
 func (r *Repository) ListApplicationsByApplicant(ctx context.Context, applicantID string, limit, offset int) ([]*ApplicationWithDetails, error) {
 	query := `
-		SELECT 
+		SELECT
 			a.id, a.job_id, a.applicant_id, a.cover_letter, a.resume_key, a.status, a.created_at, a.updated_at,
 			j.id, j.created_by, j.title, j.description, j.department, j.status,
 			u.id, COALESCE(u.email, ''),

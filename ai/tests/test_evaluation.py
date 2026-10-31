@@ -4,6 +4,7 @@ import math
 from typing import Any
 
 import pytest
+
 from ai.evaluation.harness import EvaluationHarness
 from ai.evaluation.metrics import (
     dcg_at_k,

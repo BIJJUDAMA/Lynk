@@ -5,5 +5,5 @@ CREATE INDEX IF NOT EXISTS idx_reviews_reviewer_id ON reviews(reviewer_id);
 
 -- Enforce domain invariant: do not cascade delete student applications if job is deleted
 ALTER TABLE applications DROP CONSTRAINT IF EXISTS applications_job_id_fkey;
-ALTER TABLE applications ADD CONSTRAINT applications_job_id_fkey 
+ALTER TABLE applications ADD CONSTRAINT applications_job_id_fkey
     FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE RESTRICT;

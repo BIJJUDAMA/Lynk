@@ -11,10 +11,11 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from ai.app.middleware.run_tracker import AIRunRecord, track_ai_run
 from ai.models.embeddings.provider import BaseEmbeddingProvider, get_embedding_provider
 from ai.pipelines.skills.normalizer import SkillNormalizer, get_skill_normalizer
-from pydantic import BaseModel, Field
 
 logger = logging.getLogger("lynk-ai.pipelines.search")
 

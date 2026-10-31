@@ -50,7 +50,11 @@ class TeammateMatcher:
                     "name": cand.get("name", "Campus Peer"),
                     "department": cand.get("department", "Undeclared"),
                     "complement_score": complement_score,
-                    "covered_skills": [s for s in cand.get("skills", []) if s.lower() in covered_missing],
+                    "covered_skills": [
+                        s
+                        for s in cand.get("skills", [])
+                        if s.lower() in covered_missing
+                    ],
                     "all_skills": cand.get("skills", []),
                 }
             )

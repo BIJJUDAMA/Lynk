@@ -7,35 +7,62 @@ using layout-aware parsing and rapid token-ratio fuzzy matching against CANONICA
 
 import logging
 import re
-from typing import Any
+
 from pydantic import BaseModel, Field
+
+from ai.pipelines.skills.normalizer import CANONICAL_TAXONOMY
 
 logger = logging.getLogger("lynk-ai.document")
 
 try:
     from rapidfuzz import fuzz, process
+
     RAPIDFUZZ_AVAILABLE = True
 except ImportError:
     RAPIDFUZZ_AVAILABLE = False
 
-from ai.pipelines.skills.normalizer import CANONICAL_TAXONOMY
-
 
 class ParsedStudentProfile(BaseModel):
     """Structured extraction result from student resume."""
-    major: str = Field(default="Undeclared", description="Inferred academic major or department")
-    matched_skills: list[str] = Field(default_factory=list, description="Canonical verified skills")
-    suggested_bio: str = Field(default="", description="Concise bio summary extracted from resume")
-    experience_highlights: list[str] = Field(default_factory=list, description="Key project or role bullets")
+
+    major: str = Field(
+        default="Undeclared", description="Inferred academic major or department"
+    )
+    matched_skills: list[str] = Field(
+        default_factory=list, description="Canonical verified skills"
+    )
+    suggested_bio: str = Field(
+        default="", description="Concise bio summary extracted from resume"
+    )
+    experience_highlights: list[str] = Field(
+        default_factory=list, description="Key project or role bullets"
+    )
 
 
 MAJOR_KEYWORDS = {
-    "Computer Science": [r"\bcomputer science\b", r"\bcs\b", r"\bsoftware engineering\b", r"\bcomputing\b"],
+    "Computer Science": [
+        r"\bcomputer science\b",
+        r"\bcs\b",
+        r"\bsoftware engineering\b",
+        r"\bcomputing\b",
+    ],
     "Data Science": [r"\bdata science\b", r"\bstatistics\b", r"\bbioinformatics\b"],
     "Electrical Engineering": [r"\belectrical engineering\b", r"\bece\b", r"\beecs\b"],
     "Mechanical Engineering": [r"\bmechanical engineering\b", r"\brobotics\b"],
-    "Design": [r"\bdesign\b", r"\bui/ux\b", r"\bgraphic design\b", r"\binteraction design\b", r"\bdigital media\b"],
-    "Business": [r"\bbusiness\b", r"\bfinance\b", r"\beconomics\b", r"\bmarketing\b", r"\baccounting\b"],
+    "Design": [
+        r"\bdesign\b",
+        r"\bui/ux\b",
+        r"\bgraphic design\b",
+        r"\binteraction design\b",
+        r"\bdigital media\b",
+    ],
+    "Business": [
+        r"\bbusiness\b",
+        r"\bfinance\b",
+        r"\beconomics\b",
+        r"\bmarketing\b",
+        r"\baccounting\b",
+    ],
 }
 
 
@@ -91,11 +118,15 @@ class ResumeParser:
                 )
                 if match:
                     matched_phrase, score, _ = match
-                    canon = self.canonical_map.get(matched_phrase.lower(), matched_phrase)
+                    canon = self.canonical_map.get(
+                        matched_phrase.lower(), matched_phrase
+                    )
                     matched_canonical.add(canon)
 
         # 3. Construct Suggested Bio Summary
-        sentences = [s.strip() for s in re.split(r"[\r\n.]+", clean_text) if len(s.strip()) > 15]
+        sentences = [
+            s.strip() for s in re.split(r"[\r\n.]+", clean_text) if len(s.strip()) > 15
+        ]
         bio_snippets = sentences[:3]
         suggested_bio = ". ".join(bio_snippets)
         if suggested_bio and not suggested_bio.endswith("."):

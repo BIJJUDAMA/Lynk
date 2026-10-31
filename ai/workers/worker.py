@@ -11,10 +11,11 @@ from datetime import datetime
 from typing import Any
 
 import asyncpg
+from pydantic import BaseModel, Field
+
 from ai.app.config import get_settings
 from ai.workers.handlers.embedding_handler import EmbeddingJobHandler
 from ai.workers.handlers.resume_handler import ResumeJobHandler
-from pydantic import BaseModel, Field
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"

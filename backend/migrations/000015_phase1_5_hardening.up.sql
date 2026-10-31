@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS embedding_cache (
     PRIMARY KEY (content_hash, model_name)
 );
 
-CREATE INDEX IF NOT EXISTS idx_embedding_cache_created 
+CREATE INDEX IF NOT EXISTS idx_embedding_cache_created
 ON embedding_cache (model_name, created_at DESC);
 
 -- 2. Transactional Outbox Table for Asynchronous Event Dispatching
@@ -27,6 +27,6 @@ CREATE TABLE IF NOT EXISTS outbox_events (
     processed_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_outbox_pending_events 
-ON outbox_events (next_retry_at, created_at) 
+CREATE INDEX IF NOT EXISTS idx_outbox_pending_events
+ON outbox_events (next_retry_at, created_at)
 WHERE status IN ('pending', 'failed');

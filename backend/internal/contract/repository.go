@@ -69,7 +69,7 @@ func (r *Repository) CreateContract(ctx context.Context, contract *Contract) err
 // GetContractByID retrieves contract details by UUID, joined with job, client, and freelancer metadata.
 func (r *Repository) GetContractByID(ctx context.Context, id uuid.UUID) (*ContractWithDetails, error) {
 	query := `
-		SELECT 
+		SELECT
 			c.id, c.job_id, c.application_id, c.client_id, c.freelancer_id,
 			c.status, c.started_at, c.completed_at, c.created_at, c.updated_at,
 			j.id, j.created_by, j.title, j.description, j.department, j.status,
@@ -120,7 +120,7 @@ func (r *Repository) GetContractByID(ctx context.Context, id uuid.UUID) (*Contra
 // ListContractsByUserID retrieves contracts where the given user is either client or freelancer.
 func (r *Repository) ListContractsByUserID(ctx context.Context, userID string, limit, offset int) ([]*ContractWithDetails, error) {
 	query := `
-		SELECT 
+		SELECT
 			c.id, c.job_id, c.application_id, c.client_id, c.freelancer_id,
 			c.status, c.started_at, c.completed_at, c.created_at, c.updated_at,
 			j.id, j.created_by, j.title, j.description, j.department, j.status,
@@ -215,10 +215,10 @@ func getLockJobOnContractCancellationQuery() string {
 
 const queryRestoreApplicationsOnContractCancellation = `
 	UPDATE applications
-	SET status = CASE 
-			WHEN status = 'accepted' THEN 'rejected' 
-			WHEN status = 'rejected' THEN 'pending' 
-			ELSE status 
+	SET status = CASE
+			WHEN status = 'accepted' THEN 'rejected'
+			WHEN status = 'rejected' THEN 'pending'
+			ELSE status
 		END,
 		updated_at = NOW()
 	WHERE job_id = (SELECT job_id FROM contracts WHERE id = $1);
@@ -247,13 +247,13 @@ func (r *Repository) UpdateContractStatus(ctx context.Context, id uuid.UUID, tar
 	query := `
 		UPDATE contracts
 		SET status = $1::varchar,
-			started_at = CASE 
-				WHEN $1::varchar = 'active' AND started_at IS NULL THEN NOW() 
-				ELSE started_at 
+			started_at = CASE
+				WHEN $1::varchar = 'active' AND started_at IS NULL THEN NOW()
+				ELSE started_at
 			END,
-			completed_at = CASE 
-				WHEN $1::varchar = 'completed' AND completed_at IS NULL THEN NOW() 
-				ELSE completed_at 
+			completed_at = CASE
+				WHEN $1::varchar = 'completed' AND completed_at IS NULL THEN NOW()
+				ELSE completed_at
 			END,
 			updated_at = NOW()
 		WHERE id = $2 AND status NOT IN ('completed', 'cancelled');

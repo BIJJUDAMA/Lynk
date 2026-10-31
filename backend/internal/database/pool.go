@@ -108,4 +108,3 @@ func (dp *DualPool) GetReadPool() *pgxpool.Pool {
 	}
 	return dp.Replica()
 }
-

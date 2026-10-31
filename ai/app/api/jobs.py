@@ -1,9 +1,10 @@
 """Internal API routes for Generative AI Job Draft Generation."""
 
-from ai.llm.client import get_vllm_client
-from ai.llm.schemas.job_generation import GeneratedJobDraft
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
+
+from ai.llm.client import get_vllm_client
+from ai.llm.schemas.job_generation import GeneratedJobDraft
 
 router = APIRouter(prefix="/internal/v1/jobs", tags=["jobs"])
 

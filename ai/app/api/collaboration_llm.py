@@ -1,5 +1,6 @@
 # 100% pure 7-bit ASCII
 from typing import Any
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 

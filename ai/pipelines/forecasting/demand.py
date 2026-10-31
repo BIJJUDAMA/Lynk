@@ -2,8 +2,9 @@
 
 import logging
 
-from ai.app.middleware.run_tracker import track_ai_run
 from pydantic import BaseModel, Field
+
+from ai.app.middleware.run_tracker import track_ai_run
 
 logger = logging.getLogger("ai.pipelines.forecasting")
 

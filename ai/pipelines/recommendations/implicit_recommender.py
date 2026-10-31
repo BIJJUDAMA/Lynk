@@ -11,9 +11,10 @@ from typing import Any
 logger = logging.getLogger("lynk-ai.recommendations")
 
 try:
-    import numpy as np
-    from scipy.sparse import csr_matrix
+    import numpy as np  # noqa: F401
     from implicit.als import AlternatingLeastSquares
+    from scipy.sparse import csr_matrix
+
     IMPLICIT_AVAILABLE = True
 except ImportError:
     IMPLICIT_AVAILABLE = False
@@ -40,7 +41,9 @@ class ImplicitRecommender:
         else:
             self.model = None
 
-    def record_interaction(self, student_id: str, project_id: str, weight: float = 1.0) -> None:
+    def record_interaction(
+        self, student_id: str, project_id: str, weight: float = 1.0
+    ) -> None:
         """Record or update a student-project interaction weight."""
         if student_id not in self.user_to_idx:
             uidx = len(self.user_to_idx)
@@ -73,7 +76,9 @@ class ImplicitRecommender:
         if mat is not None and self.model is not None:
             self.model.fit(mat)
 
-    def recommend_for_student(self, student_id: str, n: int = 5) -> list[dict[str, Any]]:
+    def recommend_for_student(
+        self, student_id: str, n: int = 5
+    ) -> list[dict[str, Any]]:
         """Predict top-N recommended projects for a student."""
         if student_id not in self.user_to_idx or not self.interactions:
             return []
@@ -106,7 +111,9 @@ class ImplicitRecommender:
                 if u != uidx and i not in user_items:
                     other_items_scores[i] = other_items_scores.get(i, 0.0) + w
 
-            sorted_items = sorted(other_items_scores.items(), key=lambda x: x[1], reverse=True)
+            sorted_items = sorted(
+                other_items_scores.items(), key=lambda x: x[1], reverse=True
+            )
             return [
                 {
                     "project_id": self.idx_to_item[i],

@@ -13,8 +13,9 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from ai.models.embeddings import compute_content_hash
 from pydantic import BaseModel, Field
+
+from ai.models.embeddings import compute_content_hash
 
 logger = logging.getLogger("lynk-ai.run_tracker")
 

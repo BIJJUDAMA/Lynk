@@ -2,6 +2,8 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.models.embeddings.provider import BaseEmbeddingProvider
@@ -9,7 +11,6 @@ from ai.pipelines.skills.normalizer import (
     NormalizedSkillResult,
     SkillNormalizer,
 )
-from httpx import ASGITransport, AsyncClient
 
 
 class MockSemanticEmbeddingProvider(BaseEmbeddingProvider):

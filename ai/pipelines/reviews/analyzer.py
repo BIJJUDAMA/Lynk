@@ -19,8 +19,9 @@ import logging
 import re
 from typing import Any
 
-from ai.app.middleware.run_tracker import track_ai_run
 from pydantic import BaseModel, ConfigDict, Field
+
+from ai.app.middleware.run_tracker import track_ai_run
 
 logger = logging.getLogger("lynk-ai.reviews")
 

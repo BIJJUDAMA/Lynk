@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+
 from ai.models.embeddings.provider import MockEmbeddingProvider
 from ai.workers.handlers.embedding_handler import EmbeddingJobHandler
 from ai.workers.handlers.resume_handler import ResumeJobHandler

@@ -20,10 +20,20 @@ SKILL_PROGRESSIONS = {
 
 class SkillGapResult(BaseModel):
     """Evaluation breakdown of student readiness for a target project."""
-    ready_skills: list[str] = Field(default_factory=list, description="Skills the student already possesses")
-    missing_skills: list[str] = Field(default_factory=list, description="Skills required by project that student lacks")
-    readiness_percentage: float = Field(ge=0.0, le=100.0, description="Readiness score from 0.0 to 100.0")
-    learning_pathway: list[dict[str, str]] = Field(default_factory=list, description="Curated learning recommendations")
+
+    ready_skills: list[str] = Field(
+        default_factory=list, description="Skills the student already possesses"
+    )
+    missing_skills: list[str] = Field(
+        default_factory=list,
+        description="Skills required by project that student lacks",
+    )
+    readiness_percentage: float = Field(
+        ge=0.0, le=100.0, description="Readiness score from 0.0 to 100.0"
+    )
+    learning_pathway: list[dict[str, str]] = Field(
+        default_factory=list, description="Curated learning recommendations"
+    )
 
 
 class SkillGapAnalyzer:
@@ -36,7 +46,6 @@ class SkillGapAnalyzer:
     ) -> SkillGapResult:
         """Compare student capabilities against project requirements."""
         student_set = {s.strip().lower() for s in student_skills}
-        required_set = {s.strip().lower() for s in project_required_skills}
 
         ready = []
         missing = []
@@ -55,7 +64,7 @@ class SkillGapAnalyzer:
             key = miss.strip().lower()
             advice = SKILL_PROGRESSIONS.get(
                 key,
-                f"Essential project requirement; explore documentation and practical starter tutorials for {miss}."
+                f"Essential project requirement; explore documentation and practical starter tutorials for {miss}.",
             )
             pathway.append({"skill": miss, "guidance": advice})
 

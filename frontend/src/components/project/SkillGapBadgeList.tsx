@@ -24,7 +24,9 @@ export function SkillGapBadgeList({
 
       <div className="space-y-2">
         <div>
-          <span className="text-xs text-muted-foreground block mb-1">Your Skills Matching Project:</span>
+          <span className="text-xs text-muted-foreground block mb-1">
+            Your Skills Matching Project:
+          </span>
           <div className="flex flex-wrap gap-1.5">
             {readySkills.length > 0 ? (
               readySkills.map((sk) => (
@@ -54,7 +56,9 @@ export function SkillGapBadgeList({
                 </span>
               ))
             ) : (
-              <span className="text-xs text-emerald-600 font-medium">All required skills ready!</span>
+              <span className="text-xs text-emerald-600 font-medium">
+                All required skills ready!
+              </span>
             )}
           </div>
         </div>

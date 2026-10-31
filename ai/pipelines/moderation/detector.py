@@ -13,12 +13,13 @@ import logging
 import re
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from ai.app.middleware.run_tracker import track_ai_run
 from ai.models.embeddings.provider import (
     BaseEmbeddingProvider,
     get_embedding_provider,
 )
-from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger("lynk-ai.moderation")
 

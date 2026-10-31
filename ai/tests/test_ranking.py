@@ -1,13 +1,14 @@
 """Tests for Candidate Application Ranking Pipeline and Internal API."""
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.pipelines.ranking.ranker import (
     CandidateRanker,
     CandidateRankInput,
 )
-from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio

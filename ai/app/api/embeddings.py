@@ -1,8 +1,9 @@
 """Internal API routes for text embeddings."""
 
-from ai.models.embeddings.provider import get_embedding_provider
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
+
+from ai.models.embeddings.provider import get_embedding_provider
 
 router = APIRouter(prefix="/internal/v1/embeddings", tags=["embeddings"])
 

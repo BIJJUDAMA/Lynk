@@ -1,6 +1,8 @@
 """Unit and integration tests for skill demand analytics and forecasting."""
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.pipelines.forecasting.demand import (
@@ -8,7 +10,6 @@ from ai.pipelines.forecasting.demand import (
     SkillHistoricalData,
     SkillPostingPoint,
 )
-from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture

@@ -1,12 +1,13 @@
 """Internal API routes for Candidate Application Ranking."""
 
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
+
 from ai.pipelines.ranking.ranker import (
     CandidateRankInput,
     CandidateRankResult,
     get_candidate_ranker,
 )
-from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/internal/v1/ranking", tags=["ranking"])
 

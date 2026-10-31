@@ -11,6 +11,6 @@ CREATE TABLE IF NOT EXISTS project_embeddings (
 );
 
 -- HNSW index for sub-5ms cosine similarity semantic search
-CREATE INDEX IF NOT EXISTS idx_project_embeddings_hnsw 
+CREATE INDEX IF NOT EXISTS idx_project_embeddings_hnsw
 ON project_embeddings USING hnsw (embedding vector_cosine_ops)
 WITH (m = 16, ef_construction = 64);

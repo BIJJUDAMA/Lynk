@@ -1,9 +1,10 @@
 import secrets
 
-from ai.app.config import get_settings
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+
+from ai.app.config import get_settings
 
 
 class InternalAuthMiddleware(BaseHTTPMiddleware):

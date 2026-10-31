@@ -67,7 +67,7 @@ func (r *Repository) CreateReview(ctx context.Context, review *Review) error {
 }
 
 const queryGetReviewsByContractID = `
-		SELECT 
+		SELECT
 			r.id, r.contract_id, r.reviewer_id, r.reviewee_id, r.rating, r.comment, r.created_at,
 			u1.id, COALESCE(p1.first_name, ''), COALESCE(p1.last_name, ''), u1.role,
 			u2.id, COALESCE(p2.first_name, ''), COALESCE(p2.last_name, ''), u2.role
@@ -81,7 +81,7 @@ const queryGetReviewsByContractID = `
 	`
 
 const queryGetUserReviews = `
-		SELECT 
+		SELECT
 			r.id, r.contract_id, r.reviewer_id, r.reviewee_id, r.rating, r.comment, r.created_at,
 			u.id, COALESCE(p.first_name, ''), COALESCE(p.last_name, ''), u.role
 		FROM reviews r
@@ -152,7 +152,7 @@ func (r *Repository) GetUserReviewsWithSummary(ctx context.Context, userID strin
 	var avgRating float64
 	var reviewCount int
 	aggQuery := `
-		SELECT 
+		SELECT
 			COALESCE(AVG(rating)::numeric, 0.0),
 			COUNT(*)
 		FROM reviews

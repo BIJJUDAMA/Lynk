@@ -4,14 +4,16 @@
 """
 
 from typing import Any
+
 from arq.connections import RedisSettings
+
+from ai.models.embeddings.qdrant_client import QdrantVectorStore
+from ai.pipelines.graph.kuzu_engine import KuzuGraphEngine
 from ai.workers.tasks import (
     process_uploaded_resume_task,
     sync_student_vectors_task,
     update_kuzu_graph_edge_task,
 )
-from ai.models.embeddings.qdrant_client import QdrantVectorStore
-from ai.pipelines.graph.kuzu_engine import KuzuGraphEngine
 
 
 async def startup(ctx: dict[str, Any]) -> None:
@@ -27,6 +29,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 class WorkerSettings:
     """ARQ Worker process settings."""
+
     functions = [
         process_uploaded_resume_task,
         sync_student_vectors_task,

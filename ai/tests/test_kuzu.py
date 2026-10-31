@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+
 from ai.pipelines.graph.kuzu_engine import KuzuGraphEngine
 
 
@@ -37,6 +38,8 @@ def test_kuzu_engine_schema_and_queries():
 
         # Test finding complementary peers for project p1
         # Team already has s1 (Python), missing Figma
-        peers = engine.find_complementary_peers(project_id="p1", current_member_ids=["s1"])
+        peers = engine.find_complementary_peers(
+            project_id="p1", current_member_ids=["s1"]
+        )
         assert len(peers) > 0
         assert peers[0]["student_id"] == "s2"  # s2 brings Figma

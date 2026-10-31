@@ -3,6 +3,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from ai.app.middleware.run_tracker import (
     AIRunRecord,
     compute_run_input_hash,

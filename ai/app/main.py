@@ -4,6 +4,9 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import asyncpg
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
 from ai.app.api.analytics import router as analytics_router
 from ai.app.api.collaboration_llm import router as collaboration_llm_router
 from ai.app.api.collaborators import router as collaborators_router
@@ -19,8 +22,6 @@ from ai.app.api.skills import router as skills_router
 from ai.app.config import get_settings
 from ai.app.middleware.internal_auth import InternalAuthMiddleware
 from ai.app.middleware.tracing import TracingMiddleware
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("lynk-ai")
 

@@ -1,11 +1,12 @@
 """Internal API routes for Member Recommendations."""
 
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
+
 from ai.pipelines.recommendations.engine import (
     RecommendationItem,
     get_recommendation_engine,
 )
-from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/internal/v1/recommendations", tags=["recommendations"])
 

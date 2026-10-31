@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
+
 from ai.pipelines.cache import (
     compute_content_hash,
     get_cached_embedding,

@@ -1,4 +1,5 @@
 import numpy as np
+
 from ai.pipelines.onnx_embeddings import mean_pooling, normalize_vector
 
 

@@ -2,11 +2,12 @@
 
 import httpx
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.llm.client import VLLMClient
 from ai.llm.schemas.job_generation import GeneratedJobDraft
-from httpx import ASGITransport, AsyncClient
 
 
 def test_generated_job_draft_schema():

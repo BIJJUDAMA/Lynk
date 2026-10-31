@@ -1,9 +1,10 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from ai.app.config import get_settings
 from ai.app.main import app, lifespan
-from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio
@@ -132,9 +133,9 @@ async def test_internal_ping_timing_safe_secret_comparison():
             response = await client.get(
                 "/internal/v1/ping", headers={"X-Internal-AI-Secret": secret_val}
             )
-            assert response.status_code == expected_status, (
-                f"Expected {expected_status} for {secret_val}"
-            )
+            assert (
+                response.status_code == expected_status
+            ), f"Expected {expected_status} for {secret_val}"
             if expected_status == 200:
                 assert response.json() == {"status": "pong"}
             else:

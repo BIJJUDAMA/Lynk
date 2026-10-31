@@ -2,6 +2,7 @@ import hashlib
 import math
 
 import pytest
+
 from ai.models.embeddings.provider import (
     MockEmbeddingProvider,
     clear_provider_cache,

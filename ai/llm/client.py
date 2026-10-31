@@ -5,6 +5,8 @@ import logging
 import re
 
 import httpx
+from pydantic import TypeAdapter
+
 from ai.app.config import get_settings
 from ai.app.middleware.run_tracker import track_ai_run
 from ai.llm.prompts.job_generation import (
@@ -14,7 +16,6 @@ from ai.llm.prompts.job_generation import (
 )
 from ai.llm.schemas.job_generation import GeneratedJobDraft
 from ai.pipelines.skills.normalizer import get_skill_normalizer
-from pydantic import TypeAdapter
 
 logger = logging.getLogger("ai.llm")
 

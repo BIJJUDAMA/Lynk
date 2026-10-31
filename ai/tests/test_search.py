@@ -3,6 +3,8 @@
 import math
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.app.middleware.run_tracker import AIRunRecord
@@ -14,7 +16,6 @@ from ai.pipelines.search.hybrid import (
     reciprocal_rank_fusion,
 )
 from ai.pipelines.skills.normalizer import SkillNormalizer
-from httpx import ASGITransport, AsyncClient
 
 
 class MockSearchEmbeddingProvider(BaseEmbeddingProvider):

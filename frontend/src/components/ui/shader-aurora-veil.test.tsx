@@ -23,7 +23,7 @@ interface RenderResultShim {
 }
 
 function render(ui: React.ReactElement): RenderResultShim {
-  const className = (ui.props && typeof ui.props.className === "string") ? ui.props.className : "";
+  const className = ui.props && typeof ui.props.className === "string" ? ui.props.className : "";
   return {
     container: {
       querySelector: (selector: string) => {

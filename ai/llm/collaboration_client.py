@@ -12,22 +12,15 @@ Includes zero-token deterministic fallbacks for high availability and offline te
 import logging
 import re
 from typing import Any
-import httpx
 
 from ai.app.config import get_settings
-from ai.llm.prompts.collaboration import (
-    SYSTEM_COLLABORATION_PROMPT,
-    PARSE_QUERY_TEMPLATE,
-    CREATE_PROJECT_TEMPLATE,
-    PLAN_MILESTONES_TEMPLATE,
-)
 from ai.llm.schemas.collaboration import (
-    ParsedNaturalQuery,
     GeneratedProjectSpec,
-    ProjectRole,
-    ProjectMilestonePlan,
-    ProjectMilestone,
     MilestoneTask,
+    ParsedNaturalQuery,
+    ProjectMilestone,
+    ProjectMilestonePlan,
+    ProjectRole,
 )
 from ai.pipelines.skills.normalizer import CANONICAL_TAXONOMY
 
@@ -41,7 +34,10 @@ class CollaborationLLMClient:
         settings = get_settings()
         self.base_url = (base_url or settings.VLLM_URL).rstrip("/")
         # Build canonical skill fast lookup
-        self.canonical_skills = {item.canonical_name.lower(): item.canonical_name for item in CANONICAL_TAXONOMY}
+        self.canonical_skills = {
+            item.canonical_name.lower(): item.canonical_name
+            for item in CANONICAL_TAXONOMY
+        }
         for item in CANONICAL_TAXONOMY:
             for alias in item.aliases:
                 self.canonical_skills[alias.lower()] = item.canonical_name
@@ -59,7 +55,14 @@ class CollaborationLLMClient:
             if re.search(pattern, lower):
                 matched.add(canon)
 
-        intent = "find_teammate" if any(w in lower for w in ["student", "peer", "collaborator", "teammate", "who knows"]) else "find_project"
+        intent = (
+            "find_teammate"
+            if any(
+                w in lower
+                for w in ["student", "peer", "collaborator", "teammate", "who knows"]
+            )
+            else "find_project"
+        )
 
         dept = "Any"
         if "cs" in lower or "computer science" in lower:
@@ -77,18 +80,26 @@ class CollaborationLLMClient:
         )
 
     # 2. CREATE
-    async def create_project_spec(self, idea: str, category: str = "Software") -> GeneratedProjectSpec:
+    async def create_project_spec(
+        self, idea: str, category: str = "Software"
+    ) -> GeneratedProjectSpec:
         """Turn rough idea into structured project listing."""
         clean_idea = idea.strip()
 
         # Deterministic slot filler fallback
-        title = f"Project: {clean_idea[:40]}..." if len(clean_idea) > 40 else f"Project: {clean_idea}"
+        title = (
+            f"Project: {clean_idea[:40]}..."
+            if len(clean_idea) > 40
+            else f"Project: {clean_idea}"
+        )
         overview = f"A collaborative student initiative focused on: {clean_idea}. Looking for passionate campus co-builders to design, build, and deploy an initial prototype."
 
         roles = [
             ProjectRole(
                 role_title="Technical Lead / Core Developer",
-                required_skills=["Python", "Docker", "Go"] if "hardware" not in category.lower() else ["C++", "Python", "Robotics"],
+                required_skills=["Python", "Docker", "Go"]
+                if "hardware" not in category.lower()
+                else ["C++", "Python", "Robotics"],
                 description="Responsible for core architecture and system implementation.",
             ),
             ProjectRole(
@@ -114,31 +125,50 @@ class CollaborationLLMClient:
         )
 
     # 3. PLAN
-    async def plan_project_milestones(self, title: str, deliverables: list[str]) -> ProjectMilestonePlan:
+    async def plan_project_milestones(
+        self, title: str, deliverables: list[str]
+    ) -> ProjectMilestonePlan:
         """Break project deliverables into 3-phase execution roadmap."""
         milestones = [
             ProjectMilestone(
                 name="Phase 1: Setup & Core Prototyping",
                 duration_weeks=2,
                 tasks=[
-                    MilestoneTask(title="Set up shared repository and local development environment", estimated_hours=4),
-                    MilestoneTask(title="Design low-fidelity wireframes and schema ERDs", estimated_hours=6),
+                    MilestoneTask(
+                        title="Set up shared repository and local development environment",
+                        estimated_hours=4,
+                    ),
+                    MilestoneTask(
+                        title="Design low-fidelity wireframes and schema ERDs",
+                        estimated_hours=6,
+                    ),
                 ],
             ),
             ProjectMilestone(
                 name="Phase 2: Feature Integration & Testing",
                 duration_weeks=2,
                 tasks=[
-                    MilestoneTask(title="Implement core functionality and deliverable requirements", estimated_hours=12),
-                    MilestoneTask(title="Connect backend endpoints with frontend interactive views", estimated_hours=8),
+                    MilestoneTask(
+                        title="Implement core functionality and deliverable requirements",
+                        estimated_hours=12,
+                    ),
+                    MilestoneTask(
+                        title="Connect backend endpoints with frontend interactive views",
+                        estimated_hours=8,
+                    ),
                 ],
             ),
             ProjectMilestone(
                 name="Phase 3: Campus Demo & Launch",
                 duration_weeks=1,
                 tasks=[
-                    MilestoneTask(title="Perform peer testing and bug fixes", estimated_hours=6),
-                    MilestoneTask(title="Prepare project showcase demo for student peers", estimated_hours=4),
+                    MilestoneTask(
+                        title="Perform peer testing and bug fixes", estimated_hours=6
+                    ),
+                    MilestoneTask(
+                        title="Prepare project showcase demo for student peers",
+                        estimated_hours=4,
+                    ),
                 ],
             ),
         ]
@@ -175,9 +205,15 @@ class CollaborationLLMClient:
             allocations.append(
                 {
                     "task": task,
-                    "suggested_student_id": best_teammate["id"] if best_teammate else "unassigned",
-                    "suggested_student_name": best_teammate["name"] if best_teammate else "Unassigned",
-                    "rationale": "Strong skill alignment with task requirements" if max_skill_match > 0 else "Balanced distribution across active team members",
+                    "suggested_student_id": best_teammate["id"]
+                    if best_teammate
+                    else "unassigned",
+                    "suggested_student_name": best_teammate["name"]
+                    if best_teammate
+                    else "Unassigned",
+                    "rationale": "Strong skill alignment with task requirements"
+                    if max_skill_match > 0
+                    else "Balanced distribution across active team members",
                 }
             )
 

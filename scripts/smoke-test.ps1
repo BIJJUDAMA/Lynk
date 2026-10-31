@@ -687,11 +687,11 @@ ET
 endstream endobj
 xref
 0 5
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000214 00000 n 
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000214 00000 n
 trailer << /Size 5 /Root 1 0 R >>
 startxref
 318
@@ -1018,7 +1018,7 @@ startxref
 
     # Phase 14b: AI Job Draft Generation (POST /api/v1/jobs/generate)
     Log-Substep "Phase 14b: Generating AI job draft (POST /api/v1/jobs/generate)..."
-    
+
     # Query current jobs count to assert non-mutation invariant
     $jobsBeforeResp = Invoke-ApiRequest -Method "GET" -Endpoint "/api/v1/jobs?limit=100" -ExpectedStatusCode 200
     $jobsBeforeCount = (($jobsBeforeResp | ConvertFrom-Json).data).Count

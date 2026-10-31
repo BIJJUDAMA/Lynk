@@ -1,9 +1,10 @@
 """Internal API routes for skill normalization and text extraction."""
 
-from ai.app.middleware.run_tracker import track_ai_run
-from ai.pipelines.skills.normalizer import get_skill_normalizer
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
+
+from ai.app.middleware.run_tracker import track_ai_run
+from ai.pipelines.skills.normalizer import get_skill_normalizer
 
 router = APIRouter(prefix="/internal/v1/skills", tags=["skills"])
 

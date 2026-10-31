@@ -9,9 +9,24 @@ def test_find_complementary_peers():
     project_missing_skills = ["Go", "Docker", "PostgreSQL"]
 
     candidates = [
-        {"id": "s1", "name": "Bob", "department": "Computer Science", "skills": ["React", "CSS"]},
-        {"id": "s2", "name": "Charlie", "department": "Engineering", "skills": ["Go", "Docker"]},
-        {"id": "s3", "name": "Diana", "department": "Data Science", "skills": ["PostgreSQL", "Go"]},
+        {
+            "id": "s1",
+            "name": "Bob",
+            "department": "Computer Science",
+            "skills": ["React", "CSS"],
+        },
+        {
+            "id": "s2",
+            "name": "Charlie",
+            "department": "Engineering",
+            "skills": ["Go", "Docker"],
+        },
+        {
+            "id": "s3",
+            "name": "Diana",
+            "department": "Data Science",
+            "skills": ["PostgreSQL", "Go"],
+        },
     ]
 
     results = matcher.find_complementary_peers(

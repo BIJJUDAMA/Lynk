@@ -1,13 +1,14 @@
 """Unit and integration tests for review insights and aspect extraction."""
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from ai.app.config import get_settings
 from ai.app.main import app
 from ai.pipelines.reviews.analyzer import (
     ReviewAnalyzer,
     ReviewItemInput,
 )
-from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture
