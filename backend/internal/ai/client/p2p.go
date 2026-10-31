@@ -14,18 +14,27 @@ const DefaultP2PTimeout = 2 * time.Second
 
 // MatchCollaboratorsRequest defines the payload for matching complementary peers.
 type MatchCollaboratorsRequest struct {
-	TeamSkills           []string                `json:"team_skills"`
-	ProjectMissingSkills []string                `json:"project_missing_skills"`
+	TargetUserID         string                  `json:"target_user_id,omitempty"`
+	MissingSkills        []string                `json:"missing_skills,omitempty"`
+	ExistingTeamSkills   []string                `json:"existing_team_skills,omitempty"`
+	TeamSkills           []string                `json:"team_skills,omitempty"`
+	ProjectMissingSkills []string                `json:"project_missing_skills,omitempty"`
 	Candidates           []CollaboratorCandidate `json:"candidates"`
 	Limit                int                     `json:"limit,omitempty"`
 }
 
+// CandidatePayload aliases CollaboratorCandidate for candidate payloads.
+type CandidatePayload = CollaboratorCandidate
+
 // CollaboratorCandidate represents an available peer student for matching.
 type CollaboratorCandidate struct {
-	ID         string   `json:"id"`
+	ID         string   `json:"id,omitempty"`
+	UserID     string   `json:"user_id,omitempty"`
 	Name       string   `json:"name"`
 	Department string   `json:"department,omitempty"`
 	Skills     []string `json:"skills"`
+	Bio        string   `json:"bio,omitempty"`
+	Rating     float64  `json:"rating,omitempty"`
 }
 
 // CollaboratorMatch represents a ranked peer with complement score and skill overlap.
@@ -45,8 +54,11 @@ type MatchCollaboratorsResponse struct {
 
 // SkillGapRequest represents a request to evaluate a student readiness against project requirements.
 type SkillGapRequest struct {
-	StudentSkills         []string `json:"student_skills"`
-	ProjectRequiredSkills []string `json:"project_required_skills"`
+	UserID                string   `json:"user_id,omitempty"`
+	UserSkills            []string `json:"user_skills,omitempty"`
+	RequiredSkills        []string `json:"required_skills,omitempty"`
+	StudentSkills         []string `json:"student_skills,omitempty"`
+	ProjectRequiredSkills []string `json:"project_required_skills,omitempty"`
 }
 
 // SkillGuidance represents curated next-step learning guidance for a missing skill.
@@ -257,13 +269,21 @@ func (c *Client) ParseNaturalQuery(ctx context.Context, req NaturalQueryRequest)
 
 // fallbackMatchCollaborators executes local deterministic complementarity scoring.
 func (c *Client) fallbackMatchCollaborators(req MatchCollaboratorsRequest) *MatchCollaboratorsResponse {
-	teamSet := make(map[string]struct{}, len(req.TeamSkills))
-	for _, s := range req.TeamSkills {
+	teamSkillsList := req.TeamSkills
+	if len(teamSkillsList) == 0 && len(req.ExistingTeamSkills) > 0 {
+		teamSkillsList = req.ExistingTeamSkills
+	}
+	teamSet := make(map[string]struct{}, len(teamSkillsList))
+	for _, s := range teamSkillsList {
 		teamSet[strings.ToLower(strings.TrimSpace(s))] = struct{}{}
 	}
 
-	missingSet := make(map[string]struct{}, len(req.ProjectMissingSkills))
-	for _, s := range req.ProjectMissingSkills {
+	missingSkillsList := req.ProjectMissingSkills
+	if len(missingSkillsList) == 0 && len(req.MissingSkills) > 0 {
+		missingSkillsList = req.MissingSkills
+	}
+	missingSet := make(map[string]struct{}, len(missingSkillsList))
+	for _, s := range missingSkillsList {
 		missingSet[strings.ToLower(strings.TrimSpace(s))] = struct{}{}
 	}
 
@@ -306,8 +326,13 @@ func (c *Client) fallbackMatchCollaborators(req MatchCollaboratorsRequest) *Matc
 		}
 		complementScore = math.Round(complementScore*10000.0) / 10000.0
 
+		candID := cand.ID
+		if candID == "" && cand.UserID != "" {
+			candID = cand.UserID
+		}
+
 		matches = append(matches, CollaboratorMatch{
-			ID:              cand.ID,
+			ID:              candID,
 			Name:            cand.Name,
 			Department:      cand.Department,
 			ComplementScore: complementScore,
@@ -333,15 +358,24 @@ func (c *Client) fallbackMatchCollaborators(req MatchCollaboratorsRequest) *Matc
 
 // fallbackSkillGap computes local deterministic skill overlap and learning pathways.
 func (c *Client) fallbackSkillGap(req SkillGapRequest) *SkillGapResponse {
-	studentSet := make(map[string]struct{}, len(req.StudentSkills))
-	for _, s := range req.StudentSkills {
+	studentSkillsList := req.StudentSkills
+	if len(studentSkillsList) == 0 && len(req.UserSkills) > 0 {
+		studentSkillsList = req.UserSkills
+	}
+	studentSet := make(map[string]struct{}, len(studentSkillsList))
+	for _, s := range studentSkillsList {
 		studentSet[strings.ToLower(strings.TrimSpace(s))] = struct{}{}
+	}
+
+	reqSkillsList := req.ProjectRequiredSkills
+	if len(reqSkillsList) == 0 && len(req.RequiredSkills) > 0 {
+		reqSkillsList = req.RequiredSkills
 	}
 
 	var readySkills []string
 	var missingSkills []string
 
-	for _, reqSkill := range req.ProjectRequiredSkills {
+	for _, reqSkill := range reqSkillsList {
 		clean := strings.ToLower(strings.TrimSpace(reqSkill))
 		if _, exists := studentSet[clean]; exists {
 			readySkills = append(readySkills, reqSkill)
@@ -350,7 +384,7 @@ func (c *Client) fallbackSkillGap(req SkillGapRequest) *SkillGapResponse {
 		}
 	}
 
-	totalReq := len(req.ProjectRequiredSkills)
+	totalReq := len(reqSkillsList)
 	if totalReq == 0 {
 		totalReq = 1
 	}
