@@ -5,12 +5,18 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lynk/backend/internal/metrics"
 )
 
 func TestMetricsMiddlewareAndHandler(t *testing.T) {
+	metrics.RegisterDBStatsProvider(func() (total, acquired, idle int64) {
+		return 20, 5, 15
+	})
+
 	innerHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(10 * time.Millisecond)
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte("ok"))
 	})
@@ -41,7 +47,20 @@ func TestMetricsMiddlewareAndHandler(t *testing.T) {
 	}
 
 	body := metricsRec.Body.String()
-	if !strings.Contains(body, "http_requests_total") {
-		t.Errorf("expected http_requests_total in metrics output, got %s", body)
+	requiredSubstrings := []string{
+		"http_requests_total{method=\"GET\",status=\"202\"}",
+		"http_active_requests",
+		"http_request_duration_seconds_bucket{le=\"0.025\"}",
+		"http_request_duration_seconds_sum",
+		"http_request_duration_seconds_count",
+		"db_pool_total_connections 20",
+		"db_pool_acquired_connections 5",
+		"db_pool_idle_connections 15",
+	}
+
+	for _, sub := range requiredSubstrings {
+		if !strings.Contains(body, sub) {
+			t.Errorf("expected substring %q in metrics output, got:\n%s", sub, body)
+		}
 	}
 }

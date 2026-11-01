@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 import asyncpg
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from ai.app.api.analytics import router as analytics_router
 from ai.app.api.collaboration_llm import router as collaboration_llm_router
@@ -20,6 +20,7 @@ from ai.app.api.reviews import router as reviews_router
 from ai.app.api.search import router as search_router
 from ai.app.api.skills import router as skills_router
 from ai.app.config import get_settings
+from ai.app.metrics import MetricsMiddleware, registry
 from ai.app.middleware.internal_auth import InternalAuthMiddleware
 from ai.app.middleware.tracing import TracingMiddleware
 
@@ -108,8 +109,16 @@ app = FastAPI(
 
 # Middlewares are applied in reverse order of addition:
 # InternalAuthMiddleware runs inside TracingMiddleware so 401s still get X-Correlation-ID.
+app.add_middleware(MetricsMiddleware)
 app.add_middleware(InternalAuthMiddleware)
 app.add_middleware(TracingMiddleware)
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+async def metrics():
+    return PlainTextResponse(
+        registry.generate(), media_type="text/plain; version=0.0.4"
+    )
 
 
 @app.get("/health")

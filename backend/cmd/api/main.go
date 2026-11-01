@@ -43,6 +43,7 @@ import (
 	"github.com/lynk/backend/internal/sse"
 	"github.com/lynk/backend/internal/storage"
 	"github.com/lynk/backend/internal/team"
+	"github.com/lynk/backend/internal/telemetry"
 	"github.com/lynk/backend/internal/user"
 	"github.com/lynk/backend/internal/workspace"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -207,6 +208,7 @@ func BuildRouter(
 
 	// Global Middlewares
 	r.Use(chimiddleware.RequestID)
+	r.Use(telemetry.Middleware)
 	// RealIP is intentionally omitted: chi's RealIP is deprecated (IP spoofing via
 	// X-Forwarded-For / X-Real-IP). Add trusted-proxy aware IP extraction only when
 	// a reverse proxy is part of the deployment topology.
@@ -663,6 +665,10 @@ func main() {
 	}
 	log.Printf("Starting Lynk API server on port %s...", cfg.Port)
 
+	// Configure structured telemetry logger
+	jsonLogHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+	slog.SetDefault(slog.New(telemetry.NewTraceHandler(jsonLogHandler)))
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -673,6 +679,13 @@ func main() {
 		pool, dbErr = database.NewPool(ctx, cfg.DatabaseURL)
 		if dbErr == nil {
 			log.Printf("Connected to PostgreSQL successfully")
+			metrics.RegisterDBStatsProvider(func() (total, acquired, idle int64) {
+				if pool == nil {
+					return 0, 0, 0
+				}
+				s := pool.Stat()
+				return int64(s.TotalConns()), int64(s.AcquiredConns()), int64(s.IdleConns())
+			})
 			break
 		}
 		log.Printf("Waiting for PostgreSQL connection (%s), attempt %d/15: %v", redactDatabaseURL(cfg.DatabaseURL), attempts, dbErr)

@@ -150,6 +150,24 @@ export function buildQueryString(params?: Record<string, unknown>): string {
   return query ? `?${query}` : "";
 }
 
+function generateHex(bytes: number): string {
+  const arr = new Uint8Array(bytes);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    crypto.getRandomValues(arr);
+  } else {
+    for (let i = 0; i < bytes; i++) {
+      arr[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export function generateTraceparent(): string {
+  const traceId = generateHex(16);
+  const spanId = generateHex(8);
+  return `00-${traceId}-${spanId}-01`;
+}
+
 export function createApiClient(
   tokenOrConfig?: TokenProvider | ApiClientConfig,
   customBaseUrl?: string
@@ -214,6 +232,10 @@ export function createApiClient(
       } else {
         Object.assign(headers, customHeaders);
       }
+    }
+
+    if (!headers["traceparent"]) {
+      headers["traceparent"] = generateTraceparent();
     }
 
     return headers;
