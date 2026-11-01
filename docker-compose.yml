@@ -385,6 +385,104 @@ services:
       gateway:
         condition: service_healthy
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.98.0
+    container_name: lynk-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./.docker/otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+    profiles:
+      - observability
+      - monitoring
+      - full
+    networks:
+      - lynk-net
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: lynk-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    volumes:
+      - ./.docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    profiles:
+      - observability
+      - monitoring
+      - full
+    networks:
+      - lynk-net
+
+  tempo:
+    image: grafana/tempo:2.4.1
+    container_name: lynk-tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./.docker/tempo/tempo-config.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"
+    profiles:
+      - observability
+      - monitoring
+      - full
+    networks:
+      - lynk-net
+
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: lynk-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./.docker/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/tmp/loki
+    ports:
+      - "3100:3100"
+    profiles:
+      - observability
+      - monitoring
+      - full
+    networks:
+      - lynk-net
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: lynk-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./.docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./.docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    profiles:
+      - observability
+      - monitoring
+      - full
+    networks:
+      - lynk-net
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+
 networks:
   lynk-net:
     driver: bridge
@@ -397,3 +495,7 @@ volumes:
   redis_data:
   rabbitmq_data:
   meili_data:
+  prometheus_data:
+  grafana_data:
+  tempo_data:
+  loki_data:
