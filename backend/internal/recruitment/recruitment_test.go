@@ -274,13 +274,6 @@ type mockProjectReader struct {
 	projects map[uuid.UUID]*project.Project
 }
 
-func newMockProjectReader() *mockProjectReader {
-	return &mockProjectReader{
-		mu:       &sync.RWMutex{},
-		projects: make(map[uuid.UUID]*project.Project),
-	}
-}
-
 func newMockProjectReaderWithLock(mu *sync.RWMutex, projects map[uuid.UUID]*project.Project) *mockProjectReader {
 	if mu == nil {
 		mu = &sync.RWMutex{}
