@@ -34,6 +34,10 @@ class AIRunRecord(BaseModel):
     output_json: dict = Field(default_factory=dict)
     confidence: float | None = None
     latency_ms: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    estimated_cost_usd: float = 0.0
     status: str = "success"
     error: str | None = None
 
@@ -129,6 +133,23 @@ class RunTrackerContext:
         if error is not None:
             self.record.status = "failed"
 
+    def record_tokens(
+        self,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        cost_usd: float | None = None,
+    ) -> None:
+        """Record token consumption and calculate estimated compute cost."""
+        self.record.prompt_tokens = prompt_tokens
+        self.record.completion_tokens = completion_tokens
+        self.record.total_tokens = prompt_tokens + completion_tokens
+        if cost_usd is not None:
+            self.record.estimated_cost_usd = cost_usd
+        else:
+            self.record.estimated_cost_usd = round(
+                (prompt_tokens * 0.0000001) + (completion_tokens * 0.0000002), 6
+            )
+
     def set_entity(self, entity_type: str, entity_id: str) -> None:
         """Update entity type and ID if determined dynamically during execution."""
         self.record.entity_type = entity_type
@@ -146,6 +167,16 @@ class RunTrackerContext:
     ) -> bool:
         elapsed_sec = time.perf_counter() - self._start_time
         self.record.latency_ms = max(0, int(elapsed_sec * 1000))
+
+        # Heuristic token counting fallback if not explicitly recorded
+        if self.record.total_tokens == 0:
+            p_tok = max(1, len(str(self.input_data)) // 4) if self.input_data else 0
+            c_tok = (
+                max(1, len(json.dumps(self.record.output_json)) // 4)
+                if self.record.output_json
+                else 0
+            )
+            self.record_tokens(prompt_tokens=p_tok, completion_tokens=c_tok)
 
         if exc_type is not None:
             self.record.status = "failed"
@@ -179,8 +210,9 @@ class RunTrackerContext:
             "INSERT INTO ai_runs ("
             "feature, entity_type, entity_id, model_name, model_version, "
             "prompt_version, pipeline_version, input_hash, output_json, "
-            "confidence, latency_ms, status, error"
-            ") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)"
+            "confidence, latency_ms, prompt_tokens, completion_tokens, "
+            "total_tokens, estimated_cost_usd, status, error"
+            ") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $16, $17)"
         )
         try:
             acquire_cm = self.db_pool.acquire()
@@ -199,6 +231,10 @@ class RunTrackerContext:
                         json.dumps(self.record.output_json or {}),
                         self.record.confidence,
                         self.record.latency_ms,
+                        self.record.prompt_tokens,
+                        self.record.completion_tokens,
+                        self.record.total_tokens,
+                        self.record.estimated_cost_usd,
                         self.record.status,
                         self.record.error,
                     )
@@ -218,6 +254,10 @@ class RunTrackerContext:
                         json.dumps(self.record.output_json or {}),
                         self.record.confidence,
                         self.record.latency_ms,
+                        self.record.prompt_tokens,
+                        self.record.completion_tokens,
+                        self.record.total_tokens,
+                        self.record.estimated_cost_usd,
                         self.record.status,
                         self.record.error,
                     )

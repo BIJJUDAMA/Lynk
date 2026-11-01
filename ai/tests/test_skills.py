@@ -317,7 +317,8 @@ async def test_skills_telemetry_recording():
             assert output_json["canonical_name"] == "React"
             assert output_json["confidence"] == 1.0
             assert params[9] == 1.0  # confidence
-            assert params[11] == "success"  # status
+            assert params[11] >= 0  # prompt_tokens
+            assert params[15] == "success"  # status
 
             # Reset call count
             mock_conn.execute.reset_mock()
@@ -344,6 +345,7 @@ async def test_skills_telemetry_recording():
             output_json = json.loads(params[8])
             assert "extracted_count" in output_json
             assert output_json["extracted_count"] >= 1
-            assert params[11] == "success"  # status
+            assert params[11] >= 0  # prompt_tokens
+            assert params[15] == "success"  # status
     finally:
         app.state.db_pool = original_pool

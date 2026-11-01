@@ -126,8 +126,12 @@ async def test_persists_to_asyncpg_pool():
     assert json.loads(params[8]) == {"rank": 1, "score": 0.98}
     assert params[9] == 0.98  # confidence
     assert isinstance(params[10], int)  # latency_ms
-    assert params[11] == "success"  # status
-    assert params[12] is None  # error
+    assert isinstance(params[11], int)  # prompt_tokens
+    assert isinstance(params[12], int)  # completion_tokens
+    assert isinstance(params[13], int)  # total_tokens
+    assert isinstance(params[14], float)  # estimated_cost_usd
+    assert params[15] == "success"  # status
+    assert params[16] is None  # error
 
 
 @pytest.mark.asyncio

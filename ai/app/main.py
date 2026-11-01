@@ -11,6 +11,7 @@ from ai.app.api.analytics import router as analytics_router
 from ai.app.api.collaboration_llm import router as collaboration_llm_router
 from ai.app.api.collaborators import router as collaborators_router
 from ai.app.api.embeddings import router as embeddings_router
+from ai.app.api.feedback import router as feedback_router
 from ai.app.api.jobs import router as jobs_router
 from ai.app.api.moderation import router as moderation_router
 from ai.app.api.ranking import router as ranking_router
@@ -252,3 +253,4 @@ app.include_router(embeddings_router)
 app.include_router(collaborators_router)
 app.include_router(collaboration_llm_router)
 app.include_router(resumes_router)
+app.include_router(feedback_router)
