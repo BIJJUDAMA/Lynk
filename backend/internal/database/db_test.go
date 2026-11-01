@@ -187,7 +187,7 @@ func TestMigration000015_FilesExistAndSyntaxValid(t *testing.T) {
 		"content_hash VARCHAR(64) NOT NULL",
 		"model_name VARCHAR(64) NOT NULL",
 		"dimensions INTEGER NOT NULL",
-		"embedding vector(384) NOT NULL",
+		"embedding TEXT NOT NULL",
 		"PRIMARY KEY (content_hash, model_name)",
 		"idx_embedding_cache_created",
 		"CREATE TABLE IF NOT EXISTS outbox_events",

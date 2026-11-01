@@ -98,7 +98,7 @@ async def set_cached_embedding(
     await pool.execute(
         """
         INSERT INTO embedding_cache (content_hash, model_name, dimensions, embedding)
-        VALUES ($1, $2, $3, $4::vector)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (content_hash, model_name) DO NOTHING
         """,
         content_hash,

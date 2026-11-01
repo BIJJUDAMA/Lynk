@@ -270,13 +270,27 @@ func (m *mockRecruitmentRepo) CreateQuestion(ctx context.Context, q *recruitment
 }
 
 type mockProjectReader struct {
-	mu       sync.RWMutex
+	mu       *sync.RWMutex
 	projects map[uuid.UUID]*project.Project
 }
 
 func newMockProjectReader() *mockProjectReader {
 	return &mockProjectReader{
+		mu:       &sync.RWMutex{},
 		projects: make(map[uuid.UUID]*project.Project),
+	}
+}
+
+func newMockProjectReaderWithLock(mu *sync.RWMutex, projects map[uuid.UUID]*project.Project) *mockProjectReader {
+	if mu == nil {
+		mu = &sync.RWMutex{}
+	}
+	if projects == nil {
+		projects = make(map[uuid.UUID]*project.Project)
+	}
+	return &mockProjectReader{
+		mu:       mu,
+		projects: projects,
 	}
 }
 
@@ -344,7 +358,7 @@ func TestApplicationStatusValidation(t *testing.T) {
 func TestRecruitmentService_InstitutionalEmailGate(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	svc := recruitment.NewService(repo, projReader, memReader)
 
@@ -394,7 +408,7 @@ func TestRecruitmentService_InstitutionalEmailGate(t *testing.T) {
 func TestRecruitmentService_RecruitmentStatusEnforcement(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	svc := recruitment.NewService(repo, projReader, memReader)
 
@@ -425,7 +439,7 @@ func TestRecruitmentService_RecruitmentStatusEnforcement(t *testing.T) {
 func TestRecruitmentService_QuestionManagementAndRequiredValidation(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	svc := recruitment.NewService(repo, projReader, memReader)
 
@@ -508,7 +522,7 @@ func TestRecruitmentService_QuestionManagementAndRequiredValidation(t *testing.T
 func TestRecruitmentService_ReviewerAuthorization(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	svc := recruitment.NewService(repo, projReader, memReader)
 
@@ -590,7 +604,7 @@ func TestRecruitmentService_ReviewerAuthorization(t *testing.T) {
 func TestRecruitmentService_ShortlistRejectAcceptWorkflow(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	svc := recruitment.NewService(repo, projReader, memReader)
 
@@ -677,7 +691,7 @@ func TestRecruitmentService_ShortlistRejectAcceptWorkflow(t *testing.T) {
 func TestRecruitmentService_WithdrawalRules(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	svc := recruitment.NewService(repo, projReader, memReader)
 
@@ -745,7 +759,7 @@ func TestRecruitmentService_WithdrawalRules(t *testing.T) {
 
 func TestRecruitmentHandler_EndToEndEndpoints(t *testing.T) {
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	svc := recruitment.NewService(repo, projReader, memReader)
 	handler := recruitment.NewHandler(svc)
@@ -869,7 +883,7 @@ func TestRecruitmentHandler_EndToEndEndpoints(t *testing.T) {
 func TestRecruitmentService_TeamCapacityExceeded(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	svc := recruitment.NewService(repo, projReader, memReader)
 	handler := recruitment.NewHandler(svc)
@@ -950,7 +964,7 @@ func TestRecruitmentService_TeamCapacityExceeded(t *testing.T) {
 func TestRecruitmentService_ConcurrentCapacityRaceCondition(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	svc := recruitment.NewService(repo, projReader, memReader)
 
@@ -1083,7 +1097,7 @@ func (s *spyCapacityLeaser) releaseContextErr() (error, bool) {
 func TestAcceptApplication_LeaseRefusalSkipsTransactionalAccept(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	leaser := &spyCapacityLeaser{acquireOK: false}
 	svc := recruitment.NewService(repo, projReader, memReader).WithCapacityLeaser(leaser)
@@ -1122,7 +1136,7 @@ func TestAcceptApplication_LeaseRefusalSkipsTransactionalAccept(t *testing.T) {
 
 func TestAcceptApplication_ReleaseUsesDetachedContext(t *testing.T) {
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	leaser := &spyCapacityLeaser{acquireOK: true}
 	svc := recruitment.NewService(repo, projReader, memReader).WithCapacityLeaser(leaser)
@@ -1175,7 +1189,7 @@ func TestAcceptApplication_ReleaseUsesDetachedContext(t *testing.T) {
 
 func TestAcceptApplication_ReleasesLeaseOnPanic(t *testing.T) {
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	leaser := &spyCapacityLeaser{acquireOK: true}
 	svc := recruitment.NewService(repo, projReader, memReader).WithCapacityLeaser(leaser)
@@ -1220,7 +1234,7 @@ func TestAcceptApplication_ReleasesLeaseOnPanic(t *testing.T) {
 func TestAcceptApplication_LeaseRefusesAtCapacity(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	leaser := recruitment.NewInMemoryCapacityLeaser()
 	svc := recruitment.NewService(repo, projReader, memReader).WithCapacityLeaser(leaser)
@@ -1267,7 +1281,7 @@ func TestAcceptApplication_LeaseRefusesAtCapacity(t *testing.T) {
 func TestAcceptApplication_LeaseReleasedWhenTxFails(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	leaser := recruitment.NewInMemoryCapacityLeaser()
 	svc := recruitment.NewService(repo, projReader, memReader).WithCapacityLeaser(leaser)
@@ -1314,7 +1328,7 @@ func TestAcceptApplication_LeaseReleasedWhenTxFails(t *testing.T) {
 func TestRecruitmentHandler_ClosedRecruitmentReturnsConflict(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRecruitmentRepo()
-	projReader := newMockProjectReader()
+	projReader := newMockProjectReaderWithLock(&repo.mu, repo.projects)
 	memReader := newMockMembershipReader()
 	svc := recruitment.NewService(repo, projReader, memReader)
 	handler := recruitment.NewHandler(svc)

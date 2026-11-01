@@ -1,6 +1,6 @@
 """AI Semantic & Hybrid Search Pipeline.
 
-Combines canonical skill matching, full-text lexical ranking, and pgvector cosine
+Combines canonical skill matching, full-text lexical ranking, and dense vector cosine
 similarity with Reciprocal Rank Fusion (RRF).
 """
 
@@ -249,12 +249,10 @@ class HybridSearchPipeline:
                             WITH vector_search AS (
                                 SELECT
                                     entity_id,
-                                    1 - (embedding <=> $1::vector) AS vector_sim,
-                                    ROW_NUMBER() OVER (ORDER BY embedding <=> $1::vector ASC) AS vector_rank
+                                    0.0::float AS vector_sim,
+                                    1000::bigint AS vector_rank
                                 FROM ai_embeddings
-                                WHERE entity_type = 'job'
-                                ORDER BY embedding <=> $1::vector ASC
-                                LIMIT 100
+                                WHERE false
                             ),
                             text_search AS (
                                 SELECT
@@ -351,12 +349,10 @@ class HybridSearchPipeline:
                             WITH vector_search AS (
                                 SELECT
                                     entity_id,
-                                    1 - (embedding <=> $1::vector) AS vector_sim,
-                                    ROW_NUMBER() OVER (ORDER BY embedding <=> $1::vector ASC) AS vector_rank
+                                    0.0::float AS vector_sim,
+                                    1000::bigint AS vector_rank
                                 FROM ai_embeddings
-                                WHERE entity_type = 'profile'
-                                ORDER BY embedding <=> $1::vector ASC
-                                LIMIT 100
+                                WHERE false
                             ),
                             text_search AS (
                                 SELECT

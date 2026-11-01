@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS embedding_cache (
     content_hash VARCHAR(64) NOT NULL,
     model_name VARCHAR(64) NOT NULL,
     dimensions INTEGER NOT NULL,
-    embedding vector(384) NOT NULL,
+    embedding TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (content_hash, model_name)
 );

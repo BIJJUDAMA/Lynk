@@ -159,7 +159,7 @@ async def test_set_cached_embedding_list():
     dimensions = call_args[3]
     vec_str = call_args[4]
 
-    assert "$4::vector" in query
+    assert "VALUES ($1, $2, $3, $4)" in query
     assert "ON CONFLICT (content_hash, model_name) DO NOTHING" in query
     assert content_hash == "hash123"
     assert model_name == "model_v1"

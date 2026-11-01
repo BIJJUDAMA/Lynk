@@ -14,7 +14,7 @@ logger = logging.getLogger("ai.workers.embedding")
 
 
 class EmbeddingJobHandler:
-    """Processes asynchronous embedding generation requests and indexes vectors in pgvector."""
+    """Processes asynchronous embedding generation requests and stores vector representations."""
 
     def __init__(
         self,
@@ -50,7 +50,7 @@ class EmbeddingJobHandler:
                         INSERT INTO ai_embeddings (
                             entity_type, entity_id, embedding_type, embedding, content_hash, model_name, model_version, created_at, updated_at
                         )
-                        VALUES ($1, $2, 'semantic', $3::vector, $4, $5, $6, NOW(), NOW())
+                        VALUES ($1, $2, 'semantic', $3, $4, $5, $6, NOW(), NOW())
                         ON CONFLICT (entity_type, entity_id, embedding_type, model_name, model_version) DO UPDATE SET
                             embedding = EXCLUDED.embedding,
                             content_hash = EXCLUDED.content_hash,

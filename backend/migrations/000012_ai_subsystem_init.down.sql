@@ -1,5 +1,5 @@
 -- Migration: 000012_ai_subsystem_init.down.sql
--- Description: Revert AI subsystem schema and pgvector extension
+-- Description: Revert AI subsystem schema
 
 DROP TABLE IF EXISTS ai_jobs;
 DROP TABLE IF EXISTS skill_demand_snapshots;
@@ -13,5 +13,3 @@ DROP TABLE IF EXISTS job_skills;
 DROP TABLE IF EXISTS profile_skills;
 DROP TABLE IF EXISTS skill_aliases;
 DROP TABLE IF EXISTS skills;
-
-DROP EXTENSION IF EXISTS vector;

@@ -482,7 +482,6 @@ func TestMigration000012_UpSQL_Structure(t *testing.T) {
 	content := string(contentBytes)
 
 	expectedFragments := []string{
-		"CREATE EXTENSION IF NOT EXISTS vector;",
 		"CREATE TABLE IF NOT EXISTS skills (",
 		"canonical_name VARCHAR(100) NOT NULL UNIQUE",
 		"parent_skill_id UUID REFERENCES skills(id) ON DELETE SET NULL",
@@ -506,7 +505,7 @@ func TestMigration000012_UpSQL_Structure(t *testing.T) {
 		"confidence DOUBLE PRECISION NOT NULL DEFAULT 1.0",
 		"PRIMARY KEY (job_id, skill_id)",
 		"CREATE TABLE IF NOT EXISTS ai_embeddings (",
-		"embedding vector(384) NOT NULL",
+		"embedding TEXT NOT NULL",
 		"UNIQUE(entity_type, entity_id, embedding_type, model_name, model_version)",
 		"CREATE TABLE IF NOT EXISTS ai_runs (",
 		"feature VARCHAR(50) NOT NULL",
@@ -551,7 +550,6 @@ func TestMigration000012_UpSQL_Structure(t *testing.T) {
 		"status VARCHAR(20) NOT NULL DEFAULT 'pending'",
 		"attempts INTEGER NOT NULL DEFAULT 0",
 		"max_attempts INTEGER NOT NULL DEFAULT 3",
-		"CREATE INDEX IF NOT EXISTS idx_ai_embeddings_embedding ON ai_embeddings USING hnsw (embedding vector_cosine_ops);",
 		"CREATE INDEX IF NOT EXISTS idx_ai_embeddings_entity ON ai_embeddings(entity_type, entity_id);",
 		"CREATE INDEX IF NOT EXISTS idx_ai_runs_entity ON ai_runs(entity_type, entity_id);",
 		"CREATE INDEX IF NOT EXISTS idx_ai_runs_feature ON ai_runs(feature);",
@@ -588,7 +586,6 @@ func TestMigration000012_DownSQL_Structure(t *testing.T) {
 		"DROP TABLE IF EXISTS profile_skills;",
 		"DROP TABLE IF EXISTS skill_aliases;",
 		"DROP TABLE IF EXISTS skills;",
-		"DROP EXTENSION IF EXISTS vector;",
 	}
 
 	for _, fragment := range expectedFragments {

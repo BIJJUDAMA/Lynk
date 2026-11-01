@@ -1,7 +1,5 @@
 -- Migration: 000012_ai_subsystem_init.up.sql
--- Description: AI subsystem schema, pgvector extension, and relational tables
-
-CREATE EXTENSION IF NOT EXISTS vector;
+-- Description: AI subsystem schema and relational tables
 
 -- 1. Skills taxonomy table
 CREATE TABLE IF NOT EXISTS skills (
@@ -48,7 +46,7 @@ CREATE TABLE IF NOT EXISTS job_skills (
     PRIMARY KEY (job_id, skill_id)
 );
 
--- 5. AI Embeddings table (pgvector 384 dimensions)
+-- 5. AI Embeddings table (384 dimensions dense vector stored as JSON string)
 CREATE TABLE IF NOT EXISTS ai_embeddings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     entity_type VARCHAR(50) NOT NULL,
@@ -57,7 +55,7 @@ CREATE TABLE IF NOT EXISTS ai_embeddings (
     model_name VARCHAR(100) NOT NULL,
     model_version VARCHAR(50) NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
-    embedding vector(384) NOT NULL,
+    embedding TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(entity_type, entity_id, embedding_type, model_name, model_version)
@@ -178,8 +176,6 @@ CREATE TABLE IF NOT EXISTS ai_jobs (
 
 -- Indexes
 
--- HNSW Vector index on 384-dimension embedding
-CREATE INDEX IF NOT EXISTS idx_ai_embeddings_embedding ON ai_embeddings USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_ai_embeddings_entity ON ai_embeddings(entity_type, entity_id);
 
 -- Skills indexes

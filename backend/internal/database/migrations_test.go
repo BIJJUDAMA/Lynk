@@ -203,15 +203,11 @@ func TestMigration000019_FilesExistAndSyntaxValid(t *testing.T) {
 	}
 
 	expectedUpSubstrings := []string{
-		"CREATE EXTENSION IF NOT EXISTS vector;",
 		"CREATE TABLE IF NOT EXISTS project_embeddings",
 		"project_id UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE",
-		"embedding vector(384) NOT NULL",
+		"embedding TEXT NOT NULL",
 		"content_hash VARCHAR(64) NOT NULL",
 		"updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
-		"CREATE INDEX IF NOT EXISTS idx_project_embeddings_hnsw",
-		"USING hnsw (embedding vector_cosine_ops)",
-		"WITH (m = 16, ef_construction = 64);",
 	}
 	for _, substr := range expectedUpSubstrings {
 		if !strings.Contains(upContent, substr) {

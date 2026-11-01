@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -79,14 +81,39 @@ func ParseVector(s string) ([]float32, error) {
 	return vec, nil
 }
 
-// ProjectEmbeddingRepository defines persistence operations for project pgvector embeddings.
+// CosineSimilarity computes cosine similarity and distance between two float vectors.
+func CosineSimilarity(a, b []float32) (similarity float64, distance float64) {
+	if len(a) != len(b) || len(a) == 0 {
+		return 0, 1.0
+	}
+	var dot, normA, normB float64
+	for i := range a {
+		ai := float64(a[i])
+		bi := float64(b[i])
+		dot += ai * bi
+		normA += ai * ai
+		normB += bi * bi
+	}
+	if normA == 0 || normB == 0 {
+		return 0, 1.0
+	}
+	sim := dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	if sim > 1.0 {
+		sim = 1.0
+	} else if sim < -1.0 {
+		sim = -1.0
+	}
+	return sim, 1.0 - sim
+}
+
+// ProjectEmbeddingRepository defines persistence operations for project embeddings.
 type ProjectEmbeddingRepository interface {
 	UpsertProjectEmbedding(ctx context.Context, projectID uuid.UUID, embedding []float32, contentHash string) error
 	GetProjectEmbedding(ctx context.Context, projectID uuid.UUID) ([]float32, string, error)
 	SearchSimilarProjects(ctx context.Context, queryVector []float32, limit int, visibility string) ([]ProjectMatch, error)
 }
 
-// pgxProjectEmbeddingRepository implements ProjectEmbeddingRepository using PostgreSQL and pgvector.
+// pgxProjectEmbeddingRepository implements ProjectEmbeddingRepository using PostgreSQL.
 type pgxProjectEmbeddingRepository struct {
 	db *pgxpool.Pool
 }
@@ -106,7 +133,7 @@ func (r *pgxProjectEmbeddingRepository) UpsertProjectEmbedding(ctx context.Conte
 	vecStr := FormatVector(embedding)
 	query := `
 		INSERT INTO project_embeddings (project_id, embedding, content_hash, updated_at)
-		VALUES ($1, $2::vector, $3, NOW())
+		VALUES ($1, $2, $3, NOW())
 		ON CONFLICT (project_id) DO UPDATE SET
 			embedding = EXCLUDED.embedding,
 			content_hash = EXCLUDED.content_hash,
@@ -125,7 +152,7 @@ func (r *pgxProjectEmbeddingRepository) GetProjectEmbedding(ctx context.Context,
 		return nil, "", errors.New("database pool is not initialized")
 	}
 	query := `
-		SELECT embedding::text, content_hash
+		SELECT embedding, content_hash
 		FROM project_embeddings
 		WHERE project_id = $1
 	`
@@ -144,7 +171,7 @@ func (r *pgxProjectEmbeddingRepository) GetProjectEmbedding(ctx context.Context,
 	return vec, hash, nil
 }
 
-// SearchSimilarProjects performs cosine distance similarity search via pgvector on project_embeddings.
+// SearchSimilarProjects performs cosine distance similarity search on project_embeddings.
 func (r *pgxProjectEmbeddingRepository) SearchSimilarProjects(ctx context.Context, queryVector []float32, limit int, visibility string) ([]ProjectMatch, error) {
 	if r.db == nil {
 		return nil, errors.New("database pool is not initialized")
@@ -158,7 +185,6 @@ func (r *pgxProjectEmbeddingRepository) SearchSimilarProjects(ctx context.Contex
 		limit = 100
 	}
 
-	vecStr := FormatVector(queryVector)
 	query := `
 		SELECT
 			pe.project_id,
@@ -167,15 +193,12 @@ func (r *pgxProjectEmbeddingRepository) SearchSimilarProjects(ctx context.Contex
 			COALESCE(p.description, ''),
 			COALESCE(p.category, ''),
 			COALESCE(p.visibility::text, ''),
-			(1.0 - (pe.embedding <=> $1::vector)) AS similarity,
-			(pe.embedding <=> $1::vector) AS distance
+			pe.embedding
 		FROM project_embeddings pe
 		JOIN projects p ON pe.project_id = p.id
-		WHERE ($2 = '' OR p.visibility::text = $2)
-		ORDER BY pe.embedding <=> $1::vector ASC
-		LIMIT $3;
+		WHERE ($1 = '' OR p.visibility::text = $1);
 	`
-	rows, err := r.db.Query(ctx, query, vecStr, visibility, limit)
+	rows, err := r.db.Query(ctx, query, visibility)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search similar projects: %w", err)
 	}
@@ -184,6 +207,7 @@ func (r *pgxProjectEmbeddingRepository) SearchSimilarProjects(ctx context.Contex
 	var matches []ProjectMatch
 	for rows.Next() {
 		var m ProjectMatch
+		var embStr string
 		if err := rows.Scan(
 			&m.ProjectID,
 			&m.Slug,
@@ -191,15 +215,26 @@ func (r *pgxProjectEmbeddingRepository) SearchSimilarProjects(ctx context.Contex
 			&m.Description,
 			&m.Category,
 			&m.Visibility,
-			&m.Similarity,
-			&m.Distance,
+			&embStr,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan project match: %w", err)
 		}
-		matches = append(matches, m)
+		vec, err := ParseVector(embStr)
+		if err == nil && len(vec) == len(queryVector) {
+			m.Similarity, m.Distance = CosineSimilarity(queryVector, vec)
+			matches = append(matches, m)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows error in search similar projects: %w", err)
+	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Similarity > matches[j].Similarity
+	})
+
+	if len(matches) > limit {
+		matches = matches[:limit]
 	}
 	if matches == nil {
 		matches = []ProjectMatch{}
