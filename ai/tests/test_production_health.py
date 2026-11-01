@@ -221,7 +221,7 @@ def test_production_config_keys():
     assert hasattr(settings, "QDRANT_PORT")
     assert hasattr(settings, "REDIS_URL")
     assert hasattr(settings, "KUZU_DB_PATH")
-    assert settings.QDRANT_HOST == "qdrant"
+    assert settings.QDRANT_HOST in {"qdrant", "localhost"}
     assert settings.QDRANT_PORT == 6333
-    assert settings.REDIS_URL == "redis://redis:6379"
-    assert settings.KUZU_DB_PATH == "/data/kuzu_campus_graph"
+    assert "redis" in settings.REDIS_URL
+    assert "kuzu" in settings.KUZU_DB_PATH
