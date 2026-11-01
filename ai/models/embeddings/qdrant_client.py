@@ -158,3 +158,19 @@ class QdrantVectorStore:
                 )
             scored.sort(key=lambda x: x["score"], reverse=True)
             return scored[:limit]
+
+    def delete(self, collection_name: str, point_id: str) -> None:
+        """Delete a single vector point from collection by point ID."""
+        qid = to_qdrant_id(point_id)
+        if self.client and QDRANT_AVAILABLE:
+            self.client.delete(
+                collection_name=collection_name,
+                points_selector=qmodels.PointIdsList(points=[qid]),
+            )
+        else:
+            if collection_name in self._collections:
+                self._collections[collection_name]["points"].pop(point_id, None)
+
+    # Aliases
+    upsert_point = upsert
+    delete_point = delete

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     QDRANT_HOST: str = "qdrant"
     QDRANT_PORT: int = 6333
     REDIS_URL: str = "redis://redis:6379"
+    RABBITMQ_URL: str = "amqp://guest:guest@rabbitmq:5672/"
     KUZU_DB_PATH: str = "/data/kuzu_campus_graph"
 
     model_config = SettingsConfigDict(
