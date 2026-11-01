@@ -1,0 +1,127 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Log Velocity & Severity Breakdown",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 75,
+            "stacking": { "group": "A", "mode": "normal" }
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 7, "w": 16, "x": 0, "y": 1 },
+      "id": 2,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right" }
+      },
+      "targets": [
+        {
+          "expr": "sum by (level) (count_over_time({job=~\"..*\"} [1m]))",
+          "legendFormat": "{{level}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Log Rate by Severity",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["sum"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=~\"..*\"} |~ \"(?i)(error|panic|fatal|exception)\" [1m]))",
+          "legendFormat": "Errors / min",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Error Bursts",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
+      "id": 4,
+      "title": "Centralized Live Log Stream",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 9 },
+      "id": 5,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{job=~\"..*\"} | json",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Container Log Streams (Go API, AI Subsystem, Postgres, Nginx)",
+      "type": "logs"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["lynk", "loki", "logs", "observability"],
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+  "timezone": "browser",
+  "title": "Lynk Centralized Logs & Triage",
+  "uid": "lynk-logs-analyzer",
+  "version": 1
+}

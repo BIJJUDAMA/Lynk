@@ -1,0 +1,191 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "RabbitMQ Ingestion & Delivery Velocity",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "msgps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "id": 2,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(rabbitmq_global_messages_published_total[1m]))",
+          "legendFormat": "Published Rate",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(rabbitmq_global_messages_delivered_total[1m]))",
+          "legendFormat": "Delivered Rate",
+          "refId": "B"
+        }
+      ],
+      "title": "Global Message Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear"
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "id": 3,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "expr": "sum by (queue) (rabbitmq_queue_messages_ready)",
+          "legendFormat": "Ready: {{queue}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (queue) (rabbitmq_queue_messages_unacknowledged)",
+          "legendFormat": "Unacknowledged: {{queue}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Queue Backlog & In-Flight Unacked Messages",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 4,
+      "title": "Cluster Health & Resource Capacity",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 10 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "rabbitmq_alarms_memory_used_watermark + rabbitmq_alarms_free_disk_space_watermark + rabbitmq_alarms_file_descriptor_limit",
+          "legendFormat": "Cluster Alarms",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Cluster Alarms",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line" },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 6, "w": 9, "x": 6, "y": 10 },
+      "id": 6,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "expr": "sum(rabbitmq_connections)",
+          "legendFormat": "Active Connections",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rabbitmq_channels)",
+          "legendFormat": "Active Channels",
+          "refId": "B"
+        }
+      ],
+      "title": "Connected Clients & Channels",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line" },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 6, "w": 9, "x": 15, "y": 10 },
+      "id": 7,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "expr": "sum(rabbitmq_process_resident_memory_bytes)",
+          "legendFormat": "Erlang Process RSS Memory",
+          "refId": "A"
+        }
+      ],
+      "title": "Broker Memory Footprint",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["lynk", "rabbitmq", "messaging", "queues"],
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+  "timezone": "browser",
+  "title": "Lynk RabbitMQ & Async Messaging",
+  "uid": "lynk-rabbitmq-queues",
+  "version": 1
+}

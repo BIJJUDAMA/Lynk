@@ -1,0 +1,171 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Database Connection Pool Saturation",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "id": 2,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "10.4.2",
+      "targets": [
+        {
+          "expr": "(sum(db_pool_acquired_connections) / clamp_min(sum(db_pool_total_connections), 1)) * 100",
+          "legendFormat": "Pool Saturation",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Pool Saturation %",
+      "type": "gauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "showPoints": "auto"
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 1 },
+      "id": 3,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right" }
+      },
+      "targets": [
+        {
+          "expr": "sum(db_pool_total_connections)",
+          "legendFormat": "Total Connections",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(db_pool_acquired_connections)",
+          "legendFormat": "Acquired (In Use)",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(db_pool_idle_connections)",
+          "legendFormat": "Idle Connections",
+          "refId": "C"
+        }
+      ],
+      "title": "Connection Allocation Timeline",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "id": 4,
+      "title": "Connection Velocity & Acquisition Dynamics",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 5,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "expr": "deriv(sum(db_pool_acquired_connections)[1m])",
+          "legendFormat": "Acquisition Velocity (d/dt)",
+          "refId": "A"
+        }
+      ],
+      "title": "Connection Acquisition Churn Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 6,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "expr": "sum by (instance) (db_pool_acquired_connections)",
+          "legendFormat": "Instance: {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Acquired Connections per Backend Replica",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["lynk", "database", "pgbouncer", "postgres"],
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+  "timezone": "browser",
+  "title": "Lynk Database & Connection Pool",
+  "uid": "lynk-db-pool",
+  "version": 1
+}
