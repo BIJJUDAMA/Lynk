@@ -69,12 +69,18 @@ class QdrantVectorStore:
         if self.client and QDRANT_AVAILABLE:
             collections = [c.name for c in self.client.get_collections().collections]
             if collection_name not in collections:
-                self.client.create_collection(
-                    collection_name=collection_name,
-                    vectors_config=qmodels.VectorParams(
-                        size=dim, distance=qmodels.Distance.COSINE
-                    ),
-                )
+                try:
+                    self.client.create_collection(
+                        collection_name=collection_name,
+                        vectors_config=qmodels.VectorParams(
+                            size=dim, distance=qmodels.Distance.COSINE
+                        ),
+                    )
+                except Exception as exc:
+                    if "already exists" not in str(exc).lower():
+                        logger.warning(
+                            "Failed to create collection %s: %s", collection_name, exc
+                        )
         else:
             self._collections[collection_name] = {"dim": dim, "points": {}}
 

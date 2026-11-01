@@ -307,7 +307,7 @@ services:
       REDIS_URL: "redis://redis:6379"
       QDRANT_HOST: "qdrant"
       QDRANT_PORT: "6333"
-      KUZU_DB_PATH: "/data/kuzu_campus_graph"
+      KUZU_DB_PATH: "/data/kuzu_worker_graph"
     volumes:
       - kuzu_data:/data
     networks:

@@ -34,9 +34,18 @@ class KuzuGraphEngine:
         }
 
         if KUZU_AVAILABLE:
-            os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
-            self.db = kuzu.Database(db_path)
-            self.conn = kuzu.Connection(self.db)
+            try:
+                os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+                self.db = kuzu.Database(db_path)
+                self.conn = kuzu.Connection(self.db)
+            except Exception as exc:
+                logger.warning(
+                    "Could not initialize Kuzu database at %s (falling back to in-memory graph): %s",
+                    db_path,
+                    exc,
+                )
+                self.db = None
+                self.conn = None
         else:
             self.db = None
             self.conn = None

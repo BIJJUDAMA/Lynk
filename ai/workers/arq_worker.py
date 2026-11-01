@@ -3,6 +3,7 @@
 100% pure 7-bit ASCII
 """
 
+import os
 from typing import Any
 
 from arq.connections import RedisSettings
@@ -19,7 +20,8 @@ from ai.workers.tasks import (
 async def startup(ctx: dict[str, Any]) -> None:
     """Initialize shared connections for worker process."""
     ctx["qdrant_store"] = QdrantVectorStore(in_memory=True)
-    ctx["kuzu_engine"] = KuzuGraphEngine()
+    kuzu_path = os.getenv("KUZU_DB_PATH", "/data/kuzu_worker_graph")
+    ctx["kuzu_engine"] = KuzuGraphEngine(db_path=kuzu_path)
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
