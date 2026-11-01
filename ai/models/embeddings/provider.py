@@ -59,11 +59,12 @@ class BaseEmbeddingProvider(ABC):
         pass
 
     @abstractmethod
-    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+    def embed_batch(self, texts: list[str], batch_size: int = 32) -> list[list[float]]:
         """Generate normalized embedding vectors for a batch of texts.
 
         Args:
             texts: List of text strings to embed.
+            batch_size: Maximum micro-batch size for vectorized tensor execution.
 
         Returns:
             List of float lists matching vector dimension.
@@ -115,7 +116,7 @@ class MockEmbeddingProvider(BaseEmbeddingProvider):
             vec = [float(x / norm) for x in vec]
         return vec
 
-    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+    def embed_batch(self, texts: list[str], batch_size: int = 32) -> list[list[float]]:
         """Batch embed texts using deterministic seed mapping."""
         return [self.embed(t) for t in texts]
 
@@ -209,19 +210,33 @@ class SentenceTransformerEmbeddingProvider(BaseEmbeddingProvider):
         )
         return [float(x) for x in raw.tolist()]
 
-    def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Embed a batch of text strings."""
+    def embed_batch(self, texts: list[str], batch_size: int = 32) -> list[list[float]]:
+        """Embed a batch of text strings using micro-batching to manage memory."""
         if not texts:
             return []
         if self._mock_provider is not None:
-            return self._mock_provider.embed_batch(texts)
+            return self._mock_provider.embed_batch(texts, batch_size=batch_size)
 
-        raw = self._model.encode(
-            texts,
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-        )
-        return [[float(x) for x in vec] for vec in raw.tolist()]
+        if len(texts) <= batch_size:
+            raw = self._model.encode(
+                texts,
+                batch_size=batch_size,
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+            )
+            return [[float(x) for x in vec] for vec in raw.tolist()]
+
+        results: list[list[float]] = []
+        for i in range(0, len(texts), batch_size):
+            chunk = texts[i : i + batch_size]
+            raw = self._model.encode(
+                chunk,
+                batch_size=batch_size,
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+            )
+            results.extend([[float(x) for x in vec] for vec in raw.tolist()])
+        return results
 
 
 _PROVIDER_CACHE: dict[

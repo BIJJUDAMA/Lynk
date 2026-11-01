@@ -5,10 +5,20 @@ import numpy as np
 import pytest
 
 from ai.pipelines.cache import (
+    clear_l1_cache,
     compute_content_hash,
     get_cached_embedding,
+    get_cached_embeddings_batch,
     set_cached_embedding,
 )
+
+
+@pytest.fixture(autouse=True)
+def reset_l1_cache_fixture():
+    """Ensure clean L1 cache isolation between unit tests."""
+    clear_l1_cache()
+    yield
+    clear_l1_cache()
 
 
 def test_compute_content_hash_deterministic():
@@ -180,3 +190,39 @@ async def test_set_cached_embedding_numpy_array():
 
     call_args = mock_pool.execute.call_args[0]
     assert call_args[4] == "[0.5,0.6]"
+
+
+@pytest.mark.asyncio
+async def test_l1_in_memory_cache_hit():
+    """L1 memory cache returns embedding without querying pool."""
+    mock_pool = AsyncMock()
+    await set_cached_embedding(mock_pool, "fast_hash", "model_fast", 2, [0.99, 0.01])
+    assert mock_pool.execute.await_count == 1
+
+    # Second call with None pool must still hit L1
+    cached = await get_cached_embedding(None, "fast_hash", "model_fast")
+    assert cached == [0.99, 0.01]
+
+
+@pytest.mark.asyncio
+async def test_get_cached_embeddings_batch_with_provider():
+    """Batch retrieval embeds missing items and fills L1 cache."""
+    mock_pool = AsyncMock()
+    mock_pool.fetch.return_value = []
+    mock_pool.execute.return_value = "INSERT 0 1"
+
+    from ai.models.embeddings.provider import MockEmbeddingProvider
+
+    provider = MockEmbeddingProvider(dimension=4)
+
+    texts = ["React frontend", "Python backend", "PostgreSQL database"]
+    vectors = await get_cached_embeddings_batch(mock_pool, texts, "mock_v1", provider)
+
+    assert len(vectors) == 3
+    assert len(vectors[0]) == 4
+    assert len(vectors[1]) == 4
+    assert len(vectors[2]) == 4
+
+    # Subsequent call with None pool hits L1 directly
+    cached_vectors = await get_cached_embeddings_batch(None, texts, "mock_v1", provider)
+    assert cached_vectors == vectors
