@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/Next.js-16+-black?style=flat-square&logo=next.js&logoColor=white" alt="Next.js" />
   <img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
-  <img src="https://img.shields.io/badge/pgvector-Enabled-336791?style=flat-square" alt="pgvector" />
+  <img src="https://img.shields.io/badge/Qdrant-Vector_DB-DC382D?style=flat-square&logo=qdrant&logoColor=white" alt="Qdrant" />
 </p>
 
 </div>
@@ -63,14 +63,17 @@ Lynk completely replaces the fragmented dual-account paradigm with the **Unified
 | **High-Performance Ingress** | Nginx 1.25 (`lynk-gateway` on port `8080`) | Reverse proxy with 65,535 worker connections, 5s micro-caching, and request collapsing. |
 | **Caching & Rate Limiting** | TwoTierCache (L1 In-Memory LRU + L2 Redis 7+ on port `6379`) | Sub-microsecond local reads, distributed Redis L2 cache, and sliding-window rate limiter. |
 | **Connection Pooling** | PgBouncer (`lynk-pgbouncer` on port `6432`) | Transaction connection pooling multiplexing client connections onto 25 PostgreSQL backends. |
+| **Message Broker & Event Bus** | RabbitMQ 3.13 (`lynk-rabbitmq` on port `5672`) | AMQP topic exchange (`lynk.events`), dead-letter exchange, and persistent audit consumer. |
+| **Full-Text Search Engine** | Meilisearch 1.7 (`lynk-meilisearch` on port `7700`) | Fast typo-tolerant text search indexing project workspaces. |
+| **Vector Database** | Qdrant Engine (`lynk-qdrant` on port `6333`) | Dedicated 384-dimensional dense vector store for campus student and project discovery. |
 | **Intelligent Autoscaling** | Compose Controller (`deploy/autoscaler/`) | Dynamic single-host scaling (2-6 replicas) monitoring container metrics, host headroom, and active connections. |
 | **AI Backend (Internal)** | Python 3.11, FastAPI, CPU ONNX INT8, sentence-transformers, scikit-learn | **Dockerised (`ai-api`) at `http://ai-api:8000`**. Protected via `X-Internal-AI-Secret`. |
 | **AI Worker Daemon** | Python 3.11 (`ai-worker`) | Background worker consuming `ai_jobs` using PostgreSQL `FOR UPDATE SKIP LOCKED` (starts under `--profile workers` or `--profile full`). |
-| **Database** | PostgreSQL 16 (`pgvector/pgvector:pg16` on port `5432`) | Two logical databases: `lynk_db` (relational schema + `vector(384)`) and `supertokens_db`. Tuned with 1GB `shared_buffers` and 3GB `effective_cache_size`. |
-| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000022`) | Forward and rollback migrations. Migrations 000016-000022 establish Project Workspaces, semantic embeddings, compound covering indexes, keyset cursor pagination, and view counts. |
+| **Database** | PostgreSQL 16 (port `5432`) | Two logical databases: `lynk_db` (relational schema, outbox, audit logs) and `supertokens_db`. Tuned with 1GB `shared_buffers` and 3GB `effective_cache_size`. |
+| **Migrations** | Raw sequential SQL (`backend/migrations/000001` - `000024`) | Forward and rollback migrations. Migrations 000016-000024 establish Project Workspaces, semantic embeddings, covering indexes, keyset pagination, view counts, transactional outbox headers, immutable audit logs, and BRIN indexes. |
 | **Identity & Access (IAM)** | Self-hosted SuperTokens Core 9.3 (`lynk-supertokens` on port `3567`) | Recipes: `EmailPassword`, `Session`, `EmailVerification`. Direct HTTP integration with Go API. |
 | **Object Storage** | MinIO S3 (`lynk-minio` on port `9000` API, `9001` Web Console) | Dedicated exclusively to the `resumes` bucket. Direct pre-signed upload URLs and streaming. |
-| **Local Network** | Docker Compose bridge network (`lynk-net`) | Internal container DNS: `gateway:8080`, `api:8080`, `postgres:5432`, `pgbouncer:6432`, `redis:6379`, `supertokens:3567`, `minio:9000`, `ai-api:8000`. |
+| **Local Network** | Docker Compose bridge network (`lynk-net`) | Internal container DNS: `gateway:8080`, `api:8080`, `postgres:5432`, `pgbouncer:6432`, `redis:6379`, `rabbitmq:5672`, `meilisearch:7700`, `qdrant:6333`, `supertokens:3567`, `minio:9000`, `ai-api:8000`. |
 | **Scope & Boundaries** | Go backend is authoritative; AI is enhancement | Full graceful degradation: Go handlers fall back to SQL if the AI backend is unreachable. |
 
 ---
@@ -122,8 +125,8 @@ flowchart TB
         end
 
         subgraph DBContainer["PostgreSQL Container (lynk-postgres)"]
-            Postgres["PostgreSQL 16 + pgvector<br/>(Port: 5432 - 1GB shared_buffers)"]
-            AppDB[("lynk_db<br/>(Relational Tables + vector(384) HNSW Indexes<br/>Covering Indexes & Workspaces)")]
+            Postgres["PostgreSQL 16<br/>(Port: 5432 - 1GB shared_buffers)"]
+            AppDB[("lynk_db<br/>(Relational Tables, Outbox, Audit Logs<br/>Covering Indexes & Workspaces)")]
             AuthDB[("supertokens_db<br/>(Users, Sessions, Verification Tokens)")]
             Postgres --> AppDB
             Postgres --> AuthDB
@@ -147,7 +150,8 @@ flowchart TB
     PGB -->|PostgreSQL Connection Pool| AppDB
     Handlers -->|AWS SDK S3 Presigned URLs| MinIO
     Orchestrator -->|X-Internal-AI-Secret + Correlation ID| FastAPI
-    FastAPI -->|pgvector Cosine Queries| AppDB
+    FastAPI -->|Relational Queries| AppDB
+    FastAPI -->|Dense Vector Search| Qdrant[Qdrant Vector DB :6333]
     AIWorker -->|SKIP LOCKED Queue Processing| AppDB
 ```
 
@@ -189,7 +193,7 @@ To accelerate onboarding, follow the tailored reading paths based on your primar
    - Migration `000003`: The transition of `id` and `user_id` to `VARCHAR(64)` for SuperTokens compatibility.
    - Migration `000009`: Enforcement of `ON DELETE RESTRICT` on `applications.job_id` preventing dangling application states.
    - State transition invariants: Contract status transitions (`Draft` -> `Active` -> `Completed` | `Cancelled`) and the lock ordering discipline (`jobs -> applications -> contracts`) to prevent deadlocks.
-   - Migrations `000016` - `000022`: Project-First Workspace architecture (`backend/internal/project`, `team`, `recruitment`, `workspace`), team member role enforcement (Lead, Maintainer, Member), modular section registries, and pgvector project semantic embeddings.
+   - Migrations `000016` - `000024`: Project-First Workspace architecture (`backend/internal/project`, `team`, `recruitment`, `workspace`), team member role enforcement (Lead, Maintainer, Member), modular section registries, and transactional outbox/audit architectures (with vector embeddings handled by dedicated Qdrant).
 3. **API Implementation:** Inspect [`architecture/api-specifications.md`](architecture/api-specifications.md) to verify expected route handlers, input validation constraints, and standardized JSON error structures (`{"error": "string"}`).
 4. **Storage & Resumes:** Review [`architecture/object-storage.md`](architecture/object-storage.md) for MinIO S3 integration patterns, streaming multipart uploads, and bucket readiness probes.
 5. **Local Workflow & Testing:** Use [`development/runbook-and-operations.md`](development/runbook-and-operations.md) for environment configuration and [`development/testing-strategy.md`](development/testing-strategy.md) for running `go test -v -race ./...`.
@@ -217,22 +221,22 @@ To accelerate onboarding, follow the tailored reading paths based on your primar
    - CORS isolation: Strict origin whitelisting (`http://localhost:3000`).
    - Internal AI Security: Defense-in-depth `X-Internal-AI-Secret` header validation and correlation ID tracing.
 2. **Object Storage Hardening:** Inspect [`architecture/object-storage.md`](architecture/object-storage.md) for MinIO private bucket policies, S3 signature v4 validation, and pre-signed URL expiration.
-3. **Relational Data Integrity:** Review [`architecture/database-schema-erd.md`](architecture/database-schema-erd.md) for cascade policies, check constraints, and migration immutability (000001 - 000022).
+3. **Relational Data Integrity:** Review [`architecture/database-schema-erd.md`](architecture/database-schema-erd.md) for cascade policies, check constraints, and migration immutability (000001 - 000024).
 4. **Operations & Runbook:** Review [`development/runbook-and-operations.md`](development/runbook-and-operations.md) for container health checks, secret hygiene (`SUPERTOKENS_API_KEY`, `MINIO_ROOT_PASSWORD`, `INTERNAL_AI_SECRET`), and database backup/restore procedures.
 
 ### 5.4 For AI & Machine Learning Engineers
-*Stack: Python 3.11, FastAPI, PyTorch, sentence-transformers, pgvector, scikit-learn, vLLM.*
+*Stack: Python 3.11, FastAPI, PyTorch, sentence-transformers, Qdrant, Kuzu, scikit-learn, vLLM.*
 
 1. **AI Subsystem Core:** Read Section 7 below and architecture specifications in [`architecture/system-architecture.md`](architecture/system-architecture.md).
 2. **Pipelines & Models:**
    - Embedding Provider (`ai/models/embeddings/provider.py`): Centralized `all-MiniLM-L6-v2` generating 384-dimensional dense vectors with SHA-256 content hashing.
    - Canonical Skill Taxonomy (`ai/pipelines/skills/normalizer.py`): Multi-stage normalization (exact alias -> fuzzy Levenshtein -> cosine similarity -> fallback).
-   - Hybrid Search (`ai/pipelines/search/hybrid.py`): Reciprocal Rank Fusion blending full-text `@@`, skill tags, and pgvector cosine distance (`<=>`).
+   - Hybrid Search (`ai/pipelines/search/hybrid.py`): Reciprocal Rank Fusion blending full-text `@@`, skill tags, and Qdrant dense vector cosine similarity.
    - Advisory Ranking (`ai/pipelines/ranking/ranker.py`): Fairness-compliant candidate ranking (45% skills, 35% semantics, 20% department) strictly excluding demographic attributes.
    - Generative Drafts (`ai/llm/client.py`): Structured vLLM client abstraction with temperature backoff (0.2 -> 0.0) and offline fallback.
 3. **Asynchronous Workers:** Inspect `ai/workers/worker.py` for PostgreSQL `FOR UPDATE SKIP LOCKED` concurrency, exponential backoff retries (`retry_at`), and dead-letter queuing.
 4. **Evaluation Benchmarks:** Explore `ai/evaluation/` for offline information retrieval metrics (NDCG@K, MRR, Precision@K, F1) and automated benchmark suites.
-5. **Testing Suite:** Run `python -m pytest ai/tests/ -v` (100 unit, pipeline, worker, and evaluation tests).
+5. **Testing Suite:** Run `python -m pytest ai/tests/ -v` (166 unit, pipeline, worker, and evaluation tests).
 
 ---
 
@@ -244,7 +248,7 @@ Every engineer and agent working within this repository must uphold these non-ne
 The Go REST API is the sole authority for authentication, authorization, business logic, domain validation, and transactional database state transitions. The internal FastAPI backend (`ai-api:8000`) is strictly an internal compute engine and must NEVER bypass Go authentication or directly alter authoritative domain status columns (`jobs.status`, `applications.status`, `contracts.status`, `projects.status`).
 
 ### Invariant 2: The Containerization Boundary
-- **Backend Infrastructure:** The Go REST API (`backend/Dockerfile`), FastAPI AI Backend (`ai/Dockerfile`), AI Worker, PostgreSQL + pgvector, SuperTokens Core, and MinIO run inside Docker containers orchestrated via `docker-compose.yml`.
+- **Backend Infrastructure:** The Go REST API (`backend/Dockerfile`), FastAPI AI Backend (`ai/Dockerfile`), AI Worker, PostgreSQL, Qdrant, SuperTokens Core, and MinIO run inside Docker containers orchestrated via `docker-compose.yml`.
 - **Frontend Development:** The Next.js application (`frontend/`) must **NOT** be dockerised during development. It runs on the host machine (`npm run dev`) for instant Hot Module Replacement (HMR).
 
 ### Invariant 3: Defense-in-Depth Internal AI Security
@@ -263,7 +267,7 @@ Students and campus members cannot create projects, invite members, submit appli
 Resumes are stored exclusively in **MinIO** (`resumes` bucket). The PostgreSQL database stores only metadata (object key, file name, MIME type, byte size, upload timestamp). Binary blobs are strictly forbidden in PostgreSQL.
 
 ### Invariant 8: Database Migration Immutability
-Never modify an existing raw SQL migration in `backend/migrations/` that has already been executed. Always write an incremental forward migration (`NNNNNN_name.up.sql`) paired with a rollback migration (`NNNNNN_name.down.sql`). Migrations `000001` through `000022` are immutable.
+Never modify an existing raw SQL migration in `backend/migrations/` that has already been executed. Always write an incremental forward migration (`NNNNNN_name.up.sql`) paired with a rollback migration (`NNNNNN_name.down.sql`). Migrations `000001` through `000024` are immutable.
 
 ---
 
@@ -287,7 +291,7 @@ Docker: Go REST API (:8080)
   +--> FastAPI AI Backend (:8000 internal) via X-Internal-AI-Secret
   |       +-- EmbeddingProvider: all-MiniLM-L6-v2 (384-dim dense vectors)
   |       +-- SkillNormalizer: Exact alias -> Fuzzy Levenshtein -> Cosine embedding
-  |       +-- HybridSearch: pgvector cosine (<=>) + full-text (@@) + RRF
+  |       +-- HybridSearch: Qdrant cosine + full-text (@@) + RRF
   |       +-- RecommendationEngine: Skill co-occurrence graph + completeness advice
   |       +-- CandidateRanker: Fair observable scoring (skills, semantics, dept)
   |       +-- ModerationDetector: Near-duplicate job vectors + posting velocity
@@ -296,9 +300,12 @@ Docker: Go REST API (:8080)
   |       +-- VLLMClient: Versioned prompt job-draft-v1 + temperature backoff
   |       +-- RunTracker: ai_runs audit logging with latency and content hashes
   |
-  +--> PostgreSQL 16 + pgvector (:5432)
-          +-- Transactional Application Data (users, profiles, jobs, contracts)
-          +-- Vector Storage (ai_embeddings with HNSW index)
+  +--> Qdrant Vector DB (:6333)
+  |       +-- campus_students (384-dim student embeddings)
+  |       +-- campus_projects (384-dim project embeddings)
+  |
+  +--> PostgreSQL 16 (:5432)
+          +-- Transactional Application Data (users, profiles, jobs, contracts, outbox, audit logs)
           +-- AI Logs & State (ai_runs, ai_recommendations, application_ai_scores)
           +-- Asynchronous Job Queue (ai_jobs table with SKIP LOCKED)
                   ^
@@ -387,7 +394,7 @@ curl -i http://localhost:8000/ready
 cd backend
 go test -v -race ./...
 
-# Python AI subsystem test suite (115 unit, pipeline, worker, and evaluation tests)
+# Python AI subsystem test suite (166 unit, pipeline, worker, and evaluation tests)
 python -m pytest ai/tests/ -v
 
 # Offline IR evaluation suite (NDCG@K, MRR, Precision@K, F1)

@@ -3,7 +3,7 @@
 > **Authoritative Operational Runbook & Developer Guide**
 > **Environment:** Polyglot Monorepo (Next.js 16 Host + Docker Compose Backend + AI Subsystem)
 > **Control Plane:** Root `Makefile` for unified onboarding, testing, linting, and formatting
-> **Databases:** PostgreSQL 16 (`lynk_db`, `supertokens_db`) with `pgvector`
+> **Databases:** PostgreSQL 16 (`lynk_db`, `supertokens_db`), Qdrant Vector DB (`:6333`)
 > **AI Subsystem:** FastAPI (`:8000`), `ai-worker` queue daemon, and optional profile-gated `vllm`
 > **Object Storage:** MinIO S3 (`resumes` bucket)
 > **Authentication:** Self-Hosted SuperTokens Core (`:3567`)
@@ -106,7 +106,7 @@ docker compose ps
 # NAME                IMAGE                                   COMMAND                  SERVICE             STATUS              PORTS
 # lynk-gateway        nginx:1.25-alpine                       "/docker-entrypoint...." gateway             Up (healthy)        0.0.0.0:8080->8080/tcp
 # lynk-api            lynk-backend                            "/app/api"               api                 Up (healthy)        8080/tcp
-# lynk-postgres       pgvector/pgvector:pg16                  "docker-entrypoint.s..." postgres            Up (healthy)        0.0.0.0:5432->5432/tcp
+# lynk-postgres       postgres:16                             "docker-entrypoint.s..." postgres            Up (healthy)        0.0.0.0:5432->5432/tcp
 # lynk-pgbouncer      edoburu/pgbouncer:latest                "/entrypoint.sh /etc..." pgbouncer           Up (healthy)        0.0.0.0:6432->6432/tcp
 # lynk-redis          redis:7-alpine                          "docker-entrypoint.s..." redis               Up (healthy)        0.0.0.0:6379->6379/tcp
 # lynk-supertokens    registry.supertokens.io/...             "/bin/sh -c 'exec ./..." supertokens         Up (healthy)        0.0.0.0:3567->3567/tcp
@@ -219,7 +219,7 @@ docker exec -i lynk-postgres psql -U lynk_user -d supertokens_db < .docker/postg
 | **AI API: `401 Unauthorized` on internal routes** | `INTERNAL_AI_SECRET` header mismatch | Inspect `docker compose logs ai-api` | Ensure `INTERNAL_AI_SECRET` matches across `.env`, `docker-compose.yml`, and Go API configuration. |
 | **AI Worker: connection refused to postgres** | PostgreSQL not ready when worker booted | `docker compose logs ai-worker` | Restart worker via `docker compose restart ai-worker`. In production, worker retries with backoff. |
 | **Search fallback warning in Go API logs** | AI backend offline, degraded, or timed out | Inspect `docker compose ps ai-api` | Normal graceful degradation. Go automatically serves standard SQL results without breaking. |
-| **PostgreSQL: `type "vector" does not exist`** | `pgvector` extension not loaded on database | Check `docker compose exec postgres psql -U lynk_user -d lynk_db -c '\dx'` | Run migration `000012_ai_subsystem_init.up.sql` or `000019_project_vector_search.up.sql` to install `vector` extension. |
+| **Qdrant: `connection refused on port 6333`** | Qdrant container is starting or degraded | Check `docker compose ps qdrant` | Run `docker compose logs qdrant`. AI service automatically falls back to in-memory vector store or relational search if Qdrant is initializing. |
 
 ---
 

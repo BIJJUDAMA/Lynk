@@ -29,7 +29,7 @@ Go API (N replicas)
   |
   +--> PgBouncer (transaction pooling, 25 backend connections)
          |
-         +--> PostgreSQL 16 (1 GB shared_buffers, pgvector + covering/keyset indexes)
+         +--> PostgreSQL 16 (1 GB shared_buffers + covering/keyset indexes)
 ```
 
 ---
@@ -78,7 +78,7 @@ Writes are kept few and are made safe against concurrency and network retries:
 - **PgBouncer transaction pooling** (port 6432) lets 2,000+ client connections share 25 PostgreSQL backends. Migrations bypass PgBouncer (`MIGRATION_DATABASE_URL`, port 5432) because transaction pooling forbids session-level prepared statements; migrations additionally serialize across replicas with a `pg_advisory_lock` held on a dedicated connection.
 - **Indexes**: covering indexes for feed scans (`INCLUDE` payload columns) and a keyset index `(visibility, recruitment_status, category, created_at DESC, id DESC)` so deep pagination is an index range scan, not an offset scan.
 - **Keyset pagination**: `GET /api/v1/projects?cursor=<opaque>` uses `(created_at, id) < (...)` with an `id DESC` tiebreaker; the `COUNT(*)` for totals stays cursor-free, and a malformed cursor is rejected with `400 INVALID_CURSOR`.
-- **pgvector HNSW** for semantic search.
+- **Qdrant Vector DB** for semantic search (HNSW index on dense 384d vectors on port 6333).
 
 ---
 

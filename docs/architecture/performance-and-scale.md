@@ -66,7 +66,7 @@ Load Runner / Client Traffic (:8080 - :8119 across 40 Ingress Ports)
         |    * QueryExecModeSimpleProtocol enabled (prevents prepared statement collisions)
         |    |
         |    v
-        |  PostgreSQL 16 + pgvector (lynk-postgres:5432)
+        |  PostgreSQL 16 (lynk-postgres:5432)
         |    * Engine parameters: 1GB shared_buffers, 3GB effective_cache_size, 16MB work_mem
         |    * SSD/NVMe settings: 1.1 random_page_cost, 200 effective_io_concurrency
         |    * Compound covering index: idx_projects_feed_covering

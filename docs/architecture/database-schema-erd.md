@@ -3,7 +3,7 @@
 > **Authoritative Database Specification**
 > **Database Engine:** PostgreSQL 16 Alpine (`lynk-postgres` on port `5432`)
 > **Databases:** `lynk_db` (application data) & `supertokens_db` (IAM data)
-> **Schema Migrations:** Raw SQL (`backend/migrations/000001` through `000022`)
+> **Schema Migrations:** Raw SQL (`backend/migrations/000001` through `000024`)
 > **User Identity Type:** `VARCHAR(64)` (SuperTokens Core user identity format)
 
 ---
@@ -109,7 +109,7 @@ erDiagram
 
 ### 1.2 First-Class AI Subsystem Model (Migration 000012)
 
-Migration `000012_ai_subsystem_init.up.sql` establishes 12 dedicated relational tables and the `vector(384)` pgvector embedding type supporting skill taxonomy, semantic vector search, advisory ranking, asynchronous background processing, and run telemetry:
+Migration `000012_ai_subsystem_init.up.sql` establishes 12 dedicated relational tables supporting skill taxonomy, advisory ranking, asynchronous background processing, and run telemetry (with production vector storage decoupled to dedicated Qdrant):
 
 ```mermaid
 erDiagram
@@ -295,6 +295,19 @@ erDiagram
         TIMESTAMPTZ created_at "Creation timestamp"
     }
 
+
+    audit_logs {
+        UUID id PK "Unique audit event identifier"
+        VARCHAR(64) actor_id "SuperTokens user ID who initiated action"
+        VARCHAR(128) action "Action string (e.g. project_created, member_removed)"
+        VARCHAR(64) target_type "Entity type (e.g. project, application)"
+        VARCHAR(64) target_id "Primary key of target entity"
+        JSONB metadata "Contextual payload metadata"
+        VARCHAR(45) ip_address "Client IP address"
+        VARCHAR(64) trace_id "Distributed request trace ID"
+        TIMESTAMPTZ created_at "Immutable creation timestamp"
+    }
+
     outbox_events {
         UUID id PK "Unique event identifier"
         VARCHAR(128) event_type "Event: application_submitted, contract_status_changed"
@@ -345,7 +358,7 @@ erDiagram
         project_recruitment_status recruitment_status "open, paused, closed"
         project_lifecycle_status lifecycle_status "idea, active, completed, archived"
         JSONB settings "Workspace settings"
-        BIGINT view_count "Persisted view count (Migration 000022)"
+        BIGINT view_count "Persisted view count (Migration 000024)"
         TIMESTAMPTZ created_at "Creation timestamp"
         TIMESTAMPTZ updated_at "Update timestamp"
     }
@@ -734,7 +747,7 @@ CREATE TABLE outbox_events (
 );
 ```
 
-### 2.21 `projects` (Migration 000017 & 000022)
+### 2.21 `projects` (Migration 000017 & 000024)
 Collaborative project workspaces created by campus members.
 ```sql
 CREATE TABLE projects (
@@ -983,7 +996,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX idx_jobs_title_trgm ON jobs USING gin (title gin_trgm_ops);
 CREATE INDEX idx_jobs_description_trgm ON jobs USING gin (description gin_trgm_ops);
 
--- AI Subsystem: pgvector HNSW Dense Cosine Similarity Index (Migration 000012)
+-- AI Subsystem: Dense Vector Indexing (Historical Migration 000012; production vectors served via Qdrant)
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE INDEX idx_ai_embeddings_embedding ON ai_embeddings USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX idx_ai_embeddings_entity ON ai_embeddings(entity_type, entity_id);
@@ -1101,7 +1114,7 @@ When an employer cancels an active contract:
 
 ---
 
-## 6. Raw SQL Migration Registry (000001-000022)
+## 6. Raw SQL Migration Registry (000001-000024)
 
 | Migration File | Purpose & Changes | Breaking? | Reversible? | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -1116,7 +1129,7 @@ When an employer cancels an active contract:
 | `000009_foreign_key_indexes_and_restrict` | Adds unconditional foreign key indexes on `contracts` and `reviews`. Sets `applications.job_id` to `ON DELETE RESTRICT`. | No | Yes | Eliminates sequential table scans and protects application audit logs. |
 | `000010_seed_test_campus_members` | Seeds initial campus member test accounts and unified profiles in `lynk_db` and synchronizes credentials and roles to `supertokens_db` via `dblink`. | No | Yes | Provisions poster, applicant, and unverified test accounts for local development and CI testing. |
 | `000011_remove_monetary_fields` | Drops monetary columns: `budget` and `pay_type` from `jobs`, and `agreed_budget` from `contracts`. | Yes | Yes | Fully decouples platform from monetary handling into pure campus discovery and deliverable collaboration. |
-| `000012_ai_subsystem_init` | Installs `pgvector` extension and creates 12 tables (`skills`, `skill_aliases`, `profile_skills`, `job_skills`, `ai_embeddings`, `ai_runs`, `ai_recommendations`, `application_ai_scores`, `moderation_events`, `review_insights`, `skill_demand_snapshots`, `ai_jobs`) with HNSW cosine similarity index. | No | Yes | Establishes storage and queueing for First-Class AI Subsystem. |
+| `000012_ai_subsystem_init` | Creates 12 AI subsystem tables (`skills`, `skill_aliases`, `profile_skills`, `job_skills`, `ai_embeddings`, `ai_runs`, `ai_recommendations`, `application_ai_scores`, `moderation_events`, `review_insights`, `skill_demand_snapshots`, `ai_jobs`). Production vector search is decoupled to dedicated Qdrant instance (`lynk-qdrant`:6333). | No | Yes | Establishes relational storage and queueing for First-Class AI Subsystem. |
 | `000013_ai_subsystem_constraints` | Adds domain check constraints on AI scores, review insights, job attempts, moderation risk scores, and recommendations uniqueness (`uq_ai_recommendations_user_type_title`). | No | Yes | Hardens AI data integrity and prevents duplicate recommendations. |
 | `000014_active_partial_indexes` | Adds partial indexes for active open jobs, pending applications, active contracts, and active recommendations. | No | Yes | Accelerates hot path marketplace queries while minimizing index disk size. |
 | `000015_phase1_5_hardening` | Creates `embedding_cache` (composite PK `content_hash, model_name`) for INT8 CPU ONNX deduplication and `outbox_events` table with partial retry index for transactional event streaming. | No | Yes | Core data structures for Phase 1.5 outbox dispatcher and AI inference deduplication. |
@@ -1127,5 +1140,5 @@ When an employer cancels an active contract:
 | `000020_project_feed_covering_indexes` | Adds compound covering index (`idx_projects_feed_covering`) on `projects` with `INCLUDE` clause, partial active feed index, and member lookup index. | No | Yes | Optimizes public feed filtering and search to execute via RAM-buffered index-only scans under extreme concurrency. |
 | `000021_project_feed_keyset_index` | Adds compound keyset index (`idx_projects_feed_keyset`) on `(visibility, recruitment_status, category, created_at DESC, id DESC)` for deterministic pagination. | No | Yes | Powers zero-offset keyset cursor pagination across massive project discovery feeds. |
 | `000022_project_view_count` | Adds `view_count BIGINT NOT NULL DEFAULT 0` column to `projects` table for write-batched view counts. | No | Yes | Backs Redis write-behind view batcher flushes to PostgreSQL without row lock contention. |
-| `000021_project_feed_keyset_index` | Adds compound keyset index (`idx_projects_feed_keyset`) on `(visibility, recruitment_status, category, created_at DESC, id DESC)` for deterministic pagination. | No | Yes | Powers zero-offset keyset cursor pagination across massive project discovery feeds. |
-| `000022_project_view_count` | Adds `view_count BIGINT NOT NULL DEFAULT 0` column to `projects` table for write-batched view counts. | No | Yes | Backs Redis write-behind view batcher flushes to PostgreSQL without row lock contention. |
+| `000023_transactional_outbox_and_audit` | Adds `headers JSONB NOT NULL DEFAULT '{}'` and `idx_outbox_aggregate` to `outbox_events`. Creates append-only `audit_logs` table with immutability trigger. | No | Yes | Enterprise auditability and reliable AMQP transactional event streaming. |
+| `000024_partition_maintenance` | Creates Block Range Indexes (BRIN) on `audit_logs(created_at)` and `outbox_events(created_at)`. | No | Yes | Optimized time-series indexing and automated partition maintenance for high throughput. |

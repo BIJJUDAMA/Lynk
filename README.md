@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Tailwind-CSS_3.4-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white" alt="Tailwind CSS" />
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
-  <img src="https://img.shields.io/badge/pgvector-Enabled-336791?style=flat-square" alt="pgvector" />
+  <img src="https://img.shields.io/badge/Qdrant-Vector_DB-DC382D?style=flat-square&logo=qdrant&logoColor=white" alt="Qdrant" />
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
 </p>
 
@@ -33,7 +33,7 @@ Lynk is a campus collaboration and work platform connecting verified university 
 - **Graceful Degradation Everywhere:** All AI operations (semantic search, ranking, draft generation, recommendations, moderation, analytics) automatically fall back to deterministic SQL logic if the AI service is unreachable.
 - **Authoritative Non-Mutation:** AI endpoints return advisory draft payloads and never mutate authoritative database tables directly.
 - **Self-Hosted IAM (SuperTokens Core):** Session management, credential handling, and email verification run on-premise in Docker on port `3567`.
-- **Dense Semantic Vectors (pgvector):** PostgreSQL 16 stores 384-dimensional dense vectors (`all-MiniLM-L6-v2`) indexed with HNSW cosine distance for natural language discovery.
+- **Dedicated Vector Database (Qdrant):** Dedicated Qdrant vector engine (`lynk-qdrant`:6333) stores and indexes 384-dimensional dense vectors (`all-MiniLM-L6-v2`) across `campus_students` and `campus_projects` collections using HNSW cosine distance search, isolating vector computation from relational workloads.
 - **Dedicated Object Storage (MinIO S3):** Student resumes are stored exclusively in MinIO S3 (`resumes` bucket); PostgreSQL stores only object keys and file metadata.
 - **Containerization Boundary:** Go API, AI API, AI Worker, SuperTokens Core, PostgreSQL, and MinIO run in Docker Compose. The Next.js frontend runs on the host machine for instant Hot Module Replacement (HMR).
 - **Unified Control Plane:** A root `Makefile` standardizes onboarding, dependency installation, and quality gates across Go, TypeScript, and Python.
@@ -82,13 +82,13 @@ Lynk is a campus collaboration and work platform connecting verified university 
 |   +-------------------+               +--------------------+       |   |
 |   | PostgreSQL 16     |               | AI Worker Daemon   |       |   |
 |   | Relational tables |               | (lynk-ai-worker)   |       |   |
-|   | pgvector 384d     |               | Batch tasks & graph|       |   |
+|   | Outbox & Audits   |               | Batch tasks & graph|       |   |
 |   +-------------------+               +----------+---------+       |   |
 |          ^                                       |                 |   |
 |          | IAM Auth                              | openCypher      |   |
 |   +------+------------+                          v                 |   |
 |   | SuperTokens Core  |               +--------------------+       |   |
-|   | Container (:3567) |               | Kùzu Columnar Graph|       |   |
+|   | Container (:3567) |               | Kuzu Columnar Graph|       |   |
 |   +-------------------+               | Persistent on disk |       |   |
 |                                       +--------------------+       |   |
 |                                                  |                 |   |
@@ -114,9 +114,11 @@ Lynk is a campus collaboration and work platform connecting verified university 
 | **Connection Pooling** | PgBouncer (`lynk-pgbouncer`:6432) | Transaction mode multiplexing 5,000 client connections onto 25-40 PostgreSQL backends |
 | **AI Microservice Runtime** | Python 3.11 (`lynk-ai-api`:8000) | Gunicorn multi-process ASGI server (4 Uvicorn workers) with worker recycling (`max-requests: 5000`) |
 | **AI Background Worker** | Python 3.11 (`lynk-ai-worker`) | Dedicated ARQ task worker executing asynchronous graph projections and batch embeddings |
-| **Graph Intelligence Engine** | Kùzu Graph DB | Embedded columnar C++ graph engine with openCypher querying, persisted on `/data/kuzu_campus_graph` |
+| **Graph Intelligence Engine** | Kuzu Graph DB | Embedded columnar C++ graph engine with openCypher querying, persisted on `/data/kuzu_campus_graph` |
 | **Vector Search** | Qdrant Engine (`lynk-qdrant`:6333) | Dedicated 384-dimensional dense vector store with HNSW indexing and memory fallback |
-| **Database** | PostgreSQL 16 + pgvector | Relational schema + 384-dim vector storage with HNSW cosine distance indexing |
+| **Message Broker & Event Bus** | RabbitMQ 3.13 (`lynk-rabbitmq`:5672) | AMQP event bus with dead-letter exchange for audit logging and background events |
+| **Full-Text Search Engine** | Meilisearch 1.7 (`lynk-meilisearch`:7700) | Instant typo-tolerant full-text search indexing campus projects |
+| **Database** | PostgreSQL 16 | Relational application schema, SuperTokens IAM state, outbox events, and immutable audit logs |
 | **IAM & Auth** | SuperTokens Core 9.3 | Self-hosted session management, EmailPassword, EmailVerification recipes |
 | **Object Storage** | MinIO | S3-compatible object storage dedicated exclusively to student resumes (`resumes` bucket) |
 | **Orchestration** | Docker Compose | Multi-container environment (Gateway, API, AI API, AI Worker, Qdrant, DB, IAM, MinIO, Redis) |
@@ -128,7 +130,7 @@ Lynk is a campus collaboration and work platform connecting verified university 
 ```text
 Lynk/
 +-- Makefile                    # Universal developer control plane (setup, test, lint, format)
-+-- docker-compose.yml          # Postgres (pgvector), MinIO, SuperTokens, Go API, AI API, AI Worker
++-- docker-compose.yml          # Postgres, Qdrant, MinIO, SuperTokens, Go API, AI API, AI Worker
 +-- .env.example                # Canonical environment variable template
 +-- .pre-commit-config.yaml     # Universal Git hook suite (Prettier, Ruff, Go fmt, whitespace)
 +-- ai/                         # FastAPI AI Backend & Async Workers
@@ -142,7 +144,7 @@ Lynk/
 |   +-- llm/                    # vLLM client abstraction, prompts, schemas
 |   +-- workers/                # SKIP LOCKED queue daemon & background handlers
 |   +-- evaluation/             # Offline IR metrics (NDCG, MRR, F1) & benchmark harness
-|   +-- tests/                  # 115 pytest test cases across all AI subsystems
+|   +-- tests/                  # 166 pytest test cases across all AI subsystems
 +-- backend/                    # Authoritative Go REST API
 |   +-- Dockerfile              # Multi-stage production container build
 |   +-- cmd/api/main.go         # Dependency injection, router setup, server entrypoint
@@ -161,7 +163,7 @@ Lynk/
 |   |   +-- storage/            # MinIO S3 client wrapper
 |   |   +-- database/           # Connection pooling (pgxpool) and raw SQL migrator
 |   |   +-- middleware/         # SuperTokens session auth, CORS, logging, recovery
-|   +-- migrations/             # Incremental SQL migration files (000001 - 000022)
+|   +-- migrations/             # Incremental SQL migration files (000001 - 000024)
 +-- frontend/                   # Next.js App Router frontend (runs on host)
 |   +-- src/
 |   |   +-- app/                # App Router pages ((auth), projects, activity, profile)
@@ -287,7 +289,7 @@ deactivate
 
 #### Step 5: Start Container Infrastructure
 
-Launch PostgreSQL (`pgvector`), SuperTokens Core, MinIO, the Go REST API, FastAPI AI Backend, and the AI Worker:
+Launch PostgreSQL, SuperTokens Core, MinIO, Qdrant, Redis, RabbitMQ, Meilisearch, the Go REST API, FastAPI AI Backend, and the AI Worker:
 
 ```bash
 docker compose up -d --build
@@ -305,7 +307,10 @@ Service access registry:
 - **SuperTokens Core IAM:** `http://localhost:3567`
 - **MinIO S3 API:** `http://localhost:9000`
 - **MinIO Web Console:** `http://localhost:9001` (User: `minio_admin`, Password: `minio_password`)
-- **PostgreSQL 16 + pgvector:** `localhost:5432` (Database: `lynk_db`, User: `lynk_user`)
+- **PostgreSQL 16:** `localhost:5432` (Database: `lynk_db`, User: `lynk_user`)
+- **Qdrant Vector DB:** `localhost:6333`
+- **Meilisearch Full-Text:** `localhost:7700`
+- **RabbitMQ Management:** `localhost:15672`
 
 #### Step 6: Start Frontend Development Server
 
@@ -374,6 +379,11 @@ All public REST API endpoints are served by the authoritative Go API on port `80
 | **Recruitment** | PATCH | `/applications/{id}/status` | Lead / Maintainer | Accept (adds to team roster), shortlist, or reject |
 | **Search** | GET | `/search/projects?q=...` | Public | Hybrid semantic + keyword project discovery |
 | **Search** | GET | `/search/people?q=...` | Verified .edu | Hybrid semantic + keyword student directory discovery |
+| **P2P Collaboration** | POST | `/projects/{id}/collaborators/match` | Verified .edu | Match complementary teammates covering missing project skills |
+| **P2P Collaboration** | POST | `/projects/{id}/collaborators/skill-gap` | Verified .edu | Evaluate student skill gap and learning pathway against project |
+| **P2P Collaboration** | POST | `/projects/{id}/assist` | Verified .edu | Natural language project creation & role synthesis via AI |
+| **Realtime Events** | GET | `/events/stream` | Session | Persistent Server-Sent Events (SSE) stream for live updates |
+| **Audit Logs** | GET | `/audit/logs` | Admin | Query immutable audit log trail across platform actions |
 | **Reviews** | GET | `/users/{id}/reviews` | Public | View aggregated bilateral peer ratings and reviews |
 | **AI Insights** | GET | `/users/{id}/ai-insights` | Public | Aspect breakdown (technical, timeliness, communication) |
 | **AI Analytics** | GET | `/analytics/skills` | Public | Campus skill demand metrics and statistical growth forecasts |
@@ -517,6 +527,6 @@ node tests/load/run_all.js --stage=08_connection_hold
 5. **Authoritative Non-Mutation:** Generative AI endpoints return draft payloads and never mutate authoritative database rows directly.
 6. **Graceful Degradation Everywhere:** If the AI backend or GPU is unreachable, all Go endpoints seamlessly fall back to deterministic SQL logic with HTTP 200.
 7. **Circuit Breaker Protection:** The Go AI orchestrator trips after 5 consecutive failures for 30s, fast-bypassing to heuristics without blocking requests.
-8. **Deterministic Database Migrations:** All migrations in `backend/migrations/` (`000001` through `000022`) are immutable and sequential.
+8. **Deterministic Database Migrations:** All migrations in `backend/migrations/` (`000001` through `000024`) are immutable and sequential.
 9. **Resumes in MinIO Exclusively:** Resumes are never stored on local disk or inside PostgreSQL. All resume transfers stream directly through MinIO with short-lived presigned URLs for client downloads.
 10. **Concurrency & Fairness:** Candidate ranking excludes protected demographic attributes (gender, race, age, graduation year, ethnicity) for algorithmic fairness.

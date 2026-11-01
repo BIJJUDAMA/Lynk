@@ -231,12 +231,13 @@ flowchart LR
     GoAPI["Go REST API (:8080)<br/>Authoritative Gateway & RBAC"]
     AIAPI["FastAPI AI Subsystem (:8000)<br/>Internal ML Pipelines"]
     Worker["ai-worker<br/>Queue Worker Daemon"]
-    Postgres[("PostgreSQL 16<br/>pgvector + lynk_db")]
+    Postgres[("PostgreSQL 16<br/>lynk_db")]
 
     Client -->|Session Cookie + Anti-CSRF| GoAPI
     GoAPI -->|X-Internal-AI-Secret + X-Correlation-ID| AIAPI
     Worker -->|FOR UPDATE SKIP LOCKED| Postgres
-    AIAPI -->|pgvector Cosine Queries| Postgres
+    AIAPI -->|Relational Queries| Postgres
+    AIAPI -->|Dense Vector Search| Qdrant[("Qdrant (:6333)<br/>Vector DB")]
     GoAPI -->|Authoritative Mutations| Postgres
 ```
 

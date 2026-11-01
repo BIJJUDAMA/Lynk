@@ -193,7 +193,7 @@ The platform is guarded by a multi-job GitHub Actions workflow triggered on ever
 flowchart TB
     subgraph GitHubActions["GitHub Actions CI Pipeline (.github/workflows/ci.yml)"]
         subgraph BackendJob["Job 1: Backend CI (Ubuntu Latest)"]
-            B1["PostgreSQL 16 Service Container with pgvector (port 5432)"]
+            B1["PostgreSQL 16 and Qdrant Service Containers (ports 5432, 6333)"]
             B2["Setup Go 1.25.x with Module Cache"]
             B3["golangci-lint v2.4.0 (Go 1.25 compatible)"]
             B4["Verify SQL migrations on throwaway DB (golang-migrate)"]
@@ -216,7 +216,7 @@ flowchart TB
         subgraph AIJob["Job 3: AI Subsystem CI (Ubuntu Latest)"]
             A0["Redis 7 & Qdrant Vector DB Service Containers"]
             A1["Setup Python 3.11 with pip cache"]
-            A2["Install dependencies (FastAPI, PyTorch, pgvector, pydantic)"]
+            A2["Install dependencies (FastAPI, PyTorch, Qdrant, Kuzu, pydantic)"]
             A3["Execute 166-test Pytest Suite with Coverage (pytest ai/tests/)"]
             A4["Run Offline IR Evaluation Harness (python -m ai.evaluation.harness)"]
             A0 --> A1 --> A2 --> A3 --> A4
@@ -225,9 +225,9 @@ flowchart TB
 ```
 
 ### 5.1 Backend CI Verification Sequence
-1. **Container Health:** PostgreSQL 16 Alpine container spins up with `pgvector` extension and health checks (`pg_isready`).
+1. **Container Health:** PostgreSQL 16 container spins up alongside Qdrant and Redis with active health checks.
 2. **Linting:** `golangci-lint` (v2.4.0) performs static analysis across all Go packages.
-3. **Migration Verification:** `golang-migrate` tests raw SQL migration files (`000001` through `000022`) against a throwaway database (`lynk_migrate_check`), testing forward `up`, rollback `down -all`, and re-application `up`.
+3. **Migration Verification:** `golang-migrate` tests raw SQL migration files (`000001` through `000024`) against a throwaway database (`lynk_migrate_check`), testing forward `up`, rollback `down -all`, and re-application `up`.
 4. **App Migrations:** The application migrator applies migrations to `lynk_db` via `TestRunMigrations_AppliesInitOnEmptyDatabase`.
 5. **Race Detector Suite:** `go test -race -count=1 ./...` executes across all 29 Go packages under thread-safety scrutiny.
 
@@ -273,7 +273,7 @@ For full-stack verification of live running containers and endpoints, automated 
 12. **Phase 12: Activity Feed Stream Verification:** Verifies unified audit events across contract and job actions.
 13. **Phase 13: Security Boundaries & Edge Cases:** Tests unverified email blocks (403), 1MB JSON clamping (413), and protocol injection filters.
 14. **Phase 14: First-Class AI Subsystem End-to-End Verification:**
-    - **14.1 AI Deep Readiness Probe:** Probes internal /ready (:8000/ready), asserting PostgreSQL, Redis, Qdrant, Kùzu graph DB, and model residency in RAM.
+    - **14.1 AI Deep Readiness Probe:** Probes internal /ready (:8000/ready), asserting PostgreSQL, Redis, Qdrant, Kuzu graph DB, and model residency in RAM.
     - **14.2 Generative Project Drafts:** Invokes POST /api/v1/jobs/generate to produce structured project drafts from brief raw ideas.
     - **14.3 Database Non-Mutation Invariant:** Proves generative drafts are strictly in-memory suggestions and do NOT insert uncommitted rows into database tables.
     - **14.4 Applicant Advisory Ranking & RBAC:** Verifies GET /api/v1/jobs/{id}/applicants/ranking returns 200 for project owner, and strictly rejects non-owners with 403 Forbidden.

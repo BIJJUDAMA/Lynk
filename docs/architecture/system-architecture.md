@@ -63,7 +63,7 @@ flowchart TB
         end
 
         subgraph GraphService["Columnar Graph Engine"]
-            Kuzu["Kùzu Graph Engine (C++)<br/>openCypher Query Language<br/>Persisted: /data/kuzu_campus_graph"]
+            Kuzu["Kuzu Graph Engine (C++)<br/>openCypher Query Language<br/>Persisted: /data/kuzu_campus_graph"]
         end
 
         subgraph VectorService["Vector Database (lynk-qdrant)"]
@@ -78,8 +78,8 @@ flowchart TB
             PGB["PgBouncer 1.22<br/>Port: 6432:6432<br/>Transaction Pooling Mode (20 Backends)"]
         end
 
-        subgraph DBService["PostgreSQL 16 + pgvector (lynk-postgres)"]
-            PG["PostgreSQL 16 Alpine + pgvector<br/>Port: 5432:5432<br/>1GB shared_buffers | 3GB cache<br/>lynk_db & supertokens_db"]
+        subgraph DBService["PostgreSQL 16 (lynk-postgres)"]
+            PG["PostgreSQL 16 Alpine<br/>Port: 5432:5432<br/>1GB shared_buffers | 3GB cache<br/>lynk_db & supertokens_db"]
         end
 
         subgraph StorageService["MinIO S3 Storage (lynk-minio)"]
@@ -103,7 +103,7 @@ flowchart TB
     FastAPI -->|Local Graph Queries| Kuzu
     AIWorker -->|Batch Graph Updates| Kuzu
     FastAPI -->|Dense 384d Vectors| Qdrant
-    FastAPI -->|pgvector Cosine Queries| PG
+    FastAPI -->|Relational Queries| PG
     AIWorker -->|SKIP LOCKED Queue Processing| PG
 ```
 
@@ -112,15 +112,17 @@ flowchart TB
 | Service | Container Name | Host Port | Internal Port | Protocol | Purpose |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Frontend** | *Host Process* | `3000` | N/A | HTTP | Next.js 16 App Router (React 18.3, TypeScript 5.6, Tailwind CSS 3.4, TanStack Query 5) |
-| **Nginx Gateway** | `lynk-gateway` | `8080` | `8080` | HTTP | High-concurrency edge reverse proxy (65,535 worker conns, 5s micro-cache, request collapsing) |
+| **Nginx Gateway** | `lynk-gateway` | `8080-8119` (40 ports) | `8080` | HTTP | High-concurrency edge reverse proxy (65,535 worker conns, 5s micro-cache, request collapsing) |
 | **Go REST API** | `lynk-api` | N/A (Proxied) | `8080` | HTTP | Authoritative Go HTTP service (Chi router, TwoTierCache, SSE stream, `/metrics`) |
 | **Redis 7** | `lynk-redis` | `6379` | `6379` | TCP | L2 distributed cache-aside store & sliding-window rate limiter |
 | **PgBouncer** | `lynk-pgbouncer` | `6432` | `6432` | TCP | PostgreSQL transaction connection pooling multiplexing thousands of client connections onto 25-40 backends |
-| **Gunicorn AI API** | `lynk-ai-api` | N/A (Internal) | `8000` | HTTP | Gunicorn 4-worker ASGI runtime with ONNX embeddings, Kùzu graph queries, and Qdrant client |
+| **Message Broker** | `lynk-rabbitmq` | `5672` / `15672` | `5672` / `15672` | AMQP / HTTP | AMQP topic exchange (`lynk.events`), dead-letter exchange, and persistent audit consumer |
+| **Full-Text Search** | `lynk-meilisearch` | `7700` | `7700` | HTTP | Typo-tolerant fast full-text search indexing campus projects |
+| **Gunicorn AI API** | `lynk-ai-api` | N/A (Internal) | `8000` | HTTP | Gunicorn 4-worker ASGI runtime with ONNX embeddings, Kuzu graph queries, and Qdrant client |
 | **AI Background Worker** | `lynk-ai-worker` | N/A | N/A | Background | ARQ task consumer executing async graph synchronization and batch embeddings |
 | **Qdrant Vector DB** | `lynk-qdrant` | `6333` | `6333` | HTTP | Dedicated 384-dimensional dense vector store with HNSW indexing and memory fallback |
 | **SuperTokens Core** | `lynk-supertokens` | `3567` | `3567` | HTTP | Self-hosted IAM engine & session verifier |
-| **PostgreSQL + pgvector** | `lynk-postgres` | `5432` | `5432` | TCP | Relational & 384-dim vector storage (1GB `shared_buffers`, 3GB `effective_cache_size`, `lynk_db`, `supertokens_db`) |
+| **PostgreSQL 16** | `lynk-postgres` | `5432` | `5432` | TCP | Relational application data & outbox state (1GB `shared_buffers`, 3GB `effective_cache_size`, `lynk_db`, `supertokens_db`) |
 | **MinIO S3 API** | `lynk-minio` | `9000` | `9000` | HTTP/S3 | AWS S3 v4 compatible object storage for student resumes |
 | **MinIO Web Console** | `lynk-minio` | `9001` | `9001` | HTTP | Storage management web user interface |
 
@@ -186,7 +188,7 @@ The backend (`backend/`) avoids bloated enterprise frameworks in favor of Go sta
 +--------------------------------+-------------------------------+
                                  |
                                  v
-           PostgreSQL 16 Database (1GB RAM Buffer) + pgvector
+           PostgreSQL 16 Database (1GB RAM Buffer)
 ```
 
 ### 3.1 Layer Responsibilities & Boundaries
@@ -223,7 +225,7 @@ The AI subsystem in Lynk is engineered as an internal platform capability preser
 - **Non-Mutation Invariant:** Generative AI endpoints return draft payloads; they never execute database mutations on authoritative domain tables (`jobs`, `applications`, `contracts`).
 - **Telemetry Parity:** Every pipeline execution invokes `track_ai_run` recording feature name, model/prompt/pipeline versions, SHA-256 input hash, output JSON, and wall-clock latency in `ai_runs`.
 
-### 4.2 Dense Semantic Memory & Vector Search (pgvector + CPU ONNX)
+### 4.2 Dense Semantic Memory & Vector Search (Qdrant + CPU ONNX)
 - **Embedding Model:** `all-MiniLM-L6-v2` generating 384-dimensional dense vectors normalized to unit length via `sentence-transformers` CPU with mock fallback and standalone ONNX quantization support.
 - **Deduplication Cache:** `embedding_cache` table keyed by `(content_hash, model_name)` storing pre-computed vectors to skip redundant inference.
 - **Index Structure:** PostgreSQL 16 `vector(384)` indexed with Hierarchical Navigable Small World (`HNSW`) cosine distance metric (`vector_cosine_ops`).

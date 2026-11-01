@@ -23,6 +23,10 @@ This spins up the entire platform (PostgreSQL, SuperTokens Core, MinIO, Redis, G
 From the repository root (`Lynk/`), run:
 
 ```bash
+# To spin up all services including the containerized Next.js frontend:
+docker compose --profile full up -d --build
+
+# To spin up all backend & data infrastructure while developing frontend on host:
 docker compose up -d --build
 ```
 
@@ -140,7 +144,7 @@ The database seed migration (`000010_seed_test_campus_members.up.sql`) provision
 
 You can also register any new account directly via the UI:
 
-1. Navigate to `http://localhost:3000/register` (or click **Sign in with .edu** -> **Sign up**).
+1. Navigate to `http://localhost:3000/login (toggle to 'Create Account')` (or click **Sign in with .edu** -> **Sign up**).
 2. Enter any institutional email ending in `.edu` (e.g., `alice@berkeley.edu`, `john@mit.edu`, `dev@stanford.edu`).
 3. Set any password meeting standard criteria (minimum 8 characters, at least 1 number).
 4. Complete initial profile setup (name, department, graduation year, skills).
@@ -180,5 +184,14 @@ npm test
 # AI Subsystem (Python):
 python -m ruff check ai/
 python -m mypy --config-file ai/pyproject.toml ai/
-python -m pytest ai/tests/ -v
+python -m pytest ai/tests/ -v   # 166 pytest cases
+
+# Full-Stack Integration Smoke Test (16 phases against running Docker stack):
+bash scripts/smoke-test.sh
+
+# Chaos & Resilience Injection Suite:
+bash scripts/chaos-test.sh
+
+# Frontend E2E Browser Journeys (Playwright):
+cd frontend && npx playwright test
 ```

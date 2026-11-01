@@ -180,7 +180,7 @@ flowchart TD
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
 | **Dual-Domain Discovery** | `GET /api/v1/search/jobs?q=...` (public) and `GET /api/v1/search/people?q=...` (verified session). | Search for both campus gig opportunities and peer students with specific skills or academic backgrounds. |
-| **Reciprocal Rank Fusion (RRF)** | Blends PostgreSQL full-text search (`to_tsquery('english', ...)`), canonical skill tag matching, and pgvector cosine distance (`<=>`). | Natural language queries (e.g. "student experienced in distributed systems and backend Go") surface highly relevant results even without exact keyword matches. |
+| **Reciprocal Rank Fusion (RRF)** | Blends full-text search (`to_tsquery('english', ...)`), canonical skill tag matching, and Qdrant dense vector cosine similarity. | Natural language queries (e.g. "student experienced in distributed systems and backend Go") surface highly relevant results even without exact keyword matches. |
 | **Graceful SQL Degradation** | If the AI service or vector index is offline, the Go orchestrator automatically falls back to keyword-based SQL search with HTTP 200. | Zero user-visible downtime during model updates or GPU restarts. |
 | **Student Privacy Protection** | People search strictly requires an active session and verified `.edu` email address (HTTP 401/403 for unauthorized requests). | Prevents external scrapers or unverified users from indexing the campus student directory. |
 
@@ -285,25 +285,25 @@ flowchart TD
 
 ## 5. Non-Functional & Reliability Highlights
 
-1. **Deterministic Database Migrations:** 22 raw forward and rollback SQL migrations (`000001` through `000022`) including `pgvector` vector extension, 12 AI subsystem tables, Project-First Workspace architecture, compound covering indexes, keyset cursor pagination, and view count tracking.
+1. **Deterministic Database Migrations:** 24 raw forward and rollback SQL migrations (`000001` through `000024`) including 12 AI subsystem tables, Project-First Workspace architecture, compound covering indexes, keyset cursor pagination, view count tracking, transactional outbox headers, append-only immutable audit logs, and BRIN partition maintenance.
 2. **Layered Go Architecture:** Clean separation of concerns (`Handler` -> `Service` -> `Repository`) with standard library routing and `pgx/v5` connection pooling.
 3. **Internal AI Microservice & Secret Defense:** FastAPI backend operates on internal Docker network (`lynk-net`) requiring `X-Internal-AI-Secret`. Zero direct public exposure.
 4. **Comprehensive Graceful Degradation:** Every AI endpoint falls back to deterministic SQL logic with HTTP 200 if the AI backend is unreachable.
 5. **Multi-Stage Containerization:** Production-ready Dockerfiles for both Go backend (`backend/Dockerfile`) and Python AI subsystem (`ai/Dockerfile`) with non-root security.
-6. **Automated End-to-End Testing:** Complete 14-phase integration test suite (`scripts/smoke-test.sh` and `scripts/smoke-test.ps1`) verifying all core and AI lifecycle transitions against running infrastructure.
+6. **Automated End-to-End Testing:** Complete 16-phase integration test suite (`scripts/smoke-test.sh`) verifying all core, workspace, and P2P AI lifecycle transitions against running infrastructure.
 7. **Offline Evaluation Benchmarks:** Built-in information retrieval evaluation harness (`ai/evaluation/`) measuring NDCG@K, MRR, Precision@K, and F1 score against curated ground-truth datasets.
-8. **CI/CD Quality Gates:** Automated verification of Go unit tests, Python AI test suite (100 tests), frontend TypeScript typecheck, ESLint, database rollback checks, container builds, and full-stack smoke tests.
+8. **CI/CD Quality Gates:** Automated verification of Go unit tests, Python AI test suite (166 tests), frontend TypeScript typecheck, ESLint, database rollback checks, container builds, and full-stack smoke tests.
 9. **High-Concurrency Scale & Edge Caching:** TwoTierCache (L1 in-memory LRU + L2 Redis), Nginx reverse proxy gateway with 5s RFC micro-caching (`proxy_cache_lock on`), PgBouncer transaction pooling multiplexer, and PostgreSQL 1GB RAM buffers proven to sustain 1,453.9 req/s at 2,500 concurrent virtual users with 0.00% error rate.
 
 
 ---
 
-### Feature 10: Peer Collaboration Intelligence & Teammate Matching
+### Feature 19: Peer Collaboration Intelligence & Teammate Matching
 
 | Capability | Technical Mechanism | User Experience |
 | :--- | :--- | :--- |
 | **Teammate Complementarity Matching** | Evaluated via FastAPI microservice (`/internal/v1/collaborators/match`). Rewards candidates covering missing skills and caps redundancy penalties. | Project creators find peers with complementary skill sets rather than redundant duplicates. |
-| **Skill Gap Analysis** | Compares member skills with project requirements via `/internal/v1/collaborators/skill-gap`, computing readiness percentages. | Students see exact skills needed to qualify for a project alongside tailored learning guidance. |
-| **Embedded Columnar Graph** | Persistent Kùzu graph database (`/data/kuzu_campus_graph`) using openCypher queries over student, skill, and project topologies. | Sub-millisecond peer and project graph traversals without unbounded heap growth. |
+| **Skill Gap Analysis** | Compares member skills with project requirements via `/internal/v1/collaborators/skill-gap` and `/internal/v1/skills/gap`, computing readiness percentages. | Students see exact skills needed to qualify for a project alongside tailored learning guidance. |
+| **Embedded Columnar Graph** | Persistent Kuzu graph database (`/data/kuzu_campus_graph`) using openCypher queries over student, skill, and project topologies. | Sub-millisecond peer and project graph traversals without unbounded heap growth. |
 | **3-Phase Project Roadmaps** | Deterministic and LLM-assisted milestone planning dividing project scope into Foundations, Core Build, and Launch. | Students convert rough project concepts into structured execution roadmaps. |
 | **Fault-Tolerant Circuit Breaking** | Thread-safe Go client circuit breaker guarding AI calls with a strict 2-second timeout budget and deterministic local fallbacks. | Zero platform downtime or 500 errors if the AI microservice restarts or experiences latency. |

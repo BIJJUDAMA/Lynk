@@ -146,7 +146,8 @@ Synchronizes the SuperTokens authenticated identity into the PostgreSQL `users` 
 - **Request Body (optional):**
   ```json
   {
-    "role": "member"
+    "first_name": "Jordan",
+    "last_name": "Lee"
   }
   ```
 - **Response `200 OK`:**
@@ -156,7 +157,8 @@ Synchronizes the SuperTokens authenticated identity into the PostgreSQL `users` 
     "data": {
       "id": "st_usr_9a4f21e0-3e21-4f40-b8cf-b0d36746f332",
       "email": "student@stanford.edu",
-      "role": "member",
+      "first_name": "Jordan",
+    "last_name": "Lee",
       "created_at": "2026-09-01T12:00:00Z",
       "updated_at": "2026-09-01T12:00:00Z"
     },
@@ -177,7 +179,8 @@ Returns current authenticated session claims, user metadata, dynamic email verif
       "user": {
         "id": "st_usr_9a4f21e0-3e21-4f40-b8cf-b0d36746f332",
         "email": "student@stanford.edu",
-        "role": "member",
+        "first_name": "Jordan",
+    "last_name": "Lee",
         "created_at": "2026-09-01T12:00:00Z",
         "updated_at": "2026-09-01T12:00:00Z"
       },
@@ -685,7 +688,8 @@ Sends an invitation to a university student via institutional `.edu` email.
   ```json
   {
     "email": "teammate@campus.edu",
-    "role": "member"
+    "first_name": "Jordan",
+    "last_name": "Lee"
   }
   ```
 - **Response `201 Created`:** Returns Invitation JSON object.
@@ -906,7 +910,7 @@ Performs natural language project discovery utilizing 384-dimensional dense vect
 
 ### 9.4 Hybrid Semantic Job Search (Legacy)
 `GET /search/jobs?q={query}&limit={limit}`
-Performs hybrid search combining PostgreSQL full-text search, canonical skill tags, and pgvector cosine distance via Reciprocal Rank Fusion.
+Performs hybrid search combining PostgreSQL full-text search, canonical skill tags, and Qdrant dense vector cosine similarity via Reciprocal Rank Fusion.
 
 - **Auth Required:** No (Publicly accessible)
 - **Response `200 OK`:**
@@ -1148,4 +1152,4 @@ Synthesizes structured 3-phase project milestones (Foundations, Core Build, Laun
 
 ### 12.4 Deep Production Readiness Probe
 `GET /ready`
-Validates connectivity to PostgreSQL, Redis, Qdrant, Kùzu graph DB, and model memory residency. Returns HTTP 200 when ready, HTTP 503 during startup or component failure.
+Validates connectivity to PostgreSQL, Redis, Qdrant, Kuzu graph DB, and model memory residency. Returns HTTP 200 when ready, HTTP 503 during startup or component failure.
