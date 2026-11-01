@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # Build stage with compiler caching
 FROM golang:1.25-alpine AS builder
 

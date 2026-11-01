@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # Stage 1: Base image with official Node.js 20 LTS slim
 FROM node:20-slim AS base
 WORKDIR /app

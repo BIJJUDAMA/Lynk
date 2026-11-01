@@ -317,6 +317,12 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import redis, os; r = redis.from_url(os.getenv('REDIS_URL', 'redis://redis:6379')); r.ping() or exit(1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   frontend:
     build:
@@ -327,9 +333,6 @@ services:
         NEXT_PUBLIC_WEBSITE_URL: "http://localhost:3000"
     container_name: lynk-frontend
     restart: unless-stopped
-    profiles:
-      - frontend
-      - full
     environment:
       PORT: "3000"
       NEXT_PUBLIC_API_URL: "http://localhost:8080"
