@@ -133,9 +133,8 @@ async def test_internal_ping_timing_safe_secret_comparison():
             response = await client.get(
                 "/internal/v1/ping", headers={"X-Internal-AI-Secret": secret_val}
             )
-            assert (
-                response.status_code == expected_status
-            ), f"Expected {expected_status} for {secret_val}"
+            expected_msg = f"Expected {expected_status} for {secret_val}"
+            assert response.status_code == expected_status, expected_msg
             if expected_status == 200:
                 assert response.json() == {"status": "pong"}
             else:

@@ -45,6 +45,7 @@ async def assist_project(payload: ProjectAssistRequest):
 
 
 @router.post("/projects/milestones", response_model=ProjectMilestonePlan)
+@router.post("/collaboration-llm/milestones", response_model=ProjectMilestonePlan)
 async def plan_milestones(payload: MilestonesRequest):
     return await client.plan_project_milestones(payload.title, payload.deliverables)
 
